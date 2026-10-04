@@ -7,15 +7,7 @@ import { useAuthStore } from '@stores/authStore';
 import { useSilntWallet } from '../../hooks/useSilntWallet';
 import { Block, Chips, Group, Note, Page, SwitchRow } from './ui';
 
-// Blocks are what the scan works in; days are what the user waits. Ten minutes
-// a block, so 144 a day.
-function describeBlocks(blocks: number): string {
-  const days = blocks / 144;
-  if (days >= 7) return days === 7 ? 'a week' : `${Math.round(days)} days`;
-  if (days >= 1) return days === 1 ? '1 day' : `${Math.round(days)} days`;
-  const hours = Math.max(1, Math.round((blocks * 10) / 60));
-  return hours === 1 ? '1 hour' : `${hours} hours`;
-}
+
 
 // Finding payments: whether the server helps, and how much this phone will do
 // without asking.
@@ -31,7 +23,6 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
   const [catchUpBlocks, setCatchUpBlocks] = useState<number>(
     catchUpPref.FOLLOW_SERVER,
   );
-  const [serverThreshold, setServerThreshold] = useState(432);
 
   useEffect(() => {
     catchUpPref.getCatchUpBlocks().then(setCatchUpBlocks);
@@ -47,20 +38,11 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
       });
   }, [inkey, walletId]);
 
-  // Only to describe what "following the server" currently means — the hook
-  // reads it again at scan time, so this is display, not the decision.
-  useEffect(() => {
-    if (!inkey) return;
-    api
-      .getBackendConfig(inkey)
-      .then((cfg) => {
-        const n = Number(cfg?.login_scan_auto_threshold);
-        if (n > 0) setServerThreshold(n);
-      })
-      .catch(() => {
-        /* leave the default in the label */
-      });
-  }, [inkey]);
+  // The server's own threshold was fetched here, to describe what "following
+  // the server" meant in the footer below. The footer went; the request went
+  // with it rather than being left to run on every visit and feed nothing.
+  // The decision itself never lived here — catchUpPref reads the threshold
+  // again at scan time.
 
   const applyBackgroundScan = useCallback(
     async (enable: boolean) => {
@@ -152,19 +134,7 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
           every client at once — chosen for browsers, inherited by phones on
           mobile data. This phone can now say how much it will do quietly;
           leaving it alone follows the server as before. */}
-      <Group
-        title="On this phone"
-        footer={
-          catchUpBlocks === catchUpPref.FOLLOW_SERVER
-            ? `Following the server's setting (${describeBlocks(
-                serverThreshold,
-              )}). Pick one above to decide for this phone instead.`
-            : catchUpBlocks === catchUpPref.ALWAYS_ASK
-            ? 'Opening your wallet will always ask before scanning, however little there is to catch up on.'
-            : `Gaps under ${describeBlocks(
-                catchUpBlocks,
-              )} are scanned quietly when you open your wallet.`
-        }>
+      <Group title="On this phone">
         <Block
           first
           title="Scan automatically"

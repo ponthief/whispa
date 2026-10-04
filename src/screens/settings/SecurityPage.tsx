@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { useAppLockStore } from '@stores/appLockStore';
-import { useBalancePrivacy } from '@stores/balancePrivacy';
 import * as appLock from '@services/appLock';
 import * as appPin from '@services/appPin';
 import { hasSeed } from '@services/seedVault';
@@ -36,8 +35,6 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
   const lockAnyEnabled = useAppLockStore((s) => s.enabled);
   const autoLockMs = useAppLockStore((s) => s.autoLockMs);
   const setAutoLockMs = useAppLockStore((s) => s.setAutoLockMs);
-  const balancesHidden = useBalancePrivacy((s) => s.hidden);
-  const setBalancesHidden = useBalancePrivacy((s) => s.setHidden);
 
   const [biometry, setBiometry] = useState<string | null>(null);
   const [lockBusy, setLockBusy] = useState(false);
@@ -186,15 +183,11 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
         ) : null}
       </Group>
 
-      <Group title="On screen">
-        <SwitchRow
-          first
-          title="Hide balances"
-          help="Show stars instead of amounts. Tap the balance on the wallet screen — the eye beside it — to flip it either way."
-          value={balancesHidden}
-          onValueChange={setBalancesHidden}
-        />
-      </Group>
+      {/* "Hide balances" was a switch here AND a tap on the balance itself,
+          which is where anybody who wants it reaches for it — the row's own
+          help text had to explain the gesture that replaces it. One control,
+          on the thing it controls. The store and the gesture are untouched;
+          only the duplicate went. */}
 
       {/* Only meaningful once something locks — with no lock configured this is
           a choice about nothing, so it is not offered. */}
@@ -234,6 +227,18 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
       {/* Only offered when the phrase is actually on this phone. A dead button
           for older wallets would suggest a second copy exists somewhere, which
           is the belief that loses coins. */}
+      {wallet && !seedStored ? (
+        <Group title="Recovery phrase">
+          <Block first>
+            <Note kind="info">
+              Not on this phone. It is shown once when a wallet is created, and
+              is not kept here afterwards — so there is nothing to reveal. If
+              you still have the words, they restore this wallet anywhere.
+            </Note>
+          </Block>
+        </Group>
+      ) : null}
+
       {seedStored && wallet ? (
         <Group
           title="Recovery phrase"

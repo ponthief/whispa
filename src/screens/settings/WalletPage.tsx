@@ -133,7 +133,6 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
   return (
     <Page
       title="Wallet"
-      subtitle="This wallet's own settings, and how to remove it."
       onBack={onBack}>
       <Group title="This wallet">
         <InfoRow first title="Name" value={wallet?.title || '—'} mono={false} />

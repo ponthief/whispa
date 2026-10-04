@@ -1414,6 +1414,14 @@ export interface TangoRoundRow {
   /** True only when NEITHER side needed change. */
   clean?: boolean | null;
   /**
+   * THIS user's wallets can see the round's transaction: a UTXO row exists at
+   * its txid, which only a scan of a mined block creates. The one-party
+   * answer to "did my round finish", computed per request by the backend.
+   *
+   * Not `change_labelled`, which waits on the partner — see below.
+   */
+  settled?: boolean | null;
+  /**
    * The round's coins have been found on chain and labelled, on both sides.
    *
    * The only settlement signal a round carries — there is no confirmation

@@ -133,7 +133,6 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
   return (
     <Page
       title="Notifications"
-      subtitle="This phone only — your other devices keep their own setting."
       onBack={onBack}>
       <Group title="Payments and Tango">
         <SwitchRow

@@ -717,16 +717,17 @@ function statusLabel(r) {
     case 'ACCEPTED':  return `${actor(r, 'b')} matched it`
     case 'A_SIGNED':  return `${actor(r, 'a')} approved it`
     // BROADCAST means the transaction is on the network, not that it
-    // settled. `change_labelled` is the only settlement signal a round
-    // carries — there is no confirmation count on it — and it is set once a
-    // scan has found the round's outputs, which only happens after it is
-    // mined. So the two states are distinguishable and "Sent" was claiming
-    // the later one from the moment of the earlier.
+    // settled. `settled` is the backend's one-party answer: a UTXO row
+    // exists at this round's txid in one of THIS user's wallets, which only a
+    // scan of a mined block creates.
     //
-    // A round can therefore sit on "Broadcasted" while background scanning
-    // is off and nothing has looked for the coins. That is honest: nothing
-    // here has seen it settle.
-    case 'BROADCAST': return r.change_labelled ? 'Completed' : 'Broadcasted'
+    // It was `change_labelled` for a day, which was wrong: that flag waits
+    // for every coin on BOTH sides to be named, so a round stayed
+    // "Broadcasted" until the partner opened their app.
+    //
+    // It can still sit on "Broadcasted" while this user's own background
+    // scanning is off, which is honest and at least under their control.
+    case 'BROADCAST': return r.settled ? 'Completed' : 'Broadcasted'
     // Who stopped it, or that nobody did: the sweeper closing a round nobody
     // finished is a different outcome from someone deciding to stop. The
     // stored reason keeps the SIDE, so this is where it becomes a name.

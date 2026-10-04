@@ -120,12 +120,9 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
     }
     Alert.alert(
       'Remove this wallet?',
-      `This removes "${wallet.title || 'this wallet'}" from the server ` +
-        '(its address and the record of its coins) and erases its keys from ' +
-        'this phone. Your bitcoin stays safe on-chain — only the wallet data ' +
-        'is deleted. You can restore the wallet, and rescan its coins, from ' +
-        'your recovery phrase (and passphrase, if you set one). This can’t be ' +
-        'undone here.',
+      `This removes "${wallet.title || 'this wallet'}" from this account and ` +
+        'erases its keys from this phone. Your coins stay safe on chain — ' +
+        'your recovery phrase (and passphrase, if you set one) restores them.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Remove wallet', style: 'destructive', onPress: doRemoveWallet },
@@ -191,7 +188,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Remove this wallet"
-          help="Removes the wallet from the server — its address and the record of its coins — and erases its keys from this phone. Your bitcoin stays safe on-chain; only the wallet data goes. You can restore it, and rescan its coins, from your recovery phrase and passphrase.">
+          help="Removes the wallet from this account and erases its keys from this phone. Your coins stay safe on chain, and your recovery phrase restores them.">
           <Button
             label="Remove wallet"
             kind="danger"

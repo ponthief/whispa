@@ -923,7 +923,7 @@ watch(swapCompletedAt, () => {
         <div class="card-body" style="text-align:center">
           <div style="font-size:28px;margin-bottom:12px">⚠</div>
           <h2 style="margin-bottom:8px">Delete "{{ deleteTarget.title }}"?</h2>
-          <p class="text-dim text-sm">This removes the wallet from the server (its address and the record of its coins) and its keys from this device. Your bitcoin stays safe on-chain — only the wallet data is deleted. You can restore the wallet, and rescan its coins, from your recovery phrase (and passphrase, if set).</p>
+          <p class="text-dim text-sm">This removes the wallet from this account and its keys from this device. Your coins stay safe on chain — your recovery phrase (and passphrase, if set) restores them.</p>
 
           <!-- BIP-353 notice — shown if wallet has a BitMail address. Removal is
                mandatory (not optional): deleting the wallet always removes it. -->

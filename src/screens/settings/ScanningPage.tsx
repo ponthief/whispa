@@ -163,11 +163,11 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
             ? 'Opening your wallet will always ask before scanning, however little there is to catch up on.'
             : `Gaps under ${describeBlocks(
                 catchUpBlocks,
-              )} are scanned quietly when you open your wallet. Anything longer asks first, since it is a wait.`
+              )} are scanned quietly when you open your wallet.`
         }>
         <Block
           first
-          title="Catch up automatically"
+          title="Scan automatically"
           help="Leave the wallet unscanned for up to this much before asking.">
           <Chips
             options={catchUpPref.CATCH_UP_CHOICES.map((o) => ({

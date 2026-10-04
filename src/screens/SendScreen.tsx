@@ -33,6 +33,7 @@ import { markScanStarted } from '@services/scanCooldown';
 import { parseScannedAddress } from '@services/addressUri';
 import { colors } from '@/theme';
 import QRScanner from '../components/QRScanner';
+import AmountSlider from '../components/AmountSlider';
 import ContactsModal from '../components/ContactsModal';
 import ConfirmLockModal from '../components/ConfirmLockModal';
 import {
@@ -1113,6 +1114,18 @@ export default function SendScreen() {
             />
             <Text style={styles.unitLabel}>sats</Text>
           </View>
+          {/* Dial the amount without typing it. Runs 0..maxSendable — the
+              selection minus its fee — because a slider whose own maximum
+              lands in "amount + fee exceeds your coins" is a strange control.
+              It changes the amount and NOTHING else: picking coins stays the
+              person's job, and a slider that quietly selected more of them
+              would undo the coin control this screen is built around. */}
+          <AmountSlider
+            value={amountSats}
+            max={maxSendable}
+            onChange={(sats) => setAmount(sats ? String(sats) : '')}
+            format={(sats) => `${groupThousands(sats)} sats`}
+          />
 
           <Text style={styles.label}>Fee rate</Text>
           <View style={styles.feeRow}>

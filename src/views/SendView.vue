@@ -12,6 +12,7 @@ import {
 import { useAmount } from '@/composables/useAmount'
 import { saveTxRecipientLabel, saveSwapTxLabel } from '@/stores/txlabels'
 import { undoesARound } from '@/services/tango'
+import { sliderMax } from '@/services/sendAmount'
 import { chainMismatch } from '@/services/chains'
 // Shared with the phone, so the two apps cannot say this differently.
 import {
@@ -188,6 +189,16 @@ const DUST_SATS = 546
 // What is left to send once the fee is paid.
 const maxSendable = computed(() =>
   selectedTotal.value > 0 ? selectedTotal.value - estimatedFee.value : 0,
+)
+// The slider's top. Never negative: a selection whose coins cannot cover
+// their own fee has a negative maxSendable, and 0..-200 is not a range.
+const sliderTop = computed(() => sliderMax(maxSendable.value))
+// Pinned to the end rather than running off it when a typed amount exceeds
+// what the selection can send: the field is the authority, the slider is a
+// second view of it. Computed rather than inline, because a Vue template has
+// no `Math` in scope — the exact shape of bug check:vue exists for.
+const sliderValue = computed(() =>
+  Math.min(Number(amount.value) || 0, sliderTop.value),
 )
 const belowDust = computed(() => {
   const a = Number(amount.value) || 0
@@ -787,6 +798,34 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
               <p v-if="isSwapFunding" class="text-dim text-xs" style="margin:4px 0 0">
                 Exact amount required by Boltz (includes swap fees). Don't change it.
               </p>
+              <!-- Dial the amount without typing it. Runs 0..maxSendable —
+                   the selection minus its fee — because a slider whose own
+                   maximum lands in "amount + fee exceeds your coins" is a
+                   strange control. It changes the amount and NOTHING else:
+                   picking coins stays the user's job, and a slider that
+                   quietly selected more of them would undo the coin control
+                   this screen is built around. Hidden while a swap is
+                   funding, where the amount is Boltz's and not a choice. -->
+              <div v-if="!isSwapFunding" class="amt-slider">
+                <input
+                  type="range"
+                  min="0"
+                  :max="sliderTop"
+                  step="1"
+                  :disabled="sliderTop <= 0"
+                  :value="sliderValue"
+                  @input="amount = Number($event.target.value) || null" />
+                <div class="amt-slider-ends">
+                  <span class="text-dim text-xs">0</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    :disabled="sliderTop <= 0"
+                    @click="amount = sliderTop">
+                    {{ sliderTop > 0 ? 'Max ' + fmt(sliderTop) : '—' }}
+                  </button>
+                </div>
+              </div>
             </div>
             <p class="text-dim text-xs" style="margin:4px 0 0">Select the coins to spend below — choose deliberately to avoid linking coins you'd rather keep separate.</p>
             <div class="field">
@@ -1083,5 +1122,39 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
   color: var(--text);
   border-radius: var(--radius);
   padding: 12px 14px;
+}
+
+/* The amount slider. The browser's default range control is grey and flat
+   against a dark card, so the track and thumb are drawn here — both WebKit
+   and Firefox pseudo-elements, since they do not share one. */
+.amt-slider { margin-top: 8px; }
+.amt-slider input[type="range"] {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.amt-slider input[type="range"]:disabled { cursor: not-allowed; opacity: .45; }
+.amt-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--border);
+}
+.amt-slider input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: 2px; background: var(--border);
+}
+.amt-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--orange); border: 2px solid var(--bg);
+  /* Centres the thumb on the 4px track: half the thumb, less half the track. */
+  margin-top: -7px;
+}
+.amt-slider input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--orange); border: 2px solid var(--bg);
+}
+.amt-slider-ends {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 2px;
 }
 </style>

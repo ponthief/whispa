@@ -39,7 +39,6 @@ export default function SettingsScreen() {
   const pinSet = useAppLockStore((s) => s.pinSet);
   const bioEnabled = useAppLockStore((s) => s.bioEnabled);
   const lockEnabled = useAppLockStore((s) => s.enabled);
-  const autoLockMs = useAppLockStore((s) => s.autoLockMs);
   const alerts = useNotifyStore((s) => s.alerts);
 
   const back = useCallback(() => setPage(null), []);
@@ -72,11 +71,15 @@ export default function SettingsScreen() {
     : bioEnabled
     ? 'Biometric'
     : 'On';
-  const lockRowHelp = !lockEnabled
-    ? 'Nothing is guarding your wallet on this phone'
-    : autoLockMs === 0
-    ? 'Locks as soon as you leave the app'
-    : 'Unlocking, auto-lock, duress PIN, recovery phrase';
+  // NAMES ONLY. Every row carried a line listing what was inside it —
+
+  // "Username, email, invites, signing out" under Account, and so on —
+
+  // which is a table of contents for a page one tap away. The `value` is
+
+  // kept where there is one: "On"/"Off" beside Notifications answers a
+
+  // question the name cannot.
 
   return (
     <Page title="Settings" subtitle={username ? `Signed in as ${username}` : undefined}>
@@ -84,7 +87,6 @@ export default function SettingsScreen() {
         <NavRow
           first
           title="Account"
-          help="Username, email, invites, signing out"
           value={username || undefined}
           onPress={() => setPage('account')}
         />
@@ -94,14 +96,12 @@ export default function SettingsScreen() {
         <NavRow
           first
           title="Security"
-          help={lockRowHelp}
           value={lockSummary}
           danger={!lockEnabled}
           onPress={() => setPage('security')}
         />
         <NavRow
           title="Notifications"
-          help="Whether payments and Tango announce themselves"
           value={alerts ? 'On' : 'Off'}
           onPress={() => setPage('notifications')}
         />
@@ -111,12 +111,10 @@ export default function SettingsScreen() {
         <NavRow
           first
           title="Scanning"
-          help="Background scanning, and how much catches up quietly"
           onPress={() => setPage('scanning')}
         />
         <NavRow
           title="Wallet"
-          help="Dust threshold, and removing this wallet"
           onPress={() => setPage('wallet')}
         />
       </Group>
@@ -125,7 +123,6 @@ export default function SettingsScreen() {
         <NavRow
           first
           title="About"
-          help="Version and source code"
           onPress={() => setPage('about')}
         />
       </Group>

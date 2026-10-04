@@ -13,6 +13,7 @@ import * as api from '@services/api';
 import { storeWalletKeys } from '@services/secureKeys';
 import { deriveSilentPayment, isValidMnemonic } from '@services/spKeys';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
+import { saveSeed } from '@services/seedVault';
 import { usePlainStatus } from '@stores/plainStatus';
 import SeedInput from './SeedInput';
 import { colors } from '@/theme';
@@ -77,6 +78,18 @@ export default function RecoverKeysModal({
         refundAddress: keys.refundAddress,
         sweepAccount: keys.sweepAccount,
       });
+      // AND KEEP THE PHRASE, so Security can show it again. saveSeed ran only
+      // in CreateWalletModal, so a wallet restored from its words — which is
+      // most wallets on a second device, and every wallet older than the
+      // vault — had `hasSeed` false forever and no reveal to offer.
+      //
+      // Not a new exposure, and this is the moment that proves it: the phrase
+      // was just checked against this wallet's own SP address, and the keys it
+      // derived are going into the same keystore on the line above. The BIP-39
+      // passphrase is still NOT stored — see services/seedVault — so a
+      // passphrase-protected wallet's reveal stays incomplete, which the
+      // reveal itself says.
+      await saveSeed(wallet.id, phrase);
       resetCatchUp(wallet.id);
       // The recovered keys include the BIP-84 account key, which is what the
       // plain-address card and the background watcher read to decide whether

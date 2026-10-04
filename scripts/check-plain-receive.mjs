@@ -123,6 +123,39 @@ console.log('\nthe card uses them');
   ok('the per-address list is rendered', /coinsByAddress\(/.test(CARD));
 }
 
+console.log('\na payment still being mined does not read as done');
+{
+  const fs = await import('node:fs');
+  const RN = fs.readFileSync(
+    new URL('../src/screens/WalletScreen.tsx', import.meta.url), 'utf8',
+  );
+  const WEB = fs.readFileSync(
+    new URL('../src/views/TransactionsView.vue', import.meta.url), 'utf8',
+  );
+  // THE BUG, 2026-10-05. A plain-address payment into the SP wallet is the one
+  // receive the backend can report unconfirmed — helpers/transactions.py
+  // appends it from `pending_in` with kind "receive" and confirmed False, and
+  // says so in its own comment. The phone read
+  // `t.kind !== 'receive' && t.confirmed === false`, which threw away exactly
+  // that row and showed a transaction still in the mempool as complete.
+  // Comment lines stripped first: the fix's own comment QUOTES the old
+  // expression to explain what it got wrong, and a bare grep matched that and
+  // reported the bug as still present.
+  const RNcode = RN.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  ok('the phone does not exempt receives from being pending',
+     !/kind !== 'receive' && t\.confirmed/.test(RNcode));
+  ok('the phone keys a row on confirmed alone',
+     /pending: t\.confirmed === false,/.test(RN));
+  // Both clients, or they disagree about the same payment — which is how this
+  // one survived: the web was right the whole time.
+  ok('the browser keys on confirmed too',
+     /tx\.confirmed === false/.test(WEB));
+  // `=== false`, not falsy: `confirmed` is null on a row that cannot say, and
+  // unknown is not the same as pending.
+  ok('the phone treats unknown as not-pending',
+     !/pending: !t\.confirmed/.test(RNcode));
+}
+
 console.log('');
 if (failed) {
   console.log(`${failed} check(s) failed`);

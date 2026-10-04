@@ -73,10 +73,23 @@ function spTxToItem(t: api.SpTransaction, labelMap: Record<string, string>): TxI
         (t.kind === 'send' ? 'Sent' : 'Received'),
     note: mix ? mixFeeNote(mix) || undefined : undefined,
     timestamp: t.timestamp || null,
-    // A receive is recorded once it is already in a block, so only something
-    // the wallet spent into can be pending — which includes a Tango. Keyed on
-    // `confirmed` rather than on the kind for that reason.
-    pending: t.kind !== 'receive' && t.confirmed === false,
+    // TRUST `confirmed`, AND NOTHING ELSE. This used to read
+    // `t.kind !== 'receive' && t.confirmed === false`, on the reasoning that a
+    // receive is only recorded once it is in a block. That is true of every
+    // receive a SCAN finds, and the backend has one that no scan finds:
+    // helpers/transactions.py appends `pending_in` rows — kind "receive",
+    // confirmed False — for a payment seen in the mempool, and its own comment
+    // calls it "the one receive that CAN be unconfirmed".
+    //
+    // A plain-address payment into this wallet is exactly that row, so the one
+    // case the backend takes care to report as pending was the one case this
+    // line threw away: a transaction still being mined, shown as done. The web
+    // never had the clause (views/TransactionsView.vue keys on `confirmed`
+    // alone), so the two clients disagreed about the same payment.
+    //
+    // `=== false` and not falsy: `confirmed` is null on a row that cannot say,
+    // and unknown is not the same as pending.
+    pending: t.confirmed === false,
   };
 }
 

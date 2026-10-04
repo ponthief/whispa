@@ -34,6 +34,7 @@ import { parseScannedAddress } from '@services/addressUri';
 import { colors } from '@/theme';
 import QRScanner from '../components/QRScanner';
 import AmountSlider from '../components/AmountSlider';
+import { useDrafts } from '@stores/draftStore';
 import { sliderTop } from '@services/sendAmount';
 import ContactsModal from '../components/ContactsModal';
 import ConfirmLockModal from '../components/ConfirmLockModal';
@@ -395,6 +396,37 @@ export default function SendScreen() {
       return next;
     });
   }, []);
+
+  // ── Surviving a lock ──────────────────────────────────────────────────────
+  // App.tsx unmounts the whole Shell when the lock engages, so everything
+  // above is gone the moment the screen times out — including a coin
+  // selection that took real work. See stores/draftStore.ts.
+  const walletId = wallet?.id || '';
+  const restored = useRef('');
+  useEffect(() => {
+    // Once per wallet, and only once the coins are in: restoring a selection
+    // before `utxos` has loaded would be filtered down to nothing by the
+    // guard below and written straight back as empty.
+    if (!walletId || restored.current === walletId || !utxos.length) return;
+    restored.current = walletId;
+    const draft = useDrafts.getState().send[walletId];
+    if (!draft) return;
+    // A coin spent or frozen while the phone was locked is simply not in
+    // `utxos` any more, so it drops out here rather than being re-offered.
+    const live = new Set(utxos.map((u) => utxoKey(u)));
+    setSelected(new Set(draft.selected.filter((k) => live.has(k))));
+    setAmount(draft.amount);
+    setRecipient(draft.recipient);
+  }, [walletId, utxos]);
+
+  useEffect(() => {
+    if (!walletId || restored.current !== walletId) return;
+    useDrafts.getState().setSend(walletId, {
+      selected: [...selected],
+      amount,
+      recipient,
+    });
+  }, [walletId, selected, amount, recipient]);
 
   const selectedUtxos = useMemo(
     () => utxos.filter((u) => selected.has(utxoKey(u))),
@@ -813,8 +845,9 @@ export default function SendScreen() {
     setSelected(new Set());
     setBitmailWarning('');
     setBitmailInvalid(false);
+    if (wallet?.id) useDrafts.getState().clearSend(wallet.id);
     load();
-  }, [load]);
+  }, [load, wallet?.id]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {

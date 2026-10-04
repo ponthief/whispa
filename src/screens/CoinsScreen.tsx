@@ -374,11 +374,14 @@ export default function CoinsScreen({ visible, onClose }: Props) {
                   ) : (
                     <View style={styles.coinBottom}>
                       <TouchableOpacity
+                        style={styles.labelTap}
                         onPress={() => {
                           setEditingKey(k);
                           setDraft(u.label || '');
                         }}>
-                        <Text style={u.label ? styles.label : styles.labelAdd}>
+                        <Text
+                          style={u.label ? styles.label : styles.labelAdd}
+                          numberOfLines={1}>
                           {u.label || '+ label'}
                         </Text>
                       </TouchableOpacity>
@@ -523,7 +526,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 12,
+    // A Tango coin's label is long ("Tango with alice · 5 Oct") and ran flush
+    // into the Freeze button beside it — two tap targets with nothing between
+    // them, one of which changes what a coin can be spent on.
+    gap: 12,
   },
+  // The label takes the slack and truncates; the button keeps its size, so it
+  // never shrinks to fit a long label.
+  labelTap: { flex: 1, minWidth: 0 },
   label: { fontSize: 14, color: colors.strong, fontWeight: '500' },
   labelAdd: { fontSize: 14, color: colors.faint },
   freezeBtn: {

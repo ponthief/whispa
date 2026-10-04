@@ -884,9 +884,8 @@ function expiresIn(r) {
               {{ mixPreview.error }}
             </div>
             <p v-else-if="mixPreview && mixPreview.change" class="text-xs text-amber" style="margin-top:0.4rem;">
-              Leaves {{ fmtSats(mixPreview.change) }} of change, which weakens
-              the round — change plus your share is what you put in. Closer to the
-              amount is stronger.
+              The change of {{ fmtSats(mixPreview.change) }} is bad for privacy.
+              Try the exact amount.
             </p>
             <p v-else-if="mixPreview" class="text-xs text-green" style="margin-top:0.4rem;">
               No change. The strongest shape.

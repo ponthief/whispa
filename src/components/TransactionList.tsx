@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -68,6 +68,19 @@ export default function TransactionList({
   onPressItem,
 }: Props) {
   const hidden = useBalancesHidden();
+  // A PAGE AT A TIME. The wallet screen asks for 25 and rendered all of them,
+  // which pushed everything below it — including "Pull down to refresh" — off
+  // the end of a phone screen, and made the one gesture that reloads the page
+  // the hardest thing on it to reach.
+  const [shown, setShown] = useState(PAGE);
+  // A new wallet, or a reload that returns fewer rows, starts at the top
+  // again: "Show 15 more" against a list of 3 is a button that does nothing.
+  useEffect(() => {
+    setShown(PAGE);
+  }, [items.length]);
+  const page = items.slice(0, shown);
+  const more = items.length - page.length;
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -76,7 +89,7 @@ export default function TransactionList({
       ) : items.length === 0 ? (
         <Text style={styles.empty}>{emptyText}</Text>
       ) : (
-        items.map((tx, i) => {
+        page.map((tx, i) => {
           const tappable = !!onPressItem && !!tx.id;
           const Wrapper: any = tappable ? TouchableOpacity : View;
           return (
@@ -118,9 +131,29 @@ export default function TransactionList({
           );
         })
       )}
+      {!loading && more > 0 ? (
+        <TouchableOpacity
+          style={styles.moreBtn}
+          onPress={() => setShown((n) => n + PAGE)}>
+          <Text style={styles.moreText}>
+            Show {Math.min(more, PAGE)} more · {items.length - page.length} left
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+      {/* Only once there is something to collapse, and only when the list is
+          longer than one page — otherwise it offers to undo nothing. */}
+      {!loading && shown > PAGE ? (
+        <TouchableOpacity style={styles.moreBtn} onPress={() => setShown(PAGE)}>
+          <Text style={styles.moreText}>Show fewer</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
+
+// How many rows at a time. Ten is about a phone screen's worth with the
+// balance and buttons above it.
+const PAGE = 10;
 
 const styles = StyleSheet.create({
   card: {
@@ -145,6 +178,8 @@ const styles = StyleSheet.create({
   pendingText: { fontSize: 12, color: colors.primary, fontWeight: '600' },
   spinner: { marginVertical: 12, alignSelf: 'flex-start' },
   empty: { fontSize: 14, color: colors.faint },
+  moreBtn: { paddingVertical: 12, alignItems: 'center' },
+  moreText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

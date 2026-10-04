@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AppState,
@@ -17,6 +17,7 @@ import * as tango from '@services/tango';
 import * as commits from '@services/tangoCommit';
 import { parseSpAddress, fromHex, toHex } from '@services/spSign';
 import { changeDestination, payoutIntended } from '@services/lnAddress';
+import { useDrafts } from '@stores/draftStore';
 import TangoPayoutCard from '../components/TangoPayoutCard';
 import { colors, radius, space, type as type_ } from '@/theme';
 import { Block, Button, Chips, Field, Group, Note, Page } from './settings/ui';
@@ -139,6 +140,40 @@ export default function TangoScreen() {
     [selectable, picked],
   );
   const chosenTotal = chosen.reduce((s, c) => s + c.amount, 0);
+
+  // ── Surviving a lock ──────────────────────────────────────────────────────
+  // App.tsx unmounts the whole Shell when the lock engages, so a selection
+  // made seconds before the Offer button is gone when the screen comes back.
+  // Picking coins for a mix is the decision the mix is made of — see the
+  // comment on `picked` above — and on a wallet with many coins it is minutes
+  // of work. See stores/draftStore.ts for why this is memory-only.
+  const restored = useRef('');
+  useEffect(() => {
+    // Only once the coins are in: restoring against an empty `selectable`
+    // would filter the selection to nothing and save that back.
+    if (!walletId || restored.current === walletId || !selectable.length) return;
+    restored.current = walletId;
+    const draft = useDrafts.getState().tango[walletId];
+    if (!draft) return;
+    // A coin that a round took while the phone was locked is no longer in
+    // `selectable` (tango_reserved), so it drops out here rather than being
+    // offered to a second round.
+    const live = new Set(selectable.map((c) => key(c)));
+    setPicked(new Set(draft.selected.filter((k) => live.has(k))));
+    setDenom(draft.denom);
+    setPieces(draft.pieces);
+    setPartner(draft.partner);
+  }, [walletId, selectable]);
+
+  useEffect(() => {
+    if (!walletId || restored.current !== walletId) return;
+    useDrafts.getState().setTango(walletId, {
+      selected: [...picked],
+      denom,
+      pieces,
+      partner,
+    });
+  }, [walletId, picked, denom, pieces, partner]);
 
   // MATCHING HAS ITS OWN SELECTION, and it is not a nicety.
   //
@@ -496,6 +531,7 @@ export default function TangoScreen() {
       setPartner('');
       setDenom('');
       setPicked(new Set());
+      if (walletId) useDrafts.getState().clearTango(walletId);
       setMsg('Offer sent. You can cancel it under Rounds until they match it.');
       await load();
     } catch (e) {
@@ -1057,7 +1093,7 @@ export default function TangoScreen() {
             footer={
               preview && !preview.error
                 ? preview.change
-                  ? `Leaves ${preview.change.toLocaleString()} sats of change, which weakens the round — change plus your share is what you put in. Closer to the amount is stronger.`
+                  ? `The change of ${preview.change.toLocaleString()} sats is bad for privacy. Try the exact amount.`
                   : 'No change. The strongest shape.'
                 : undefined
             }>

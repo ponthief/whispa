@@ -5,6 +5,7 @@ import * as session from '@services/session';
 import { DEVICE_TRUST_ENABLED } from '@/theme';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
 import { useBitmailAlert } from './bitmailAlert';
+import { useDrafts } from './draftStore';
 import { useAppLockStore } from './appLockStore';
 import { useSeedBackup } from './seedBackup';
 
@@ -212,6 +213,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     // New session should re-evaluate catch-up scanning for every wallet.
     resetCatchUp();
     useBitmailAlert.getState().clear();
+    // An unsent Send or Tango belongs to the session being left: which coins
+    // were picked, and who the Tango was for, are not for whoever signs in
+    // next on this phone.
+    useDrafts.getState().clearAll();
     // Drop the in-memory device id; the keystore entry survives so the same
     // device stays trusted on the next login.
     deviceTrust.clearCurrent();

@@ -50,8 +50,26 @@ export const APP_VERSION = '0.4.0';
  */
 export const PRERELEASE_LABEL = '0.1.0-beta';
 
-/** The git tag and GitHub release that carry this build. */
-export const RELEASE_TAG = 'v0.1.0-beta';
+/**
+ * The git tag that carries this build. NUMBERED, NEVER NAMED.
+ *
+ * The tag is machine-read and the title is not. parseRelease takes the version
+ * it compares straight off `tag_name` — `tag.replace(/^v/, '')` — so a tag of
+ * `v0.1.0-beta` would be read as 0.1.0 and compared against an installed
+ * 0.4.0, and the update check would answer "up to date" to everybody, for
+ * every release in the series. Tagging it the way the release is NAMED breaks
+ * the one consumer that reads tags.
+ *
+ * So the same split as PRERELEASE_LABEL, applied one field further on: this is
+ * the number, RELEASE_TITLE is the name, and cut-release.sh puts the second on
+ * the release page.
+ */
+export const RELEASE_TAG = `v${APP_VERSION}`;
+
+/** What the GitHub release is called. Humans only — nothing parses this. */
+export const RELEASE_TITLE = PRERELEASE_LABEL
+  ? `WhiSPa ${PRERELEASE_LABEL}`
+  : `WhiSPa ${APP_VERSION}`;
 
 /**
  * The version as a human should see it: the label when there is one, with the

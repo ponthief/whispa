@@ -225,12 +225,28 @@ fi
 
 step "Creating release $tag"
 need_gh "needed to create the release"
+# THE TAG IS NUMBERED AND THE TITLE IS NAMED, and they are allowed to differ.
+# src/services/updateCheck.ts reads the version it compares straight off
+# `tag_name`, so the tag has to carry a number that sorts above what is
+# installed — a tag of v0.1.0-beta is read as 0.1.0 and the update check goes
+# silent for everyone. The title is read by people only, so that is where the
+# release's NAME goes. src/version.ts holds both; RELEASE_TITLE is taken from
+# there rather than rebuilt here, so the About page and the release page
+# cannot drift.
+title="$(sed -n "s/^export const PRERELEASE_LABEL = '\\([^']*\\)';/\\1/p" \
+         "$repo_root/src/version.ts")"
+if [ -n "$title" ]; then
+  title="WhiSPa $title"
+  note "release title: $title (tag $tag)"
+else
+  title="WhiSPa $tag"
+fi
 gh release create "$tag" \
   "$work/whispa-mainnet.apk" \
   "$work/whispa-signet.apk" \
   "$work/SHA256SUMS" \
   "$work/SHA256SUMS.asc" \
-  --title "WhiSPa $tag" \
+  --title "$title" \
   --notes "$notes" \
   || die "gh release create failed. The signed files are in $work — you can attach them by hand."
 

@@ -268,9 +268,42 @@ console.log('\nrefusals from a malformed answer');
   if (V.PRERELEASE_LABEL) {
     ok('and the label it is released under', V.displayVersion().includes(V.PRERELEASE_LABEL),
        V.displayVersion());
-    ok('the release tag matches the label',
-       V.RELEASE_TAG === 'v' + V.PRERELEASE_LABEL,
-       `tag ${V.RELEASE_TAG}, label ${V.PRERELEASE_LABEL}`);
+    // NOT the tag. That assertion existed for an hour on 2026-10-04 and was
+    // the bug written down as a rule: the tag is the one field a machine
+    // reads, so it is the one field the label must stay out of.
+    ok('the release TITLE matches the label',
+       V.RELEASE_TITLE.endsWith(V.PRERELEASE_LABEL),
+       `title ${V.RELEASE_TITLE}, label ${V.PRERELEASE_LABEL}`);
+  }
+
+  // THE REAL TAG, fed to the real parser. This is the assertion that was
+  // missing when RELEASE_TAG was set to 'v0.1.0-beta' on 2026-10-04: the
+  // checks around it used v9.9.9 and v<APP_VERSION>, both of which pass, so
+  // nothing noticed that parseRelease reads its version off tag_name and
+  // would have compared 0.1.0 against every installed build — answering "up
+  // to date" to everybody, for every release in the series.
+  {
+    const asTagged = parseRelease(
+      { tag_name: V.RELEASE_TAG }, 'whispa-mainnet.apk', V.APP_VERSION,
+    );
+    ok('the release tag is numbered, not named',
+       /^v\d+\.\d+\.\d+$/.test(V.RELEASE_TAG), V.RELEASE_TAG);
+    ok('and it parses to exactly this build',
+       asTagged.latest.version === V.APP_VERSION,
+       `tag ${V.RELEASE_TAG} parsed to ${asTagged.latest.version}, build is ${V.APP_VERSION}`);
+    // The next release in the series has to be offerable. A tag that sorts
+    // BELOW the running build is the silent failure.
+    const [maj, min, pat] = V.APP_VERSION.split('.').map(Number);
+    const next = parseRelease(
+      { tag_name: `v${maj}.${min}.${pat + 1}` }, 'whispa-mainnet.apk', V.APP_VERSION,
+    );
+    ok('so the next release can be offered', next.updateAvailable === true);
+    // And the NAME must never reach the comparison.
+    ok('the title carries the name instead',
+       !V.PRERELEASE_LABEL || V.RELEASE_TITLE.includes(V.PRERELEASE_LABEL),
+       V.RELEASE_TITLE);
+    ok('and the tag does not', !V.RELEASE_TAG.includes(V.PRERELEASE_LABEL || '\u0000'),
+       V.RELEASE_TAG);
   }
 
   // THE COMPARISON IS AGAINST APP_VERSION, NOT THE LABEL, and that is the

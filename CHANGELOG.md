@@ -15,17 +15,23 @@ first line of the body, where a reader looks anyway.
 
 Released as **WhiSPa 0.1.0-beta**.
 
+> **Coming from Thrilla? This will not install over it, and that is expected.**
+>
+> The Android package identifier changed with the name, so Android treats
+> WhiSPa as a different app and refuses to install it over Thrilla. If your old
+> app offered you this update and the install failed, that is why — nothing is
+> wrong with the download.
+>
+> Install WhiSPa alongside Thrilla, move your funds across, and only then
+> remove the old one. **Keep your recovery phrase until you have confirmed the
+> balance arrived.** Nothing migrates by itself.
+
 ### Changed
 
 - **Thrilla is now WhiSPa.** New name, new home at whispawallet.com, same
   wallet and the same people. The release numbering restarts at 0.1.0-beta to
   match: this is a beta and the version should say so rather than implying a
   history it does not have.
-- **This is a new app on your phone, not an update.** The Android package
-  identifier changed with the name, so WhiSPa installs alongside Thrilla
-  instead of over it. Move your funds across before removing the old one, and
-  keep your recovery phrase until you have confirmed the balance arrived.
-  Nothing migrates by itself.
 
 ### Added
 

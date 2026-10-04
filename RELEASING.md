@@ -1,5 +1,24 @@
 # Releasing
 
+## Cutting a release
+
+```bash
+scripts/cut-release.sh v0.4.0        # the TAG is the build number
+```
+
+**The tag is numbered and the title is named, and they differ on purpose.**
+`src/services/updateCheck.ts` reads the version it compares straight off
+`tag_name`, so the tag has to carry a number that sorts above what is already
+installed. A tag of `v0.1.0-beta` parses to `0.1.0`, compares below every
+installed build, and the in-app update check answers "up to date" to everyone
+— for that release and every one after it. That is not a one-off: each
+`v0.1.x-beta` would sort below the climbing `APP_VERSION` too.
+
+So the tag is `v${APP_VERSION}` and the release is *titled* from
+`PRERELEASE_LABEL` — "WhiSPa 0.1.0-beta". `cut-release.sh` reads the label out
+of `src/version.ts` rather than rebuilding it, so the About page and the
+release page cannot drift. `check:update` asserts both directions.
+
 ## Zapstore
 
 ### The thing to understand first
@@ -48,32 +67,38 @@ match the former for exactly this reason.
 
 ### Retiring the Thrilla listing
 
-Two options, and the first is better.
+There is no Thrilla-era APK left — the old releases were deleted on 2026-10-04
+and GitHub no longer serves one — so the "republish the same `d` tag with new
+metadata" route is closed. `zsp` builds that tag from an APK, and without one
+there is nothing to publish against.
 
-**Replace it with a signpost.** Kind 32267 is addressable, so publishing a new
-event with the same `d` tag (`com.thrilla_btc.thrilla`) from the same pubkey
-overwrites the old metadata in place. Point its name and summary at WhiSPa, so
-somebody with Thrilla installed opening Zapstore finds out where it went.
+So the old listing gets **deleted**, from the Zapstore side, and the signpost
+moves to the places that can still carry it:
 
-The catch: zsp builds the `d` tag from an APK, so this needs a **Thrilla-era
-APK** (one built before the applicationId changed) to publish against. If you
-still have one locally, point a temporary config's `release_source` at the file
-and change only the name/summary/description. If you do not, this option is not
-available — the old releases were deleted on 2026-10-04 and GitHub no longer
-serves one.
+1. Publish WhiSPa first, and check both listings are visible.
+2. Then delete `com.thrilla_btc.thrilla`.
+3. Leave the signpost where people will actually meet it — the release notes
+   (`CHANGELOG.md` leads with "this is a new app on your phone, not an
+   update"), the website, and the old app's own update check.
 
-**Or delete it.** Zapstore honours NIP-09 deletion requests that reference an
-addressable coordinate, so a kind 5 event from the same pubkey with:
+That last one is worth knowing about. An old Thrilla install's update check
+still resolves: it has `ponthief/thrilla` compiled in and GitHub redirects a
+renamed repository indefinitely, so it reads WhiSPa's latest release. It will
+offer the download — and the install will FAIL, because Android will not put
+`com.whispawallet.app` over `com.thrilla_btc.thrilla`. There is no build of
+Thrilla that can be published to say so, since publishing one would mean
+reviving that applicationId.
+
+Nothing in this repository can fix that for someone already holding Thrilla.
+What reaches them is the release notes on the page the updater sends them to,
+which is why those notes open with the warning rather than the feature list.
+
+If a NIP-09 deletion is ever needed instead of the Zapstore UI, it is a kind 5
+from the publishing key referencing the addressable coordinate:
 
 ```
 ["a", "32267:<your-pubkey-hex>:com.thrilla_btc.thrilla"]
 ```
 
-asks the relay to drop the listing and every version of it. `zsp` has no delete
-command, so send it from a client that can publish a raw event — `nak`, or any
-signer that lets you craft one — using the same key that published the app.
-Relays honour deletion requests at their discretion, and anything that already
-mirrored the event may keep it.
-
-Whichever you pick, do it **after** WhiSPa is published and visible, so there
-is somewhere to point people at.
+`zsp` has no delete command, so send it with `nak` or any client that can
+publish a raw event.

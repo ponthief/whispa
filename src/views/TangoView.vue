@@ -716,7 +716,17 @@ function statusLabel(r) {
     case 'PROPOSED':  return `${actor(r, 'a')} sent the offer`
     case 'ACCEPTED':  return `${actor(r, 'b')} matched it`
     case 'A_SIGNED':  return `${actor(r, 'a')} approved it`
-    case 'BROADCAST': return 'Sent'
+    // BROADCAST means the transaction is on the network, not that it
+    // settled. `change_labelled` is the only settlement signal a round
+    // carries — there is no confirmation count on it — and it is set once a
+    // scan has found the round's outputs, which only happens after it is
+    // mined. So the two states are distinguishable and "Sent" was claiming
+    // the later one from the moment of the earlier.
+    //
+    // A round can therefore sit on "Broadcasted" while background scanning
+    // is off and nothing has looked for the coins. That is honest: nothing
+    // here has seen it settle.
+    case 'BROADCAST': return r.change_labelled ? 'Completed' : 'Broadcasted'
     // Who stopped it, or that nobody did: the sweeper closing a round nobody
     // finished is a different outcome from someone deciding to stop. The
     // stored reason keeps the SIDE, so this is where it becomes a name.
@@ -1216,17 +1226,13 @@ function expiresIn(r) {
                      class="text-xs text-dim" style="font-style:italic">
                   “{{ cancelNote(r.cancel_note) }}”
                 </div>
-                <div v-if="r.status === 'BROADCAST'" class="text-xs"
-                     :class="r.clean ? 'text-green' : 'text-amber'">
-                  {{ r.clean
-                      ? 'Clean — no change either side, so the shares are the only outputs.'
-                      : changeLine(myChangeOf(r), theirChangeOf(r), partnerOf(r)) }}
-                </div>
-                <!-- In history too: "where did my change go" is asked about a
-                     round that is over at least as often as one in progress. -->
-                <div v-if="myChangeDest(r)" class="text-xs text-dim">
-                  {{ myChangeDest(r) }}
-                </div>
+                <!-- The change explainer and the payout destination used to
+                     sit here. A finished round is a record, not a decision:
+                     the amount, who it was with and how it ended is what it
+                     is read for, and both of those lines belong to the live
+                     round, where they still are. The transaction detail
+                     carries the fee, the change and where it went for anybody
+                     who wants them afterwards. -->
               </div>
             </div>
           </div>

@@ -817,7 +817,17 @@ export default function TangoScreen() {
       case 'PROPOSED': return `${actor(r, 'a')} sent the offer`;
       case 'ACCEPTED': return `${actor(r, 'b')} matched it`;
       case 'A_SIGNED': return `${actor(r, 'a')} approved it`;
-      case 'BROADCAST': return 'Sent';
+      // BROADCAST means the transaction is on the network, not that it
+      // settled. `change_labelled` is the only settlement signal a round
+      // carries — there is no confirmation count on it — and it is set once a
+      // scan has found the round's outputs, which only happens after it is
+      // mined. So the two states are distinguishable and "Sent" was claiming
+      // the later one from the moment of the earlier.
+      //
+      // A round can therefore sit on "Broadcasted" while background scanning
+      // is off and nothing has looked for the coins. That is honest: nothing
+      // here has seen it settle.
+      case 'BROADCAST': return r.change_labelled ? 'Completed' : 'Broadcasted';
       // Who stopped it, or that nobody did: the sweeper closing a round nobody
       // finished is a different outcome from someone deciding to stop. The
       // stored reason keeps the SIDE, so this is where it becomes a name.
@@ -836,7 +846,11 @@ export default function TangoScreen() {
   const signLabel = (r: Row) =>
     r.status === 'A_SIGNED' ? 'Complete' : 'Approve';
 
-  const renderRound = (r: Row) => {
+  // `compact` is the Past tab: a finished round is a record, not a thing to
+  // act on, so it carries the amount, who it was with and how it ended. The
+  // fee, the change and which side had it are a live round's decision aids
+  // and are on the transaction detail for anybody who wants them afterwards.
+  const renderRound = (r: Row, compact = false) => {
     const side = r.role!;
     const mine = tango.isMyTurn(r.status, side);
     const other = side === 'a' ? r.b_username : r.a_username;
@@ -857,13 +871,13 @@ export default function TangoScreen() {
           </Text>
         ) : null}
         <Text style={styles.rowAmount}>{sats(r.denom_sats)} each</Text>
-        {tango.stepNumber(r.status) ? (
+        {!compact && tango.stepNumber(r.status) ? (
           <Text style={styles.rowMeta}>
             Step {tango.stepNumber(r.status)} of {tango.STEPS.length} ·{' '}
             {tango.turnLine(r.status, side, other)}
           </Text>
         ) : null}
-        {r.fee_sats != null ? (
+        {!compact && r.fee_sats != null ? (
           <Text style={styles.rowMeta}>
             your fee {sats(side === 'a' ? r.a_fee_sats : r.b_fee_sats)} · {r.vsize} vB
             {myChange ? ` · your change ${sats(myChange)}` : ''}
@@ -873,14 +887,15 @@ export default function TangoScreen() {
             the setting — the two disagree whenever somebody switched it on
             after joining, and until this line existed nothing said which had
             applied. See changeDestination. */}
-        {changeDestination(myChange, side === 'a' ? r.a_payout : r.b_payout) ? (
+        {!compact
+          && changeDestination(myChange, side === 'a' ? r.a_payout : r.b_payout) ? (
           <Text style={styles.rowMeta}>
             {changeDestination(myChange, side === 'a' ? r.a_payout : r.b_payout)}
           </Text>
         ) : null}
         {/* Which side, not "one or both": both amounts are recorded, and the
             hedge read as a claim about both on a round that had change on one. */}
-        {r.clean === false ? (
+        {compact ? null : r.clean === false ? (
           <Text style={styles.warn}>
             {tango.changeLine(
               side === 'a' ? r.a_change_sats : r.b_change_sats,
@@ -1362,7 +1377,7 @@ export default function TangoScreen() {
                   Nothing waiting on you. A round someone proposes shows up here.
                 </Text>
               ) : (
-                waiting.map(renderRound)
+                waiting.map((r) => renderRound(r))
               )}
             </Block>
           </Group>
@@ -1372,7 +1387,7 @@ export default function TangoScreen() {
               {theirs.length === 0 ? (
                 <Text style={styles.rowMeta}>Nothing waiting on the other side.</Text>
               ) : (
-                theirs.map(renderRound)
+                theirs.map((r) => renderRound(r))
               )}
             </Block>
           </Group>
@@ -1387,7 +1402,7 @@ export default function TangoScreen() {
             {past.length === 0 ? (
               <Text style={styles.rowMeta}>No finished rounds yet.</Text>
             ) : (
-              past.map(renderRound)
+              past.map((r) => renderRound(r, true))
             )}
           </Block>
         </Group>

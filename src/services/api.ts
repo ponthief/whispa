@@ -1413,6 +1413,16 @@ export interface TangoRoundRow {
   vsize?: number | null;
   /** True only when NEITHER side needed change. */
   clean?: boolean | null;
+  /**
+   * The round's coins have been found on chain and labelled, on both sides.
+   *
+   * The only settlement signal a round carries — there is no confirmation
+   * count on it. Set by run_tango_labelling once a SCAN has seen the outputs,
+   * which only happens after the transaction is mined, so it separates
+   * "broadcast" from "done". A clean round gets it too: the labeller always
+   * wants both sides' mix shares and adds the change only when there is any.
+   */
+  change_labelled?: boolean | null;
   a_inputs?: string | null;
   b_inputs?: string | null;
   /** JSON arrays of hex scripts, one per piece. */

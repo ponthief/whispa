@@ -32,6 +32,28 @@ export function sliderMax(maxSendable: number): number {
 }
 
 /**
+ * The top of the range, from the two totals the screen has.
+ *
+ * BEFORE ANY COINS ARE PICKED there is no selection and therefore no fee to
+ * subtract, so `maxSendable` is zero and a range of 0..0 disables the
+ * control. That is what shipped first, and it showed "0" and "—" to anybody
+ * who opened Send — a slider that is dead until you have already done
+ * something else, which reads as broken rather than as conditional.
+ *
+ * So with nothing selected the range is the wallet's spendable total: usable
+ * immediately, and an honest sense of scale. The moment coins are picked it
+ * tightens to what those coins can actually send, which is the only number
+ * that survives contact with the fee.
+ */
+export function sliderTop(
+  hasSelection: boolean,
+  maxSendable: number,
+  spendableTotal: number,
+): number {
+  return sliderMax(hasSelection ? maxSendable : spendableTotal);
+}
+
+/**
  * A 0..1 position to an amount in sats.
  *
  * Rounded, not truncated, so the right-hand end actually reaches the maximum

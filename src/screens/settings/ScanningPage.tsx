@@ -131,9 +131,7 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
       title="Scanning"
       subtitle="How your incoming payments get found."
       onBack={onBack}>
-      <Group
-        title="On the server"
-        footer="Turning this off does not stop the app scanning: opening your wallet still catches it up, using the key on this phone without sending it anywhere. What this controls is whether the server holds that key and scans on its own.">
+      <Group title="On the server">
         <SwitchRow
           first
           title="Background scanning"

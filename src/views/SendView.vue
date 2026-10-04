@@ -12,7 +12,9 @@ import {
 import { useAmount } from '@/composables/useAmount'
 import { saveTxRecipientLabel, saveSwapTxLabel } from '@/stores/txlabels'
 import { undoesARound } from '@/services/tango'
-import { sliderMax } from '@/services/sendAmount'
+// Aliased: `sliderTop` is the computed below, and importing the helper under
+// that name would shadow it.
+import { sliderTop as topOfRange } from '@/services/sendAmount'
 import { chainMismatch } from '@/services/chains'
 // Shared with the phone, so the two apps cannot say this differently.
 import {
@@ -190,9 +192,18 @@ const DUST_SATS = 546
 const maxSendable = computed(() =>
   selectedTotal.value > 0 ? selectedTotal.value - estimatedFee.value : 0,
 )
-// The slider's top. Never negative: a selection whose coins cannot cover
-// their own fee has a negative maxSendable, and 0..-200 is not a range.
-const sliderTop = computed(() => sliderMax(maxSendable.value))
+// Every spendable coin in the wallet, which is what the slider runs over
+// before any have been picked. `utxos` is already filtered to unspent,
+// unfrozen and not held by a live Tango.
+const spendableTotal = computed(() =>
+  utxos.value.reduce((s, u) => s + u.amount, 0),
+)
+// The slider's top. With nothing selected there is no fee to subtract and
+// maxSendable is zero, which disabled the control for anybody who had just
+// opened Send — see services/sendAmount.ts::sliderTop.
+const sliderTop = computed(() =>
+  topOfRange(selectedUtxos.value.length > 0, maxSendable.value, spendableTotal.value),
+)
 // Pinned to the end rather than running off it when a typed amount exceeds
 // what the selection can send: the field is the authority, the slider is a
 // second view of it. Computed rather than inline, because a Vue template has

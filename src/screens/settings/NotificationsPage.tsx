@@ -141,7 +141,7 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
         <SwitchRow
           first
           title="Alerts"
-          help="Be told when a payment arrives, when a send confirms, and when a Tango needs you. Payments while the app is closed need background scanning on."
+          help="Get Silent Payments and Tango activity alerts."
           value={alerts}
           onValueChange={onToggle}
           busy={busy}

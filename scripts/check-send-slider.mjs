@@ -24,7 +24,7 @@ function ok(name, cond, detail = '') {
   }
 }
 
-const { sliderMax, fromSlider, toSlider } =
+const { sliderMax, sliderTop, fromSlider, toSlider } =
   await import(new URL('../src/services/sendAmount.ts', import.meta.url).href);
 
 console.log('the range never runs past what can actually be sent');
@@ -36,6 +36,23 @@ console.log('the range never runs past what can actually be sent');
   ok('zero is zero', sliderMax(0) === 0);
   ok('nonsense is zero', sliderMax(undefined) === 0 && sliderMax(NaN) === 0);
   ok('it is a whole number of sats', sliderMax(999.9) === 999);
+}
+
+console.log('\nit has a range before any coins are picked');
+{
+  // WHAT SHIPPED FIRST AND WAS REPORTED AS BROKEN: with nothing selected
+  // there is no fee to subtract, maxSendable is 0, and the control showed
+  // "0" and "—" to anybody who had just opened Send. A slider that is dead
+  // until you have done something else reads as broken, not as conditional.
+  ok('an untouched screen can still drag', sliderTop(false, 0, 250000) === 250000);
+  ok('and says so rather than showing a dash', sliderTop(false, 0, 250000) > 0);
+  // Once coins are picked the fee is knowable, so the range tightens to what
+  // those coins can actually send.
+  ok('a selection tightens it to what is sendable',
+     sliderTop(true, 4800, 250000) === 4800);
+  ok('a selection that cannot cover its fee is empty',
+     sliderTop(true, -200, 250000) === 0);
+  ok('an empty wallet is empty', sliderTop(false, 0, 0) === 0);
 }
 
 console.log('\nthe ends are reachable');
@@ -98,8 +115,15 @@ console.log('\nit changes the amount and nothing else');
     !/selected|utxo/i.test(slider));
   // Its maximum has to be the one the screen already shows as "Max sendable",
   // or the control's own end lands in the insufficient-funds error.
-  ok('the browser runs to maxSendable', /sliderMax\(maxSendable\.value\)/.test(WEB));
-  ok('the phone runs to maxSendable', /max=\{maxSendable\}/.test(read('src/screens/SendScreen.tsx')));
+  const RNS = read('src/screens/SendScreen.tsx');
+  ok('the browser tops out through the shared rule',
+     /topOfRange\(selectedUtxos\.value\.length > 0, maxSendable\.value/.test(WEB));
+  ok('the phone tops out through the shared rule',
+     /sliderTop\(selectedUtxos\.length > 0, maxSendable/.test(RNS));
+  // Both have to feed it the SAME two totals, or one of them silently offers
+  // a range the other refuses.
+  ok('both pass the wallet total as the fallback',
+     /spendableTotal/.test(WEB) && /spendableTotal/.test(RNS));
 }
 
 console.log('\nno native dependency was added for it');

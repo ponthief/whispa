@@ -157,7 +157,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Flag coins at or below"
-          help={`Automatically label coins under this size as dust, so you can freeze them. Blank uses the server default${
+          help={`Coins under this size are frozen automatically. Blank uses the server default${
             prefs ? ` of ${prefs.admin_default_dust} sats` : ''
           }.`}>
           {loadingPrefs ? (

@@ -34,6 +34,7 @@ import { parseScannedAddress } from '@services/addressUri';
 import { colors } from '@/theme';
 import QRScanner from '../components/QRScanner';
 import AmountSlider from '../components/AmountSlider';
+import { sliderTop } from '@services/sendAmount';
 import ContactsModal from '../components/ContactsModal';
 import ConfirmLockModal from '../components/ConfirmLockModal';
 import {
@@ -408,6 +409,13 @@ export default function SendScreen() {
   const insufficient =
     amountSats > 0 && selectedTotal > 0 && amountSats + estFee > selectedTotal;
 
+  // Every spendable coin in the wallet, which is what the amount slider runs
+  // over before any have been picked. `utxos` is already filtered to unspent,
+  // unfrozen and not held by a live Tango.
+  const spendableTotal = useMemo(
+    () => utxos.reduce((s, u) => s + u.amount, 0),
+    [utxos],
+  );
   // The most the selection can pay once the fee is taken. Negative when the
   // coins cannot even cover the fee.
   const maxSendable = selectedTotal > 0 ? selectedTotal - estFee : 0;
@@ -1122,7 +1130,7 @@ export default function SendScreen() {
               would undo the coin control this screen is built around. */}
           <AmountSlider
             value={amountSats}
-            max={maxSendable}
+            max={sliderTop(selectedUtxos.length > 0, maxSendable, spendableTotal)}
             onChange={(sats) => setAmount(sats ? String(sats) : '')}
             format={(sats) => `${groupThousands(sats)} sats`}
           />
@@ -1431,11 +1439,20 @@ const styles = StyleSheet.create({
   // FILLED AND RAISED, not outlined. As a hairline outline on the page
   // background these read as decoration rather than as the three things that
   // actually fill the address in — which is most of what anyone does on this
-  // screen. A surface fill lifts them off the background and the shadow says
-  // they are pressable; the primary border and text stay, so they still read
-  // as the accent action rather than becoming three orange slabs in a row.
+  // screen.
+  //
+  // THE FILL HAS TO BE A COLOUR, not a darker grey. The first attempt used
+  // surfaceAlt (#131a22) over bg (#080b0f) with a black shadow: a four-value
+  // difference on a near-black theme, and a black shadow on near-black is
+  // nothing at all. It was reported as unchanged, correctly — the change was
+  // real and invisible, which is the same thing on a phone in daylight.
+  //
+  // primaryDim rather than PRIMARY: the Review button below is solid PRIMARY
+  // with black text, and three more of those would compete with the one
+  // action that sends the money. Dim orange reads as filled, reads as
+  // pressable, and stays subordinate.
   actionBtn: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primaryDim,
     borderWidth: 1,
     borderColor: PRIMARY,
     borderRadius: 8,
@@ -1443,13 +1460,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     // Android takes elevation, iOS takes the shadow* family; both are set so
     // the lift is not a platform coin-flip.
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
-  actionBtnText: { color: PRIMARY, fontSize: 13, fontWeight: '700' },
+  actionBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
   unverifiedNote: {
     color: colors.warn,
     fontSize: 12,

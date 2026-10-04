@@ -1374,25 +1374,19 @@ export default function TangoScreen() {
 
       {tab === 'rounds' ? (
         <>
+          {/* EMPTY MEANS EMPTY. Both sections said so in a sentence — "Nothing
+              waiting on you", "Nothing waiting on the other side" — under a
+              heading that already says which side it is about. The heading
+              with nothing under it carries it. */}
           <Group title="Your Tango move">
             <Block>
-              {waiting.length === 0 ? (
-                <Text style={styles.rowMeta}>
-                  Nothing waiting on you. A round someone proposes shows up here.
-                </Text>
-              ) : (
-                waiting.map((r) => renderRound(r))
-              )}
+              {waiting.map((r) => renderRound(r))}
             </Block>
           </Group>
 
           <Group title="Their Tango move">
             <Block>
-              {theirs.length === 0 ? (
-                <Text style={styles.rowMeta}>Nothing waiting on the other side.</Text>
-              ) : (
-                theirs.map((r) => renderRound(r))
-              )}
+              {theirs.map((r) => renderRound(r))}
             </Block>
           </Group>
         </>

@@ -239,12 +239,13 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
         </Group>
       ) : null}
 
+      {/* The footer here said it asks for your PIN first and that a passphrase
+          is not included. The first half the reveal demonstrates by doing it;
+          the second half belongs ON the reveal, where somebody is looking at
+          twelve words deciding whether that is their whole backup —
+          SeedRevealModal says it there, beside the words. */}
       {seedStored && wallet ? (
-        <Group
-          title="Recovery phrase"
-          footer={`Asks for your ${
-            pinSet ? 'PIN' : 'fingerprint or phone PIN'
-          } first. Your passphrase, if you set one, is not stored on this phone and is not shown.`}>
+        <Group title="Recovery phrase">
           <NavRow
             first
             title="Show recovery phrase"

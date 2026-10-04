@@ -1042,9 +1042,6 @@ function expiresIn(r) {
         <div class="card-header">Your Tango move</div>
         <div class="card-body">
           <div v-if="loading" class="text-dim text-sm">Loading…</div>
-          <div v-else-if="!waitingOnMe.length" class="text-dim text-sm">
-            Nothing to do. A round someone proposes appears here.
-          </div>
           <div v-for="r in waitingOnMe" :key="r.id" class="tg-req">
             <div class="tg-req-row">
               <div>
@@ -1148,9 +1145,6 @@ function expiresIn(r) {
       <div class="card">
         <div class="card-header">Their Tango move</div>
         <div class="card-body">
-          <div v-if="!waitingOnThem.length" class="text-dim text-sm">
-            Nothing with the other side right now.
-          </div>
           <div v-for="r in waitingOnThem" :key="r.id" class="tg-req">
             <div class="tg-req-row">
               <div>

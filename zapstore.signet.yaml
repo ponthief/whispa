@@ -5,8 +5,10 @@
 #   zsp publish --check zapstore.signet.yaml     # validate first
 #   SIGN_WITH=nsec1... zsp publish zapstore.signet.yaml
 #
-# Signet is a separate package (com.thrilla_btc.thrilla.signet), so it lists as
-# its own app alongside the mainnet build. The first publish links the release
+# Signet is a separate package (com.whispawallet.app.signet — the mainnet
+# applicationId plus the flavor's applicationIdSuffix), so it lists as its own
+# app alongside the mainnet build. zsp takes the kind 32267 `d` tag from the
+# APK's package identifier, so that suffix is what keeps the two apart. The first publish links the release
 # signing certificate to your pubkey via your .jks.
 repository: https://github.com/ponthief/whispa
 name: WhiSPa (Signet)
@@ -37,6 +39,10 @@ images:
 # Naming the asset matters: every release carries both APKs, and picking up
 # whispa-mainnet.apk here would list the mainnet build under the Signet package.
 release_source: https://github.com/ponthief/whispa/releases/latest/download/whispa-signet.apk
+# zsp pulls the section whose version matches the APK — which reports the
+# BUILD number (0.4.0), not the release name (0.1.0-beta). CHANGELOG.md says
+# why its headings are numbered that way.
+release_notes: CHANGELOG.md
 metadata_sources:
     - github
 pubkey: npub1cfm900wdm4p0sky6tz3uhjdcdxsca3l94q5rclzxtxqke7gzenssthhk2w

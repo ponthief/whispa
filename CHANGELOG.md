@@ -1,96 +1,68 @@
 # Changelog
 
-What changed, per released version. `scripts/cut-release.sh` reads the section
-matching the tag it is publishing and puts it at the top of the GitHub release
-notes, so this file is the release notes — there is nowhere else to write them
-and nothing to paste into the web UI.
+Keep a Changelog format, because `zsp` reads it: `release_notes: CHANGELOG.md`
+in both zapstore manifests pulls the section whose version matches the APK.
 
-The heading has to be `## vX.Y.Z` for the script to find it.
+**The heading version is the BUILD number, not the release name.** The public
+release stream restarted at 0.1.0-beta on 2026-10-04 while `APP_VERSION` kept
+climbing — Android refuses an APK whose versionCode went backwards, so the
+number could not follow the name down (see `src/version.ts`). zsp takes the
+version from the APK, which reports `0.4.0`, so that is what the heading has to
+say or the section will not be found. The name it is released under goes in the
+first line of the body, where a reader looks anyway.
 
-## v0.3.0
+## [0.4.0] - 2026-10-04
 
-### Tango — a two-party mix
+Released as **WhiSPa 0.1.0-beta**.
 
-The headline. You and one connected person each put in the same amount and each
-take the same amount back, in one transaction, with both sides' outputs the
-same size. Nothing on chain says which output is whose.
+### Changed
 
-- **Partners.** Connect by WhiSPa username; they approve, then either of you
-  can send a Tango offer. Connections are per network.
-- **Choose your own coins.** Which coins go in is the decision a mix is made
-  of, so nothing picks them for you. The form prices your selection as you
-  choose: your fee share, your change, and whether the round comes out clean.
-- **Take it back as 1, 2 or 3 coins.** More coins means more ways to read the
-  round — 2, 6 or 20 — for a little more in miner fees.
-- **Both sides sign on their own device.** Every output is derived from the
-  whole input set and each signature covers every output, so a round is four
-  turns and cannot be fewer. Your device recomputes the entire transaction and
-  refuses to sign anything that does not match.
-- **Notifications** for every step, on the phone as well as in the browser: an
-  offer arriving, an offer matched, your turn to approve, and the round
-  completing.
-- **A send that would undo a round is refused.** Two shares from one round, or
-  a share with its own change, add up to what you put in — the wallet will not
-  spend them together.
+- **Thrilla is now WhiSPa.** New name, new home at whispawallet.com, same
+  wallet and the same people. The release numbering restarts at 0.1.0-beta to
+  match: this is a beta and the version should say so rather than implying a
+  history it does not have.
+- **This is a new app on your phone, not an update.** The Android package
+  identifier changed with the name, so WhiSPa installs alongside Thrilla
+  instead of over it. Move your funds across before removing the old one, and
+  keep your recovery phrase until you have confirmed the balance arrived.
+  Nothing migrates by itself.
 
-### Saved contacts
+### Added
 
-- **A saved Silent Payments address is now checked** against the wallets that
-  exist. A contact marked "cannot be verified" is either someone who does not
-  use WhiSPa — normal — or someone who has remade their wallet, in which case
-  coins sent to the old address cannot be recovered. The wallet cannot tell
-  those two apart and says so rather than guessing.
-- **Change address.** A contact can be repointed at a new recipient without
-  losing its name. Previously the only route was deleting and re-adding it.
-- The warning is repeated on the Send screen, which is the last thing you see
-  before coins leave.
+- **Tango — a two-party mini coinjoin.** Two people put coins in and each takes
+  out shares worth exactly the same amount, so nothing in the transaction says
+  which output is whose. Optionally split into several equal pieces. A round
+  needs both sides to agree and both to sign; either can walk away, with a short
+  note saying why, and the coins come straight back.
+- Change from a round can be sent to a **Lightning address you control**
+  instead of staying on chain, because a change output's value is fixed by the
+  round's arithmetic and spending it later is what links the shares back to
+  you. Off by default, per side: if you do not set one, your change simply
+  stays in your wallet.
+- A **lookback rescan** on the scan screen — 10, 144, 1,008 or 4,320 blocks
+  back from the tip — available even when the wallet reports itself up to date,
+  which is exactly when it is needed: a payment that never appeared is in a
+  block the wallet believes it has already read.
+- An **app lock**, backed by the device's own keystore and biometrics, with a
+  separate in-app PIN.
 
-### Notifications
+### Fixed
 
-- Tango notifications reach the phone. They were being sent all along and
-  silently dropped by the app.
-- Payments and Tango sit on separate Android notification channels, so
-  silencing one leaves the other alone.
-- The notification carries the WhiSPa mark rather than a featureless blob.
-- Settings → Notifications can send a test and reports exactly which link of
-  the chain is broken when nothing arrives.
+- A wallet no longer claims to be fully scanned when a block in its range could
+  not be read. The block is named, the resume point is held below it, and the
+  next scan starts there.
+- The resume point only ever moves forward, so a deliberate rescan of older
+  blocks no longer throws away the scanning above it.
 
-### Fixes
+## What WhiSPa is
 
-- **App lock:** unlocking restarts the idle clock, so it no longer re-locks
-  seconds later. A keychain read that asked nobody anything is no longer
-  treated as proof you authenticated. And a prompt that never appears can no
-  longer leave the Unlock button dead — tapping a notification used to do
-  exactly that.
-- **Hide balances** now covers the in-app banners too, and the wallet screen
-  shows that the balance can be hidden instead of leaving it to be discovered.
-- **Coins:** a frozen coin looks frozen and has its own filter. A coin a live
-  Tango is holding is shown as held rather than offered and then refused.
-- **Sends:** a self-send is caught for a BitMail name, not only for your own
-  `sp1…`, and on the web as well as the phone.
-- **An address from the wrong chain is refused**, rather than being paid. A
-  mainnet `sp1…` on a Signet wallet used to reach the broadcast confirmation
-  and could be saved as a contact: the two addresses differ only in their
-  prefix, so the transaction built, signed and confirmed while the recipient —
-  watching the other chain — never saw it. Nothing bounced. This is now
-  refused on both apps as the address is typed, and by the server whatever the
-  app allows, for Silent Payments and on-chain addresses alike.
-- **Transaction list:** a Tango reads as a Tango rather than as a tiny payment
-  to nobody, and shows what it mixed instead of what it cost.
-- **Updates:** the app reports its real version and can check for, download and
-  install a newer one.
-
-### Before you install
-
-**This will not update an existing WhiSPa.** The Android applicationId changed
-from `com.thrilla_btc.thrilla` to `com.whispawallet.app` after v0.1.4, so
-Android treats this as a different app and installs it alongside the old one.
-Move your funds or restore from your recovery phrase, then remove the old
-install.
-
-The Signet build installs alongside the mainnet one, as before.
-
-## v0.1.4
-
-The first published release. No changelog was kept for it or for the versions
-before it; `git log` is the record.
+- **Silent Payments (BIP-352).** One reusable address you can publish. Every
+  payment to it lands on a fresh on-chain output that only you can find, so
+  reusing the address does not reuse anything on chain.
+- **PayJoin**, so a payment does not have to look like one.
+- **BitMail** — a human-readable name (BIP-353) instead of an address.
+- **Keys are derived on the device and stay there.** Transactions are built and
+  signed on the phone; no private key and no passphrase is ever sent to a
+  server, including ours.
+- **Coin control**, so you choose which coins go into a payment.
+- Swaps to and from Lightning, through Boltz.

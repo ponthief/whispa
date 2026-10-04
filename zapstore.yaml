@@ -5,10 +5,20 @@
 #
 # The Signet build has its own config — see ./zapstore.signet.yaml.
 #
-# `repository` keeps the name "thrilla": that is the git repository's own URL
-# and the app's applicationId is still com.thrilla_btc.thrilla, because changing
-# it would ship a second app that cannot update over the first. Only what the
-# user sees is WhiSPa.
+# THE APPLICATION ID CHANGED, and on Zapstore that is the whole story. zsp
+# takes the `d` tag of the kind 32267 event straight from the APK's package
+# identifier, so an app's identity on the relay is its applicationId and
+# nothing else. android/app/build.gradle now sets com.whispawallet.app (the
+# NAMESPACE deliberately stayed com.thrilla_btc.thrilla — that is where
+# BuildConfig and R are generated and nothing outside the build sees it).
+#
+# So publishing this does not rename the old listing, it creates a second one,
+# exactly as it installs as a second app on a phone. The com.thrilla_btc.thrilla
+# entry has to be dealt with separately — see RELEASING.md.
+#
+# This comment used to claim the applicationId was still com.thrilla_btc.thrilla.
+# It was out of date by the time anybody read it, which is the one thing that
+# would send you looking for an update path that does not exist.
 repository: https://github.com/ponthief/whispa
 name: WhiSPa
 summary: Bitcoin Silent Payments wallet
@@ -34,6 +44,10 @@ images:
 # every release carries the mainnet and Signet APKs side by side, so without it
 # there is nothing to say which one this is.
 release_source: https://github.com/ponthief/whispa/releases/latest/download/whispa-mainnet.apk
+# zsp pulls the section whose version matches the APK — which reports the
+# BUILD number (0.4.0), not the release name (0.1.0-beta). CHANGELOG.md says
+# why its headings are numbered that way.
+release_notes: CHANGELOG.md
 metadata_sources:
     - github
 pubkey: npub1cfm900wdm4p0sky6tz3uhjdcdxsca3l94q5rclzxtxqke7gzenssthhk2w

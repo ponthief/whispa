@@ -558,6 +558,23 @@ jobs:
                 || echo "::warning::could not delete $LEGACY — it will keep serving a stale build."
             fi
           else
+            # THE TAG OUTLIVES THE RELEASE. Deleting a release on GitHub
+            # leaves its tag behind, and `gh release create` against a tag
+            # that already exists IGNORES --target and attaches the release to
+            # whatever commit the old tag points at. The APK would be the one
+            # just built and the release would claim a commit from weeks ago,
+            # with nothing on the page admitting the difference.
+            #
+            # These tags are rolling by design — the --target below is already
+            # trying to make them follow the build, and only works when the
+            # tag is new — so move it first. This is a CI pointer, not
+            # published history.
+            if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+              echo "$TAG exists without a release; moving it to $GITHUB_SHA."
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+                -f sha="$GITHUB_SHA" -F force=true >/dev/null \
+                || echo "::warning::could not move $TAG — the release will be created against the commit it already points at. The APK is still the one built here; only the commit shown on the release page is wrong."
+            fi
             echo "Creating the $TAG release."
             gh release create "$TAG" "$NAME" \
               --prerelease \

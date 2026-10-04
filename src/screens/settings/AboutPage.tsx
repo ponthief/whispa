@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, StyleSheet, View } from 'react-native';
 import { Button, Group, Help, InfoRow, NavRow, Note, Page } from './ui';
 import { colors } from '@/theme';
-import { APP_VERSION } from '@/version';
+import { displayVersion } from '@/version';
 import {
   checkForUpdate,
   fetchExpectedSha256,
@@ -227,7 +227,7 @@ export default function AboutPage({ onBack }: { onBack: () => void }) {
   return (
     <Page title="About" onBack={onBack}>
       <Group title="Version">
-        <InfoRow first title="WhiSPa" value={APP_VERSION} />
+        <InfoRow first title="WhiSPa" value={displayVersion()} />
       </Group>
 
       <Group title="Update">

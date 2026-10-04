@@ -230,6 +230,63 @@ console.log('\nrefusals from a malformed answer');
   ok('no digest reads as none', s.latest.apiSha256 === null);
 }
 
+// ── The number the app is built with, and the name it is released under ──
+//
+// These parted company on 2026-10-04: the public release stream restarted at
+// 0.1.0-beta while APP_VERSION kept climbing, because versionCode cannot go
+// backwards without forcing every install to be uninstalled first. Both halves
+// of that arrangement are load-bearing and neither is checked by anything else
+// on a non-Android build.
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = new URL('..', import.meta.url).pathname;
+  const V = await import(new URL('../src/version.ts', import.meta.url).href);
+  const pkg = JSON.parse(
+    fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
+  );
+
+  // android/app/build.gradle asserts this too, but only when somebody runs a
+  // real Gradle build — which is not what a contributor does before pushing.
+  ok('package.json and version.ts agree', pkg.version === V.APP_VERSION,
+     `package.json ${pkg.version}, version.ts ${V.APP_VERSION}`);
+
+  // The gradle guard refuses anything else, so catching it here saves finding
+  // out from a failed Android build.
+  ok('the built version is a bare x.y.z', /^\d+\.\d+\.\d+$/.test(V.APP_VERSION),
+     V.APP_VERSION);
+  const [, minor, patch] = V.APP_VERSION.split('.').map(Number);
+  ok('and it fits the versionCode scheme', minor < 100 && patch < 100,
+     'minor and patch must stay under 100 or versionCode stops increasing');
+
+  // The display string has to carry the NUMBER as well as the name. A bug
+  // report that says only "0.1.0-beta" cannot be matched to a build, and
+  // 0.1.0-beta is exactly the string that will be reused across several.
+  ok('the displayed version carries the build number',
+     V.displayVersion().includes(V.APP_VERSION),
+     V.displayVersion());
+  if (V.PRERELEASE_LABEL) {
+    ok('and the label it is released under', V.displayVersion().includes(V.PRERELEASE_LABEL),
+       V.displayVersion());
+    ok('the release tag matches the label',
+       V.RELEASE_TAG === 'v' + V.PRERELEASE_LABEL,
+       `tag ${V.RELEASE_TAG}, label ${V.PRERELEASE_LABEL}`);
+  }
+
+  // THE COMPARISON IS AGAINST APP_VERSION, NOT THE LABEL, and that is the
+  // whole reason the number was allowed to keep climbing. If the label ever
+  // reached compareVersions the update check would read 0.1.0-beta as older
+  // than every installed build and go silent.
+  const bumped = parseRelease(
+    { tag_name: 'v9.9.9' }, 'whispa-mainnet.apk', V.APP_VERSION,
+  );
+  ok('a newer release is still offered', bumped.updateAvailable === true);
+  const same = parseRelease(
+    { tag_name: 'v' + V.APP_VERSION }, 'whispa-mainnet.apk', V.APP_VERSION,
+  );
+  ok('and the running one is not', same.updateAvailable === false);
+}
+
 console.log();
 if (failed) {
   console.log(`${failed} FAILED`);

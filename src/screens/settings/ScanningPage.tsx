@@ -137,7 +137,7 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
         <SwitchRow
           first
           title="Background scanning"
-          help="Keep this wallet caught up while you are away, so you do not face a long scan when you come back. Uploads your scan key — detection only, it can never spend your funds."
+          help="Keep this wallet caught up while you are away. Uploads your scan key — detection only, it can never spend your funds."
           value={bgEnabled}
           onValueChange={onToggleBackgroundScan}
           busy={bgBusy}

@@ -157,7 +157,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Flag coins at or below"
-          help={`Coins this small from other people are flagged as dust so you can freeze them, because spending one can link the rest of your wallet to it. Your own change is never flagged. Leave it blank to use the server default${
+          help={`Automatically label coins under this size as dust, so you can freeze them. Blank uses the server default${
             prefs ? ` of ${prefs.admin_default_dust} sats` : ''
           }.`}>
           {loadingPrefs ? (

@@ -141,7 +141,7 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
         <SwitchRow
           first
           title="Alerts"
-          help="Be told when a payment arrives, when a send confirms, and when a Tango needs you — someone asking to connect, or a mix waiting for your turn. A notification while the app is closed (payments need background scanning on), a banner while it is open."
+          help="Be told when a payment arrives, when a send confirms, and when a Tango needs you. Payments while the app is closed need background scanning on."
           value={alerts}
           onValueChange={onToggle}
           busy={busy}
@@ -152,7 +152,7 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
           belongs below the switch rather than inside it. Rendered only when it
           has something in it: Group always draws its card, and an empty
           bordered box under the switch reads as a bug. */}
-      {notice || alerts || test ? (
+      {notice || test ? (
         <Group title="This phone">
           {notice}
           {permBlocked ? (
@@ -162,16 +162,13 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
               onPress={() => Linking.openSettings().catch(() => {})}
             />
           ) : null}
-          {alerts ? (
-            <NavRow
-              first={!notice}
-              title="Send a test notification"
-              value={testing ? 'Sending…' : 'Send'}
-              onPress={onTest}
-            />
-          ) : null}
+          {/* The "Send a test notification" row was removed on 2026-10-04:
+              a diagnostic in front of everyone, for a thing that announces
+              itself the moment it works. onTest and its state are kept — the
+              server endpoint is still there and this is one <NavRow> away if
+              it is ever wanted back. */}
           {test ? (
-            <Block first={!notice && !alerts}>
+            <Block first={!notice}>
               <Note kind={test.ok ? 'ok' : 'error'}>{test.text}</Note>
             </Block>
           ) : null}

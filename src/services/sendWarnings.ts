@@ -48,8 +48,7 @@ export function tangoUndoTitle(partner: string): string {
 }
 
 export const TANGO_UNDO_NOTE =
-  'A Tango share and Tango change add back up to what you put in, so spending '
-  + 'them together publishes which outputs were yours — permanently. Send them '
-  + 'in separate transactions, or drop one from the selection.';
+  'Spending these together publishes which outputs were yours, permanently. '
+  + 'Send them in separate transactions, or drop one.';
 
 export const TANGO_UNDO_ACK = 'I understand, spend them together anyway';

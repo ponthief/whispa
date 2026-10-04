@@ -1415,14 +1415,28 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
   },
+  // FILLED AND RAISED, not outlined. As a hairline outline on the page
+  // background these read as decoration rather than as the three things that
+  // actually fill the address in — which is most of what anyone does on this
+  // screen. A surface fill lifts them off the background and the shadow says
+  // they are pressable; the primary border and text stay, so they still read
+  // as the accent action rather than becoming three orange slabs in a row.
   actionBtn: {
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: PRIMARY,
     borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    // Android takes elevation, iOS takes the shadow* family; both are set so
+    // the lift is not a platform coin-flip.
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
   },
-  actionBtnText: { color: PRIMARY, fontSize: 13, fontWeight: '600' },
+  actionBtnText: { color: PRIMARY, fontSize: 13, fontWeight: '700' },
   unverifiedNote: {
     color: colors.warn,
     fontSize: 12,

@@ -135,13 +135,11 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
       title="Notifications"
       subtitle="This phone only — your other devices keep their own setting."
       onBack={onBack}>
-      <Group
-        title="Payments and Tango"
-        footer="Turn this off to use WhiSPa silently. Coins still arrive, Tango requests and rounds still appear under Tango, and everything still shows in your balance and history — nothing announces itself.">
+      <Group title="Payments and Tango">
         <SwitchRow
           first
           title="Alerts"
-          help="Get Silent Payments and Tango activity alerts."
+          help="Receive Silent Payments and Tango activity alerts."
           value={alerts}
           onValueChange={onToggle}
           busy={busy}

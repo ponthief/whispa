@@ -22,7 +22,7 @@ import {
   CONTACT_VERIFIED,
   TANGO_UNDO_ACK,
   TANGO_UNDO_NOTE,
-  tangoUndoTitle,
+  TANGO_UNDO_TITLE,
 } from '@/services/sendWarnings'
 import { pushToast } from '@/stores/toasts'
 import { addPendingSend } from '@/stores/pendingsends'
@@ -198,12 +198,10 @@ const maxSendable = computed(() =>
 const spendableTotal = computed(() =>
   utxos.value.reduce((s, u) => s + u.amount, 0),
 )
-// The slider's top. With nothing selected there is no fee to subtract and
-// maxSendable is zero, which disabled the control for anybody who had just
-// opened Send — see services/sendAmount.ts::sliderTop.
-const sliderTop = computed(() =>
-  topOfRange(selectedUtxos.value.length > 0, maxSendable.value, spendableTotal.value),
-)
+// The slider's top. The wallet's spendable total, and it does NOT tighten as
+// coins are picked — see services/sendAmount.ts::sliderTop for why a range
+// that moves while you are using it is the worse of the two wrongs.
+const sliderTop = computed(() => topOfRange(spendableTotal.value))
 // Pinned to the end rather than running off it when a typed amount exceeds
 // what the selection can send: the field is the authority, the slider is a
 // second view of it. Computed rather than inline, because a Vue template has
@@ -647,7 +645,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
       <div style="display:flex;align-items:flex-start;gap:10px">
         <span style="font-size:18px;line-height:1">⛔</span>
         <div style="flex:1;min-width:0">
-          <strong style="color:var(--red,#ff5f56)">{{ tangoUndoTitle(tangoPairing) }}</strong>
+          <strong style="color:var(--red,#ff5f56)">{{ TANGO_UNDO_TITLE }}</strong>
           <div class="text-sm" style="margin-top:4px">{{ TANGO_UNDO_NOTE }}</div>
           <label class="text-sm" style="margin-top:8px;display:flex;align-items:center;gap:8px">
             <input type="checkbox" v-model="tangoAck" />
@@ -833,7 +831,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
                     class="btn btn-ghost btn-sm"
                     :disabled="sliderTop <= 0"
                     @click="amount = sliderTop">
-                    {{ sliderTop > 0 ? 'Max ' + fmt(sliderTop) : '—' }}
+                    {{ sliderTop > 0 ? 'All ' + fmt(sliderTop) : '—' }}
                   </button>
                 </div>
               </div>

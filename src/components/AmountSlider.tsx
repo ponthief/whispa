@@ -93,14 +93,16 @@ export default function AmountSlider({
       </View>
       <View style={styles.row}>
         <Text style={styles.end}>0</Text>
-        {/* "All of it" is the one position worth a tap rather than a drag, and
-            it is the one people reach for. */}
+        {/* The end of the range, worth a tap rather than a drag. "All", not
+            "Max": the summary below carries "Max sendable", which is this
+            minus the selection's fee and therefore a different number. Two
+            things both called Max would read as a contradiction. */}
         <TouchableOpacity
           disabled={disabled}
           onPress={() => onChange(top)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={[styles.max, disabled && styles.end]}>
-            {disabled ? '—' : `Max ${format(top)}`}
+            {disabled ? '—' : `All ${format(top)}`}
           </Text>
         </TouchableOpacity>
       </View>

@@ -19,38 +19,36 @@
 // bundles.
 
 /**
- * The top of the slider's range.
+ * Clamp a total to a usable range top.
  *
- * Never negative: a selection whose coins cannot cover their own fee has a
- * negative `maxSendable`, and a range of 0..-200 is not a range. Zero
- * disables the control, which is the right answer for "there is nothing to
- * send".
+ * Never negative, and whole sats: a figure that arrives negative — which
+ * `maxSendable` does when a selection cannot cover its own fee — becomes an
+ * empty range rather than 0..-200, and an empty range disables the control,
+ * which is the right answer for "there is nothing to send".
  */
-export function sliderMax(maxSendable: number): number {
-  const n = Math.floor(Number(maxSendable) || 0);
+export function sliderMax(total: number): number {
+  const n = Math.floor(Number(total) || 0);
   return n > 0 ? n : 0;
 }
 
 /**
- * The top of the range, from the two totals the screen has.
+ * The top of the range: THE WALLET'S SPENDABLE TOTAL, always.
  *
- * BEFORE ANY COINS ARE PICKED there is no selection and therefore no fee to
- * subtract, so `maxSendable` is zero and a range of 0..0 disables the
- * control. That is what shipped first, and it showed "0" and "—" to anybody
- * who opened Send — a slider that is dead until you have already done
- * something else, which reads as broken rather than as conditional.
+ * It was briefly the selection's `maxSendable`, tightening as coins were
+ * picked. That is more honest about what can be sent and it is the wrong
+ * control: somebody sets an amount with the slider, then starts choosing
+ * coins, and the range collapses under them — the thumb they just placed
+ * jumps to the far right because the first coin they tapped is now the whole
+ * scale. A range that moves while you are using it is worse than a range that
+ * promises slightly more than the current selection can pay.
  *
- * So with nothing selected the range is the wallet's spendable total: usable
- * immediately, and an honest sense of scale. The moment coins are picked it
- * tightens to what those coins can actually send, which is the only number
- * that survives contact with the fee.
+ * So the slider answers "how much", over everything the wallet holds, and the
+ * selection answers "out of which coins". When the two disagree the screen
+ * already says so twice — the "Max sendable" row, and the amount-plus-fee
+ * error — neither of which needs the slider to move to make its point.
  */
-export function sliderTop(
-  hasSelection: boolean,
-  maxSendable: number,
-  spendableTotal: number,
-): number {
-  return sliderMax(hasSelection ? maxSendable : spendableTotal);
+export function sliderTop(spendableTotal: number): number {
+  return sliderMax(spendableTotal);
 }
 
 /**

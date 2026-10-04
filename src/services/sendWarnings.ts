@@ -42,10 +42,14 @@ export const CONTACT_VERIFIED = '✓ A WhiSPa wallet holds this address.';
  * the round's identical outputs were this side's — published, permanently, by
  * a transaction made at any time later. `services/tango.ts::undoesARound` is
  * the rule; this is what it says out loud.
+ *
+ * NO PARTNER NAMED. It used to read "This undoes your Tango with <name>",
+ * which put the other party's username on a screen that is open while
+ * somebody is spending — shoulder-surfable, screenshot-able, and not needed:
+ * the warning is about what this transaction publishes, and who the round was
+ * with changes nothing about that.
  */
-export function tangoUndoTitle(partner: string): string {
-  return `This undoes your Tango with ${partner}`;
-}
+export const TANGO_UNDO_TITLE = 'This undoes your Tango mini coinjoin';
 
 export const TANGO_UNDO_NOTE =
   'Spending these together publishes which outputs were yours, permanently. '

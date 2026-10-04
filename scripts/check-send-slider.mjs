@@ -38,21 +38,23 @@ console.log('the range never runs past what can actually be sent');
   ok('it is a whole number of sats', sliderMax(999.9) === 999);
 }
 
-console.log('\nit has a range before any coins are picked');
+console.log('\nthe range does not move while it is being used');
 {
-  // WHAT SHIPPED FIRST AND WAS REPORTED AS BROKEN: with nothing selected
-  // there is no fee to subtract, maxSendable is 0, and the control showed
-  // "0" and "—" to anybody who had just opened Send. A slider that is dead
-  // until you have done something else reads as broken, not as conditional.
-  ok('an untouched screen can still drag', sliderTop(false, 0, 250000) === 250000);
-  ok('and says so rather than showing a dash', sliderTop(false, 0, 250000) > 0);
-  // Once coins are picked the fee is knowable, so the range tightens to what
-  // those coins can actually send.
-  ok('a selection tightens it to what is sendable',
-     sliderTop(true, 4800, 250000) === 4800);
-  ok('a selection that cannot cover its fee is empty',
-     sliderTop(true, -200, 250000) === 0);
-  ok('an empty wallet is empty', sliderTop(false, 0, 0) === 0);
+  // THE BUG THIS REPLACED. The range was the selection's maxSendable, so it
+  // collapsed as coins were picked: set an amount with the slider, tap the
+  // first coin, and the thumb jumps to the far right because that one coin is
+  // now the whole scale. Reported 2026-10-05.
+  ok('an untouched screen can still drag', sliderTop(250000) === 250000);
+  // Picking coins changes what is SENDABLE, which the summary row says. It
+  // must not change the slider's scale.
+  const before = sliderTop(250000);
+  const afterPickingOneSmallCoin = sliderTop(250000);
+  ok('picking a coin does not shrink it', before === afterPickingOneSmallCoin);
+  ok('an empty wallet is an empty range', sliderTop(0) === 0);
+  ok('and a nonsense total is too', sliderTop(undefined) === 0);
+  // One argument on purpose: a selection-aware top is what moved the scale.
+  ok('it takes the wallet total and nothing else',
+     sliderTop.length === 1, `arity ${sliderTop.length}`);
 }
 
 console.log('\nthe ends are reachable');
@@ -117,13 +119,18 @@ console.log('\nit changes the amount and nothing else');
   // or the control's own end lands in the insufficient-funds error.
   const RNS = read('src/screens/SendScreen.tsx');
   ok('the browser tops out through the shared rule',
-     /topOfRange\(selectedUtxos\.value\.length > 0, maxSendable\.value/.test(WEB));
+     /topOfRange\(spendableTotal\.value\)/.test(WEB));
   ok('the phone tops out through the shared rule',
-     /sliderTop\(selectedUtxos\.length > 0, maxSendable/.test(RNS));
-  // Both have to feed it the SAME two totals, or one of them silently offers
-  // a range the other refuses.
-  ok('both pass the wallet total as the fallback',
-     /spendableTotal/.test(WEB) && /spendableTotal/.test(RNS));
+     /sliderTop\(spendableTotal\)/.test(RNS));
+  // Neither may reach for maxSendable here: that is the number that moves as
+  // coins are picked, and the scale moving under a thumb is the bug.
+  ok('neither scales the slider by the selection',
+     !/topOfRange\([^)]*maxSendable/.test(WEB)
+     && !/sliderTop\([^)]*maxSendable/.test(RNS));
+  // The end of the range is labelled "All", not "Max": the summary row
+  // already carries "Max sendable", which is a different number.
+  ok('the range end is not called Max',
+     /'All '/.test(WEB) && /All \$\{format/.test(read('src/components/AmountSlider.tsx')));
 }
 
 console.log('\nno native dependency was added for it');

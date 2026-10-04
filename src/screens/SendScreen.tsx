@@ -24,7 +24,7 @@ import {
   CONTACT_UNVERIFIED,
   TANGO_UNDO_ACK,
   TANGO_UNDO_NOTE,
-  tangoUndoTitle,
+  TANGO_UNDO_TITLE,
 } from '@services/sendWarnings';
 import { getWalletKeys } from '@services/secureKeys';
 import { usePendingSends } from '@stores/pendingSends';
@@ -1130,7 +1130,7 @@ export default function SendScreen() {
               would undo the coin control this screen is built around. */}
           <AmountSlider
             value={amountSats}
-            max={sliderTop(selectedUtxos.length > 0, maxSendable, spendableTotal)}
+            max={sliderTop(spendableTotal)}
             onChange={(sats) => setAmount(sats ? String(sats) : '')}
             format={(sats) => `${groupThousands(sats)} sats`}
           />
@@ -1262,7 +1262,7 @@ export default function SendScreen() {
             // once the transaction is out, so it gets the alarm colours rather
             // than the ordinary privacy-note ones.
             <View style={styles.undoWarn}>
-              <Text style={styles.undoTitle}>⛔ {tangoUndoTitle(tangoPairing)}</Text>
+              <Text style={styles.undoTitle}>⛔ {TANGO_UNDO_TITLE}</Text>
               <Text style={styles.privacyText}>{TANGO_UNDO_NOTE}</Text>
               <TouchableOpacity
                 style={styles.ackRow}

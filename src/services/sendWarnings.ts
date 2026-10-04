@@ -52,7 +52,6 @@ export const CONTACT_VERIFIED = '✓ A WhiSPa wallet holds this address.';
 export const TANGO_UNDO_TITLE = 'This undoes your Tango mini coinjoin';
 
 export const TANGO_UNDO_NOTE =
-  'Spending these together publishes which outputs were yours, permanently. '
-  + 'Send them in separate transactions, or drop one.';
+  'Send them in separate transactions, or drop one.';
 
 export const TANGO_UNDO_ACK = 'I understand, spend them together anyway';

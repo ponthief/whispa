@@ -81,6 +81,7 @@ npm run check:vue           # a .vue file importing what it calls, and its CSS c
 npm run check:admin         # the payout ledger reports earnings and debts apart
 npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
+npm run check:plain         # a fresh plain address stays inside the gap limit
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 

@@ -157,9 +157,9 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Flag coins at or below"
-          help={`Coins under this size are frozen automatically. Blank uses the server default${
-            prefs ? ` of ${prefs.admin_default_dust} sats` : ''
-          }.`}>
+          help={`Coins under this size are frozen automatically.${
+            prefs ? ` Default dust amount: ${prefs.admin_default_dust} sats.` : ''
+          }`}>
           {loadingPrefs ? (
             <View style={{ marginTop: space.lg }}>
               <ActivityIndicator color={colors.primary} />

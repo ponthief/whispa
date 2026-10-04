@@ -10,7 +10,13 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import * as api from '@services/api';
 import { useAuthStore } from '@stores/authStore';
 import { getWalletKeys } from '@services/secureKeys';
-import { loadPlainChain, PlainChainState } from '@services/plainChain';
+import {
+  coinsByAddress,
+  loadPlainChain,
+  maxAhead,
+  nextReceiveAddress,
+  PlainChainState,
+} from '@services/plainChain';
 import { usePlainStatus, plainSpendSettled } from '@stores/plainStatus';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import QRCode from './QRCode';
@@ -88,6 +94,12 @@ export default function PlainAddressCard({ wallet }: Props) {
   const history = usePlainHistory((s) => s.byWallet[wallet.id] || []);
   const [copiedTxid, setCopiedTxid] = useState<string | null>(null);
   const [spendOpen, setSpendOpen] = useState(false);
+  // How far past the first unused address the user has stepped. A fresh
+  // address on demand: handing the same one to two payers links them, and
+  // "wait for the last one to be paid" is not an answer when both payments
+  // are owed to you now. Reset whenever the chain is re-walked, because the
+  // first unused index has moved and `ahead` was relative to the old one.
+  const [ahead, setAhead] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -110,6 +122,7 @@ export default function PlainAddressCard({ wallet }: Props) {
         wallet.network,
       );
       setChain(next);
+      setAhead(0);
       // Drop the in-flight marker once the index reflects the payment (or once
       // waiting for it stops being worth blocking on).
       if (plainSpendSettled(usePlainStatus.getState().pendingSpend, next.confirmedSats)) {
@@ -141,11 +154,22 @@ export default function PlainAddressCard({ wallet }: Props) {
 
   const onCopy = useCallback(() => {
     if (!chain) return;
-    Clipboard.setString(chain.receiveAddress);
+    Clipboard.setString(
+      accountXprv
+        ? nextReceiveAddress(accountXprv, wallet.network, chain, ahead).address
+        : chain.receiveAddress,
+    );
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [chain]);
+  }, [chain, accountXprv, wallet.network, ahead]);
 
+  // The address on the QR: the first unused one, or however far past it the
+  // user has stepped.
+  const shown =
+    chain && accountXprv
+      ? nextReceiveAddress(accountXprv, wallet.network, chain, ahead)
+      : null;
+  const funded = chain ? coinsByAddress(chain) : [];
   const sats = chain?.confirmedSats ?? 0;
   const inFlight = !!pendingSpend;
   const hasCoins = sats > 0 && !!accountXprv && !!chain?.fundedIndices.length;
@@ -169,12 +193,14 @@ export default function PlainAddressCard({ wallet }: Props) {
         <ActivityIndicator color={PRIMARY} style={styles.spinner} />
       ) : chain ? (
         <>
-          <QRCode value={chain.receiveAddress} size={200} />
-          <Text style={styles.mono}>{truncateMiddle(chain.receiveAddress, 16, 12)}</Text>
+          <QRCode value={shown?.address || chain.receiveAddress} size={200} />
+          <Text style={styles.mono}>
+            {truncateMiddle(shown?.address || chain.receiveAddress, 16, 12)}
+          </Text>
           <Text style={styles.caption}>
             A plain bitcoin address for senders that can't pay a Silent Payments
-            address. Unused — a new one appears once this is paid, so two
-            payments are never linked by sharing an address.
+            address. Unused — ask for another to give two payers different
+            ones, so nothing links them.
           </Text>
 
           <View style={styles.actionRow}>
@@ -191,7 +217,31 @@ export default function PlainAddressCard({ wallet }: Props) {
                 {loading ? 'Checking…' : 'Refresh'}
               </Text>
             </TouchableOpacity>
+            {/* Disabled at the gap limit rather than hidden: a control that
+                vanishes reads as a bug, and the caption below says why it
+                stopped. See plainChain.nextReceiveAddress for why going
+                further would hide a payment from this wallet AND from any
+                other restored from the same seed. */}
+            <TouchableOpacity
+              style={[styles.secondaryBtn, ahead >= maxAhead() && styles.btnDisabled]}
+              onPress={() => setAhead((a) => Math.min(a + 1, maxAhead()))}
+              disabled={ahead >= maxAhead()}>
+              <Text style={styles.secondaryBtnText}>New address</Text>
+            </TouchableOpacity>
           </View>
+
+          {ahead > 0 ? (
+            <View style={styles.aheadRow}>
+              <Text style={styles.hint}>
+                {ahead >= maxAhead()
+                  ? 'As far ahead as this wallet can still find a payment.'
+                  : `${ahead} ahead of your first unused address.`}
+              </Text>
+              <TouchableOpacity onPress={() => setAhead(0)}>
+                <Text style={styles.aheadBack}>Back to first</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -217,13 +267,32 @@ export default function PlainAddressCard({ wallet }: Props) {
                   waiting to be mined
                 </Text>
               ) : null}
-              {chain.fundedIndices.length > 1 ? (
-                <Text style={styles.balanceHint}>
-                  across {chain.fundedIndices.length} addresses
-                </Text>
-              ) : null}
             </View>
           )}
+
+          {/* WHICH addresses, not just how many. "across 3 addresses" answers
+              the count and not the question — and this is the one place in
+              the wallet where somebody hands out several addresses and then
+              wonders where a payment landed. Confirmed only: the unconfirmed
+              total is on the balance above, and a row that might vanish is
+              worse than no row. */}
+          {funded.length > 1 && !inFlight ? (
+            <View style={styles.perAddress}>
+              {funded.map((row) => (
+                <View key={row.address} style={styles.perAddressRow}>
+                  <Text style={styles.perAddressName}>
+                    {row.index >= 0 ? `#${row.index}` : '—'}{' '}
+                    <Text style={styles.perAddressMono}>
+                      {truncateMiddle(row.address, 10, 8)}
+                    </Text>
+                  </Text>
+                  <Text style={styles.perAddressSats}>
+                    {hidden ? MASK : groupThousands(row.sats)} sats
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           <TouchableOpacity
             style={[styles.primaryBtn, !canSend && styles.btnDisabled]}
@@ -382,6 +451,30 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: '600' },
   btnDisabled: { opacity: 0.4 },
   hint: { fontSize: 12, color: colors.faint, marginTop: 10, textAlign: 'center' },
+  aheadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    alignSelf: 'stretch',
+  },
+  aheadBack: { fontSize: 12, color: PRIMARY, fontWeight: '600', marginTop: 10 },
+  perAddress: {
+    alignSelf: 'stretch',
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 8,
+  },
+  perAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  perAddressName: { fontSize: 12, color: colors.muted },
+  perAddressMono: { fontFamily: 'monospace', color: colors.faint },
+  perAddressSats: { fontSize: 12, color: colors.text, fontWeight: '600' },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '600',

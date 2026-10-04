@@ -95,7 +95,7 @@ export function isOwnSpAddress(destination: string, spAddress: string): boolean 
 
 // Standard BIP-84 gap limit: stop after this many consecutive unused addresses.
 // Same figure the PayJoin watch-only wallet uses (siLNt/helpers/payjoin_wallet).
-const GAP_LIMIT = 20;
+export const GAP_LIMIT = 20;
 // Matches MAX_SWEEP_ADDRESSES in the backend. A wallet that has genuinely used
 // 50 plain addresses without ever spending them is not worth paging for.
 const MAX_ADDRESSES = 50;
@@ -189,6 +189,66 @@ export async function loadPlainChain(
       0,
     ),
   };
+}
+
+/**
+ * The address `ahead` positions past the first unused one.
+ *
+ * WHY IT IS CAPPED. Deriving is free and deterministic, so any index can be
+ * handed out — but finding a payment later is NOT free: loadPlainChain stops
+ * walking after GAP_LIMIT unused addresses in a row, exactly as every BIP-84
+ * wallet does. Hand out index receiveIndex + 20 and a payment to it sits
+ * beyond the gap, invisible to this wallet and to any other wallet restored
+ * from the same seed. So `ahead` is clamped to one inside the gap: every
+ * address this returns is one a later walk will still reach.
+ */
+export function nextReceiveAddress(
+  accountXprv: string,
+  network: string,
+  chain: PlainChainState,
+  ahead: number,
+): { address: string; index: number } {
+  const n = Math.min(Math.max(0, Math.floor(Number(ahead) || 0)), GAP_LIMIT - 1);
+  const index = chain.receiveIndex + n;
+  return { address: plainAddressAt(accountXprv, network, index), index };
+}
+
+/** How far past the first unused address a caller may go. */
+export function maxAhead(): number {
+  return GAP_LIMIT - 1;
+}
+
+/**
+ * Confirmed coins grouped by the address holding them, fullest first.
+ *
+ * The card showed one aggregate and "across N addresses", which answers how
+ * many but not which — and the plain chain is the one place in this wallet
+ * where a user hands out several addresses and then wonders where a payment
+ * landed. Unconfirmed coins are left out: they are counted separately on the
+ * card and a row that might vanish is worse than no row.
+ */
+export function coinsByAddress(
+  chain: PlainChainState,
+): { index: number; address: string; sats: number; count: number }[] {
+  const indexOf = new Map<string, number>();
+  chain.addressForIndex.forEach((addr, i) => indexOf.set(addr, i));
+  const byAddress = new Map<string, { sats: number; count: number }>();
+  for (const u of chain.utxos) {
+    // height 0 is a mempool coin — unconfirmed, and counted elsewhere.
+    if (!u.height) continue;
+    const row = byAddress.get(u.address) || { sats: 0, count: 0 };
+    row.sats += u.amount;
+    row.count += 1;
+    byAddress.set(u.address, row);
+  }
+  return [...byAddress.entries()]
+    .map(([address, row]) => ({
+      address,
+      index: indexOf.has(address) ? (indexOf.get(address) as number) : -1,
+      sats: row.sats,
+      count: row.count,
+    }))
+    .sort((a, b) => b.sats - a.sats || a.index - b.index);
 }
 
 // The signing keys for exactly the addresses being spent — nothing more leaves

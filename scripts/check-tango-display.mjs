@@ -175,8 +175,19 @@ console.log('\nthe warning about undoing a round is read before it is too late')
   ok('it stays short', text.length <= 220, `${text.length} chars: ${text}`);
   ok('it is two sentences at most',
     (text.match(/[.!?](\s|$)/g) || []).length <= 2, text);
-  ok('it says the loss is permanent', /permanent/i.test(text));
   ok('it says what to do instead', /separate transactions/i.test(text));
+  // THE CONSEQUENCE MOVED TO THE TITLE on 2026-10-05, when the note was cut
+  // to the remedy alone. It used to be asserted on the note ("permanently");
+  // the word is gone from the screen now and "undoes" carries it, which is
+  // weaker. Assert it where it actually lives rather than dropping the rule.
+  const t = (W.match(/TANGO_UNDO_TITLE\s*=\s*'([^']*)'/) || [])[1] || '';
+  ok('the title names the consequence', /undoes/i.test(t), t);
+  ok('and names what is undone', /coinjoin|tango/i.test(t), t);
+  // The acknowledgement still has to be an acknowledgement, not an OK button:
+  // it is the only thing standing between the selection and the signature.
+  const ack = (W.match(/TANGO_UNDO_ACK\s*=\s*'([^']*)'/) || [])[1] || '';
+  ok('the acknowledgement admits what it is doing',
+     /understand/i.test(ack) && /anyway/i.test(ack), ack);
 
   const WEB = readFileSync(new URL('../src/views/SendView.vue', import.meta.url), 'utf8');
   const RN = readFileSync(new URL('../src/screens/SendScreen.tsx', import.meta.url), 'utf8');

@@ -129,13 +129,13 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
   return (
     <Page
       title="Scanning"
-      subtitle="How your incoming payments get found."
+      subtitle="Searching the chain for your Silent Payments."
       onBack={onBack}>
       <Group title="On the server">
         <SwitchRow
           first
           title="Background scanning"
-          help="Keep this wallet caught up while you are away. Uploads your scan key — detection only, it can never spend your funds."
+          help="Scanning takes place server side using your scan key — detection only, it can never spend your funds."
           value={bgEnabled}
           onValueChange={onToggleBackgroundScan}
           busy={bgBusy}
@@ -168,7 +168,7 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Catch up automatically"
-          help="How far behind your wallet may be before opening it asks permission to scan, rather than just doing it.">
+          help="Leave the wallet unscanned for up to this much before asking.">
           <Chips
             options={catchUpPref.CATCH_UP_CHOICES.map((o) => ({
               key: o.blocks,

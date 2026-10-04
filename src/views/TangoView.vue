@@ -776,8 +776,8 @@ function expiresIn(r) {
         <div class="card-header">Tango</div>
         <div class="card-body">
           <p class="text-dim text-sm tg-intro">
-            <b>“It takes 2 to Tango”.</b> Select your WhiSPa partner/coins and
-            amount to start collaborative mini-coinjoin round.
+            Select your WhiSPa partner/coins and amount to start collaborative
+            mini-coinjoin round.
           </p>
           <div class="field">
             <label class="text-dim text-xs">Wallet</label>
@@ -1249,11 +1249,11 @@ function expiresIn(r) {
             <span class="text-orange mono">{{ fmtSats(parseInt(denom, 10) || 0) }}</span>
           </div>
           <div class="tx-detail-row">
-            <span>Coming out as</span>
+            <span>Coinjoined into</span>
             <span class="mono">{{ pieces === 1 ? '1 coin' : pieces + ' coins' }}</span>
           </div>
           <div class="tx-detail-row">
-            <span>Putting in</span>
+            <span>Contributing</span>
             <span class="mono">
               {{ mixChosen.length }} {{ mixChosen.length === 1 ? 'coin' : 'coins' }} ·
               {{ fmtSats(sumOf(mixChosen)) }}

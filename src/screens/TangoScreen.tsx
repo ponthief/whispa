@@ -520,9 +520,9 @@ export default function TangoScreen() {
       return;
     }
     const lines = [
-      `With ${partner.trim()}`,
-      `${fmtSats(d, hidden)} each, back as ${pieces === 1 ? '1 coin' : `${pieces} coins`}`,
-      `Putting in ${chosen.length} coin${chosen.length === 1 ? '' : 's'}`
+      `To ${partner.trim()}`,
+      `${fmtSats(d, hidden)} each, coinjoined into ${pieces === 1 ? '1 coin' : `${pieces} coins`}`,
+      `Contributing ${chosen.length} coin${chosen.length === 1 ? '' : 's'}`
         + ` \u00b7 ${fmtSats(chosenTotal, hidden)}`,
     ];
     if (preview && !preview.error) {
@@ -1023,7 +1023,7 @@ export default function TangoScreen() {
     <Page
       title="Tango"
       subtitle={
-        '“It takes 2 to Tango”. Select your WhiSPa partner/coins and amount ' +
+        'Select your WhiSPa partner/coins and amount ' +
         'to start collaborative mini-coinjoin round.'
       }>
       {error ? (
@@ -1319,7 +1319,7 @@ export default function TangoScreen() {
 
       {tab === 'rounds' ? (
         <>
-          <Group title="Waiting on you">
+          <Group title="Your Tango move">
             <Block>
               {waiting.length === 0 ? (
                 <Text style={styles.rowMeta}>
@@ -1331,7 +1331,7 @@ export default function TangoScreen() {
             </Block>
           </Group>
 
-          <Group title="Waiting on them">
+          <Group title="Their Tango move">
             <Block>
               {theirs.length === 0 ? (
                 <Text style={styles.rowMeta}>Nothing waiting on the other side.</Text>

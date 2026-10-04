@@ -199,6 +199,18 @@ tbody tr:hover td { background: var(--surface-2); }
 .badge-purple { background: rgba(168,85,247,.10); color: #c084fc; border: 1px solid rgba(168,85,247,.25); }
 .badge-dim    { background: var(--border);    color: var(--text-dim); }
 
+/* HTTP method badges, for the admin portal's API reference. Colour carries
+   the one thing worth seeing at a glance down a list of 120 endpoints: GET
+   reads, everything else writes, and DELETE is the one to read twice. */
+.badge-get    { background: rgba(96,165,250,.10); color: #93c5fd; border: 1px solid rgba(96,165,250,.25); }
+.badge-post   { background: var(--green-bg);  color: var(--green);  border: 1px solid rgba(34,197,94,.2); }
+.badge-put    { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(234,179,8,.2); }
+.badge-patch  { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(234,179,8,.2); }
+.badge-delete { background: var(--red-bg);    color: var(--red);    border: 1px solid rgba(239,68,68,.2); }
+/* Who may call it. Deliberately quiet — it qualifies the endpoint rather
+   than competing with the method for attention. */
+.badge-auth   { background: rgba(168,85,247,.10); color: #c084fc; border: 1px solid rgba(168,85,247,.25); }
+
 /* ── Alert ── */
 .alert {
   padding: 10px 14px;

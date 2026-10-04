@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
   // connect-src must allow the backend origin. For web builds the API is
   // same-origin (Caddy proxies /api on the same host) so 'self' suffices. For
   // the packaged APK, VITE_LNBITS_URL is an absolute cross-origin host
-  // (https://lnbits.thrilla.me), so it must be added to connect-src or the
+  // (https://lnbits.whispawallet.com), so it must be added to connect-src or the
   // WebView's CSP blocks every backend request. Derive the origin + wss variant.
   let connectSrc = "'self'"
   const absUrl = env.VITE_LNBITS_URL || ''

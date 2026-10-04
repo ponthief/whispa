@@ -273,7 +273,7 @@ export default function TangoScreen() {
     try {
       const p = tango.plan(
         parseInputs(r.a_inputs), matchChosen.map(local), r.denom_sats,
-        r.fee_rate, r.pieces || 1,
+        r.fee_rate, r.pieces || 1, 'b',
       );
       return { fee: p.b_fee, change: p.b_change, clean: p.clean, error: null as string | null };
     } catch (e: any) {
@@ -558,7 +558,7 @@ export default function TangoScreen() {
         const pieces = row.pieces || 1;
         const amounts = tango.plan(
           parseInputs(row.a_inputs), matchChosen.map(local), row.denom_sats,
-          row.fee_rate, pieces,
+          row.fee_rate, pieces, 'b',
         );
         // ROUTING IS PER SIDE. Whether A gave a Lightning address has no
         // bearing here: if this side did not, its change is derived on this

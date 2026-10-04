@@ -100,6 +100,10 @@ export function plan(
   denom: number,
   feeRate: number,
   pieces = 1,
+  /** Which side the reader is: decides whether a shortfall reads as theirs or
+   *  the other party's. Defaults to 'a', the proposer, which is who is
+   *  looking when a round is being priced before it exists. */
+  mine: 'a' | 'b' = 'a',
 ): TangoAmounts {
   const p = Math.trunc(pieces || 1);
   if (p < 1) throw new Error('A side has to get at least one coin back.');
@@ -138,15 +142,25 @@ export function plan(
   // `feeShare`, not `share`: `share` is what one mixed OUTPUT is worth, and
   // shadowing it here is how the Python twin silently made every mixed output
   // the size of a fee share the moment pieces arrived.
-  for (const [label, total, change, feeShare] of [
-    ['Your', aIn, aChange, aFee],
-    ['Their', bIn, bChange, bFee],
+  // WHOSE SIDE THIS IS, from the reader's chair rather than the protocol's.
+  // These were labelled 'Your' and 'Their' by ROLE — a is the proposer, b is
+  // the matcher — so the side matching a round was told "Their coins total …"
+  // about the coins it had just picked itself. `mine` is which role the reader
+  // is playing, so the labelling follows the person, not the protocol.
+  for (const [role, total, change, feeShare] of [
+    ['a', aIn, aChange, aFee],
+    ['b', bIn, bChange, bFee],
   ] as const) {
     if (change < 0) {
+      const need = denom + feeShare;
       throw new Error(
-        `${label} coins total ${total} sats, which does not cover ${denom} ` +
-          `plus a ${feeShare} sat share of the fee. Pick more, or agree a ` +
-          `smaller amount.`,
+        role === mine
+          ? `Selected ${total} sats — ${need} needed (${denom} plus a ` +
+            `${feeShare} sat share of the fee). Pick more coins, or agree a ` +
+            `smaller amount.`
+          : `Their ${total} sats do not cover ${need} (${denom} plus a ` +
+            `${feeShare} sat share of the fee). They need to pick more coins, ` +
+            `or you both need to agree a smaller amount.`,
       );
     }
   }

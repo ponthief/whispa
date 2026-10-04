@@ -593,6 +593,24 @@ function logout() {
           </div>
         </div>
 
+        <!-- A ROUND WAITING ON YOU, ON WHATEVER PAGE YOU ARE ON.
+             The nav badge is a number on a tab, and a Tango is the one thing
+             here that goes stale: the other side is waiting, and the round
+             expires. Somebody looking at their balance had no reason to look
+             at the Tango tab, so the count sat there unread. Hidden on the
+             Tango page itself, where the round is already in front of you. -->
+        <router-link
+          v-if="tangoPending > 0 && route.name !== 'tango'"
+          :to="{ name: 'tango' }"
+          class="tango-nudge">
+          <span class="tango-nudge-dot">●</span>
+          <span>
+            {{ tangoPending }} Tango{{ tangoPending === 1 ? '' : 's' }}
+            waiting on you — it expires if nobody acts.
+          </span>
+          <span class="tango-nudge-go">Open →</span>
+        </router-link>
+
         <div class="page-wrap">
           <router-view v-slot="{ Component }">
             <transition name="page" mode="out-in">
@@ -698,4 +716,28 @@ function logout() {
   .bottom-nav-icon { font-size: 16px; line-height: 1; }
   .bottom-nav-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: .04em; }
 }
+
+/* The waiting-Tango nudge. Loud enough to be seen from another page, quiet
+   enough not to read as an error — nothing has gone wrong, something is just
+   waiting. */
+.tango-nudge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 8px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: rgba(234,179,8,.10);
+  border: 1px solid rgba(234,179,8,.30);
+  color: var(--yellow);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tango-nudge:hover { background: rgba(234,179,8,.16); }
+.tango-nudge-dot { font-size: 10px; }
+/* Pushed to the end, so the tap target reads as an action rather than the
+   sentence running into a word. */
+.tango-nudge-go { margin-left: auto; white-space: nowrap; opacity: .85; }
 </style>

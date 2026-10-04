@@ -314,7 +314,7 @@ const matchPreview = computed(() => {
   try {
     const p = tango.plan(
       parseInputs(r.a_inputs), matchChosen.value.map(localOf),
-      r.denom_sats, r.fee_rate, r.pieces || 1,
+      r.denom_sats, r.fee_rate, r.pieces || 1, 'b',
     )
     return { change: p.b_change, fee: p.b_fee, clean: p.clean, error: '' }
   } catch (e) {
@@ -467,7 +467,7 @@ async function submitMatch(r) {
     const rPieces = r.pieces || 1
     const amounts = tango.plan(
       parseInputs(r.a_inputs), chosen.map(localOf), r.denom_sats, r.fee_rate,
-      rPieces,
+      rPieces, 'b',
     )
     // ROUTING IS PER SIDE. Whether A gave a Lightning address has no bearing
     // here: if this side did not, its change is derived in this browser and
@@ -1029,11 +1029,11 @@ function expiresIn(r) {
       </div>
 
       <div class="card">
-        <div class="card-header">Waiting on you</div>
+        <div class="card-header">Your Tango move</div>
         <div class="card-body">
           <div v-if="loading" class="text-dim text-sm">Loading…</div>
           <div v-else-if="!waitingOnMe.length" class="text-dim text-sm">
-            Nothing waiting on you. A round someone proposes appears here.
+            Nothing to do. A round someone proposes appears here.
           </div>
           <div v-for="r in waitingOnMe" :key="r.id" class="tg-req">
             <div class="tg-req-row">
@@ -1136,10 +1136,10 @@ function expiresIn(r) {
       </div>
 
       <div class="card">
-        <div class="card-header">Waiting on them</div>
+        <div class="card-header">Their Tango move</div>
         <div class="card-body">
           <div v-if="!waitingOnThem.length" class="text-dim text-sm">
-            Nothing waiting on the other side.
+            Nothing with the other side right now.
           </div>
           <div v-for="r in waitingOnThem" :key="r.id" class="tg-req">
             <div class="tg-req-row">

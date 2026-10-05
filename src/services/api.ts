@@ -1157,6 +1157,59 @@ export async function getAppConfig(
   return req(`${SILNT}/api/v1/config${qs}`, { headers: apiKey(inkey) });
 }
 
+// How far back a rescan can reach, as heights AND dates.
+//
+// The honest floor on "when" is the oldest block the oracle has indexed, which
+// is not a number of days and cannot be guessed at from here: an instance that
+// started indexing last month and one holding all of mainnet are both normal.
+// `min_time` / `tip_time` are best-effort — 0 means the explorer did not say,
+// and the client then offers only the day spans it can estimate off the tip.
+export interface IndexedRange {
+  min_height: number;
+  min_time: number;
+  tip: number;
+  tip_time: number;
+}
+export async function getIndexedRange(
+  inkey: string,
+  network: string | undefined = Config.NETWORK_LOCK || undefined,
+): Promise<IndexedRange> {
+  const qs = network ? `?network=${encodeURIComponent(network)}` : '';
+  return req(`${SILNT}/api/v1/blocks/indexed-range${qs}`, {
+    headers: apiKey(inkey),
+  });
+}
+
+// The first indexed block at or after a moment.
+//
+// LOOKED UP, not estimated. Ten minutes a block turns a few days into a height
+// well enough off the tip; over years it is hopeless — five years back
+// overshoots by about five months, and a seven-day window placed five months
+// early is the wrong window, not a rounding error. The server bisects real
+// block timestamps instead.
+//
+// `ts` is unix SECONDS, resolved from the user's own local midnight, so the
+// timezone stays here and the server never has to guess where the phone is.
+// `clamped` means the answer is the edge of the indexed range rather than the
+// day asked for.
+export interface HeightAt {
+  height: number;
+  block_time: number;
+  clamped: boolean;
+  min_height: number;
+  tip: number;
+}
+export async function getHeightAt(
+  inkey: string,
+  ts: number,
+  network: string | undefined = Config.NETWORK_LOCK || undefined,
+): Promise<HeightAt> {
+  const qs = network ? `&network=${encodeURIComponent(network)}` : '';
+  return req(`${SILNT}/api/v1/blocks/height-at?ts=${Math.floor(ts)}${qs}`, {
+    headers: apiKey(inkey),
+  });
+}
+
 // Current chain tip via the siLNt oracle proxy (BlindBit /info). Network-scoped:
 // the backend picks the oracle by `network` and defaults to signet when it's
 // absent, so a mainnet build must pass its NETWORK_LOCK to get the mainnet tip.

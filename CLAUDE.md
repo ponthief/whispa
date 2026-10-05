@@ -316,36 +316,65 @@ done in the user's head off a label; somebody whose payment never arrived
 knows when it was sent. `services/scanLookback.ts` does the arithmetic and
 `check:scan` pins it.
 
-**A week, and nothing further** (`MAX_LOOKBACK_DAYS`). The date started as a
-free-text field and somebody typed 2021 — five years of a chain the indexer
-does not hold, since the oracle only answers for what it has indexed, and
-hours of scanning for a payment sent this week. The cap is on the
-**arithmetic**, not only on what the UI offers, so a stale selection or any
-future caller meets it too; past the limit a date is **refused, not
-shortened**, because a silently shortened range reports "nothing found" about
-blocks it never looked at, which is the failure this screen exists to undo.
-`rangeFor` still clamps to the oracle's own `min_scan_height` on top, which on
-a recently-started instance can be higher than a week back.
+**Two separate limits, and keeping them apart is the whole of it.**
 
-So the date is a **list of the eight valid days, not a field and not a
-calendar** — today back to the limit, labelled `Today`, `Sun 4`, … Nothing in
-it can be out of range, which is the point. Weekday names are a local array
-rather than `Intl`, which Hermes may not carry, and the days are stepped off
-local midnight with `setDate` rather than by subtracting 86,400,000: across a
-DST change a day is 23 or 25 hours, and fixed-millisecond arithmetic either
-repeats a date or skips one.
+**How far back** a start date may sit is the **oracle's own indexed floor** —
+`min_scan_height`, reported with its block time by
+`GET /api/v1/blocks/indexed-range`. Not a number of days: an instance that
+started indexing last month and one holding all of mainnet are both normal,
+and the client cannot guess which. A date below that floor is a 400 from the
+scan endpoint, and one just above it reads blocks the oracle cannot answer
+for, which comes back as a scan gap rather than as an answer. When the
+explorer cannot give the floor's block time, **no calendar is offered at all**
+— a floor nobody knows is not a floor to invent.
 
-The one rule on the conversion is that **it must overshoot.** A rescan's only
-cost is the blocks it reads, because the resume point never moves backwards —
-but a range one block short of the payment reports nothing, which is what the
-scan that missed it already did. So blocks are planned at nine minutes against
-a target of ten, which is above every sustained real-world rate, and every
-option covers at least its nominal span. A date is parsed at **local**
-midnight and round-tripped through `Date`, because `new Date(2026, 1, 31)` is
-the 3rd of March: built from parts it accepts the 31st of February and answers
-about a later day. An armed-but-unpicked date disables the button rather than
-falling back to the computed catch-up range, which would be a different scan
-from the one the screen is offering.
+**How wide** the scan is, from wherever it starts, is `MAX_WINDOW_DAYS` — a
+week. A rescan is a search for one payment somebody is waiting on; a month of
+blocks is hours against a shared oracle to find something sent on Tuesday, and
+the web app's From/To fields are the tool for the other question. The cap is
+on the **arithmetic**, not only on what the UI offers. `windowFrom` places a
+week from the chosen start and clips at the tip; `rangeFor` anchors a day span
+on the tip instead.
+
+The date is a **month grid** (`components/MonthPicker.tsx`), because a start
+date may sit years back. It began as a free-text field and somebody typed 2021
+— five years of a chain the indexer does not hold. A grid cannot offer a day
+that is not there; days outside the range render faint and inert rather than
+hidden, or the month before the floor would be blank with nothing saying why.
+
+**A picked date is resolved by the server**, not here:
+`GET /api/v1/blocks/height-at?ts=` bisects real block timestamps
+(`helpers/blocktime.py`, ~20 probes on mainnet, cached). The client's
+arithmetic is tip-anchored and drifts by **months** over years — at nine
+minutes a block, five years back overshoots by about five months, and a
+seven-day window placed five months early is the wrong window, not a rounding
+error. The search answers with the first block **at or after** the timestamp
+and then steps back over a slack of blocks, because a window starting before
+the chosen day still contains it and one starting after it does not — and
+block timestamps are not monotonic, since consensus only constrains
+median-time-past. An explorer that cannot answer a probe gives a **503, not an
+estimate**. The client sends unix **seconds** off its own local midnight, so
+the timezone never leaves the phone.
+
+The one rule on the client arithmetic is that **it must overshoot.** A
+rescan's only cost is the blocks it reads, because the resume point never
+moves backwards — but a range one block short of the payment reports nothing,
+which is what the scan that missed it already did. So blocks are planned at
+nine minutes against a target of ten, above every sustained real-world rate,
+and every day span covers at least its nominal width.
+
+Three pieces of date arithmetic are pinned because each is quietly wrong the
+obvious way. A date is parsed at **local** midnight and round-tripped through
+`Date`, since `new Date(2026, 1, 31)` is the 3rd of March — built from parts
+it accepts the 31st of February. `shiftMonth` anchors on the **1st** before
+stepping, or October + 1 month lands in December. And a month's length comes
+from **day 0 of the next month**, which is what stops February being a special
+case. Weekday and month names are local arrays, not `Intl`, which Hermes may
+not carry — a missing `Intl` throws at render.
+
+A selection whose lookup has not landed **disables the button**, and the held
+range is only used for the day it belongs to, so a stale one cannot be scanned
+under a day that has since changed.
 
 Separately, a block the scan could not read holds the resume point below it
 and is reported as `gap` on the progress record, so neither client claims the

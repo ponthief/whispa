@@ -19,12 +19,16 @@ import {
 } from '@services/scanCooldown';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
 import RecoverKeysModal from '../components/RecoverKeysModal';
+import MonthPicker from '../components/MonthPicker';
 import {
+  blocksForDays,
   DAY_OPTIONS,
-  dateOptions,
   describeLookback,
-  lookbackBlocks,
+  formatDate,
+  MAX_WINDOW_DAYS,
+  parseDate,
   rangeFor,
+  windowFrom,
   type Lookback,
 } from '@services/scanLookback';
 import { colors } from '@/theme';
@@ -109,10 +113,23 @@ export default function ScanPanel() {
   // a scan starts so the next press is the ordinary one again — a rescan is a
   // thing you choose each time, not a mode the screen stays in.
   const [lookback, setLookback] = useState<Lookback | null>(null);
-  // The date field is shown only once asked for: it is the uncommon answer,
-  // and four chips plus a permanently open text input is a lot of screen for
-  // "my payment has not arrived".
+  // The calendar is shown only once asked for: it is the uncommon answer, and
+  // four chips plus a permanently open month grid is a lot of screen for "my
+  // payment has not arrived".
   const [dateOpen, setDateOpen] = useState(false);
+  // The oldest day a rescan may start on, from the server's indexed range.
+  // '' means it could not say, and then no calendar is offered.
+  const [minDate, setMinDate] = useState('');
+  // A picked date is a height only the server can give: the arithmetic in
+  // scanLookback is tip-anchored and drifts by months over years. Held here
+  // rather than recomputed, because it costs a round trip.
+  const [dateRange, setDateRange] = useState<{
+    date: string;
+    from: number;
+    to: number;
+    clamped: boolean;
+  } | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Holds the latest `poll` so `load` can attach to a running scan without a
@@ -142,10 +159,11 @@ export default function ScanPanel() {
     }
     setError(null);
     try {
-      const [walletsRes, tipRes, cfgRes] = await Promise.allSettled([
+      const [walletsRes, tipRes, cfgRes, rangeRes] = await Promise.allSettled([
         api.getSilntWallets(inkey),
         api.getChainTip(inkey),
         api.getAppConfig(inkey),
+        api.getIndexedRange(inkey),
       ]);
 
       const w =
@@ -183,6 +201,14 @@ export default function ScanPanel() {
       if (!minH) minH = minHeightRef.current;
       else minHeightRef.current = minH;
       setMinHeight(minH);
+
+      // The oldest day a rescan may start on, as a date. '' when the explorer
+      // could not give the block's time, and then the calendar is not offered
+      // at all — a floor nobody knows is not a floor to invent, and a date
+      // below min_scan_height is a 400 from the scan endpoint.
+      const minTime =
+        rangeRes.status === 'fulfilled' ? Number(rangeRes.value?.min_time) || 0 : 0;
+      setMinDate(minTime ? formatDate(minTime * 1000) : '');
 
       // Attach to an already-running scan (the login catch-up, or one started
       // elsewhere) so its progress shows here immediately. Without this the
@@ -346,14 +372,26 @@ export default function ScanPanel() {
     // let it rewind the resume point (set_last_scan_height only moves
     // forward), so it costs the blocks it scans and nothing else.
     //
-    // Resolved HERE rather than held in state, so a date sits in the field
-    // across midnight and still means the day it names.
-    const back = lookback != null && tip ? lookbackBlocks(lookback) : null;
-    if (lookback?.kind === 'date' && back == null) {
-      setError('Pick a date to look back from.');
+    // A day span is resolved here, off the tip. A picked date was resolved by
+    // the server when it was picked — see onPickDate — and is read back from
+    // state only when it still matches the armed selection, so a day whose
+    // lookup has not landed cannot be scanned under a stale range.
+    const armed =
+      lookback == null || !tip
+        ? null
+        : lookback.kind === 'days'
+        ? rangeFor(blocksForDays(lookback.days), tip, minHeight)
+        : dateRange && dateRange.date === lookback.date
+        ? { from: dateRange.from, to: dateRange.to }
+        : null;
+    if (lookback != null && !armed) {
+      setError(
+        lookback.kind === 'date' && lookback.date
+          ? 'Still working out which block that day is. Try again in a moment.'
+          : 'Pick a day to look back from.',
+      );
       return;
     }
-    const armed = back != null && tip ? rangeFor(back, tip, minHeight) : null;
     const from = armed ? armed.from : Number(fromHeight);
     const to = armed ? armed.to : Number(toHeight);
     if (!Number.isFinite(from) || !Number.isFinite(to)) {
@@ -385,6 +423,8 @@ export default function ScanPanel() {
       await api.startScan(inkey, wallet.id, keys.scanSecret, from, to);
       // Disarm: the next press is the ordinary catch-up again.
       setLookback(null);
+      setDateOpen(false);
+      setDateRange(null);
       markScanStarted(wallet.id); // arm the 1-min cooldown
       setCooldownSec(cooldownRemaining(wallet.id));
       poll(wallet.id);
@@ -406,7 +446,40 @@ export default function ScanPanel() {
         setError(raw || 'Scan failed to start.');
       }
     }
-  }, [wallet, inkey, fromHeight, toHeight, minHeight, tip, poll, lookback]);
+  }, [wallet, inkey, fromHeight, toHeight, minHeight, tip, poll, lookback, dateRange]);
+
+  // A picked day, turned into a height by the server.
+  //
+  // THE SERVER DOES THIS, not scanLookback: the arithmetic there is anchored
+  // on the tip, which is fine for a few days and hopeless over years — five
+  // years back it overshoots by about five months, and a seven-day window
+  // placed five months early is the wrong window, not a rounding error. The
+  // server bisects real block timestamps.
+  const onPickDate = useCallback(
+    async (date: string) => {
+      setError(null);
+      setLookback(date ? { kind: 'date', date } : { kind: 'date', date: '' });
+      setDateRange(null);
+      if (!date || !inkey || !tip) return;
+      const at = parseDate(date);
+      if (at == null) return;
+      setResolving(true);
+      try {
+        // Local midnight, in seconds. The timezone stays here.
+        const r = await api.getHeightAt(inkey, at);
+        const w = windowFrom(Number(r.height) || 0, tip, minHeight);
+        setDateRange({ date, ...w, clamped: !!r.clamped });
+      } catch (e: any) {
+        // Left unresolved rather than estimated: a window in the wrong place
+        // reports nothing found about blocks it never read, which is the
+        // failure this screen exists to undo.
+        setError(e?.message || 'Could not work out which block that day is.');
+      } finally {
+        setResolving(false);
+      }
+    },
+    [inkey, tip, minHeight],
+  );
 
   const onStop = useCallback(async () => {
     if (!wallet || !inkey) return;
@@ -444,14 +517,25 @@ export default function ScanPanel() {
     tip && wallet ? Math.max(0, tip - effectiveScanned) : null;
 
   // What the armed lookback resolves to right now, or null when nothing is
-  // armed and when a typed date is not yet a date. Both the caption and the
-  // button read it, so a half-typed date disables the button instead of
-  // scanning some other range.
-  const armedBlocks = lookback != null && tip ? lookbackBlocks(lookback) : null;
+  // armed and when a picked day has not come back from the server yet. Both
+  // the caption and the button read it, so an unresolved day disables the
+  // button instead of scanning some other range.
+  //
+  // Two shapes, and the difference is the whole of the second limit. A day
+  // SPAN is anchored on the tip and reaches back. A picked DATE starts where
+  // it starts and is a week WIDE from there — a date two years back would
+  // otherwise be two years of scanning.
   const armedRange =
-    armedBlocks != null && tip ? rangeFor(armedBlocks, tip, minHeight) : null;
+    lookback == null || !tip
+      ? null
+      : lookback.kind === 'days'
+      ? rangeFor(blocksForDays(lookback.days), tip, minHeight)
+      : dateRange && dateRange.date === lookback.date
+      ? { from: dateRange.from, to: dateRange.to }
+      : null;
+  const armedBlocks = armedRange ? armedRange.to - armedRange.from : null;
   // Nothing to scan forward to AND nothing armed, or armed but not yet
-  // resolvable.
+  // resolved.
   const scanBlocked = armedRange
     ? false
     : lookback != null
@@ -570,10 +654,12 @@ export default function ScanPanel() {
                   <Text style={styles.primaryBtnText}>
                     {cooldown > 0
                       ? `Scan again in ${cooldown}s`
+                      : resolving
+                      ? 'Finding that day…'
                       : armedRange
                       ? `Rescan ${describeLookback(lookback)}`
                       : lookback != null
-                      ? 'Pick a date'
+                      ? 'Pick a day'
                       : upToDate
                       ? 'Up to date'
                       : behind
@@ -612,52 +698,45 @@ export default function ScanPanel() {
                         </TouchableOpacity>
                       );
                     })}
-                    <TouchableOpacity
-                      style={[styles.chip, dateOpen && styles.chipOn]}
-                      onPress={() => {
-                        const open = !dateOpen;
-                        setDateOpen(open);
-                        setLookback(open ? { kind: 'date', date: '' } : null);
-                      }}>
-                      <Text
-                        style={[styles.chipText, dateOpen && styles.chipTextOn]}>
-                        Date
-                      </Text>
-                    </TouchableOpacity>
+                    {/* Only when the server said how far back it has
+                        indexed. A floor nobody knows is not a floor to
+                        invent, and a date below min_scan_height is a 400. */}
+                    {minDate ? (
+                      <TouchableOpacity
+                        style={[styles.chip, dateOpen && styles.chipOn]}
+                        onPress={() => {
+                          const open = !dateOpen;
+                          setDateOpen(open);
+                          setDateRange(null);
+                          setLookback(open ? { kind: 'date', date: '' } : null);
+                        }}>
+                        <Text
+                          style={[styles.chipText, dateOpen && styles.chipTextOn]}>
+                          Date
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
-                  {/* A LIST, not a calendar and not a text field. A week is
-                      the furthest a rescan may reach, so the set of valid
-                      dates is seven — small enough to tap, and nothing in it
-                      can be out of range. The field this replaced accepted
-                      2021, which asked for five years of a chain the indexer
-                      does not hold. */}
-                  {dateOpen ? (
-                    <View style={[styles.lookbackRow, styles.dateRow]}>
-                      {dateOptions().map((o) => {
-                        const on =
-                          lookback?.kind === 'date' && lookback.date === o.date;
-                        return (
-                          <TouchableOpacity
-                            key={o.date}
-                            style={[styles.chip, on && styles.chipOn]}
-                            onPress={() =>
-                              setLookback(
-                                on ? { kind: 'date', date: '' } : { kind: 'date', date: o.date },
-                              )
-                            }>
-                            <Text
-                              style={[styles.chipText, on && styles.chipTextOn]}>
-                              {o.label}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+                  {/* A CALENDAR, because the start date may sit years back —
+                      as far as the oracle has indexed. A text field was tried
+                      and somebody typed 2021, which asked for five years of a
+                      chain the indexer does not hold; a grid cannot offer a
+                      day that is not there. The week-wide limit applies to
+                      the WINDOW from the chosen day, not to how far back it
+                      may be. */}
+                  {dateOpen && minDate ? (
+                    <MonthPicker
+                      minDate={minDate}
+                      value={lookback?.kind === 'date' ? lookback.date : ''}
+                      onChange={onPickDate}
+                    />
                   ) : null}
                   <Text style={styles.lookbackHelp}>
                     {armedBlocks != null
                       ? `About ${groupThousands(armedBlocks)} blocks. ` +
                         'Nothing already scanned is lost.'
+                      : dateOpen
+                      ? `Pick a day. A rescan covers ${MAX_WINDOW_DAYS} days from it.`
                       : 'Pick how far back, then scan.'}
                   </Text>
                 </View>
@@ -766,7 +845,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: colors.text },
   chipTextOn: { color: colors.onPrimary, fontWeight: '600' },
   lookbackHelp: { fontSize: 12, color: colors.faint, marginTop: 8, lineHeight: 17 },
-  dateRow: { marginTop: 8 },
   rangeCaption: {
     fontSize: 13,
     color: colors.muted,

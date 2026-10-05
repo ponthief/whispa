@@ -6,13 +6,27 @@
 // day" printed beside each — which is the conversion done in the user's head
 // off a label, and the label was the only thing saying 144 meant a day.
 //
-// THE ESTIMATE DELIBERATELY OVERSHOOTS, and that is the whole design. A
-// rescan's only cost is the blocks it reads: `set_last_scan_height` on the
-// server is a guarded UPDATE that never moves backwards, so looking at old
-// blocks again cannot rewind the wallet's resume point or lose anything
-// already scanned. Undershooting, on the other hand, defeats the feature —
-// the one block the user is looking for falls outside the range and the rescan
-// reports nothing, exactly as the scan that missed it did.
+// TWO SEPARATE LIMITS, which is the thing to keep straight here.
+//
+//   HOW FAR BACK a start date may sit: as far as the oracle has indexed.
+//     That floor is the server's `min_scan_height`, reported with its block
+//     time by /api/v1/blocks/indexed-range. It is not a number of days and
+//     cannot be guessed at from here — an instance that started indexing last
+//     month and one holding all of mainnet are both normal.
+//
+//   HOW WIDE the scan is, from wherever it starts: MAX_WINDOW_DAYS, a week.
+//     A rescan is a search for one payment somebody is waiting on. A month of
+//     blocks is hours of work against a shared oracle to find something sent
+//     on Tuesday, and the web app's From/To fields are the tool for whatever
+//     the other question is.
+//
+// THE ESTIMATE IN HERE DELIBERATELY OVERSHOOTS, and that is the design for
+// the day spans. A rescan's only cost is the blocks it reads: the server's
+// `set_last_scan_height` is a guarded UPDATE that never moves backwards, so
+// looking at old blocks again cannot rewind the resume point or lose anything
+// already scanned. Undershooting defeats the feature — the one block the user
+// is looking for falls outside the range and the rescan reports nothing,
+// exactly as the scan that missed it did.
 //
 // So blocks are planned at NINE minutes rather than the nominal ten. Bitcoin's
 // difficulty targets ten, and a difficulty epoch that ran fast has averaged
@@ -20,42 +34,36 @@
 // real-world rate, and the error lands on the safe side of the one that
 // matters.
 //
-// It overshoots WITHIN A WEEK. Everything here is capped at
-// MAX_LOOKBACK_DAYS; see the note on it.
+// THE ESTIMATE IS ONLY USED NEAR THE TIP. A day span is anchored on the tip,
+// where a few days of drift is a few blocks. A picked DATE is resolved by the
+// server (/api/v1/blocks/height-at, which bisects real block timestamps),
+// because over years this arithmetic is hopeless: five years back it overshoots
+// by about five months, and a seven-day window placed five months early is not
+// a rounding error.
 export const PLANNING_SECONDS_PER_BLOCK = 540;
 
-/**
- * A WEEK, and nothing further. The hard limit on everything here.
- *
- * Two reasons, and the first is not about cost. The oracle only has what it
- * has indexed: a range starting below `min_scan_height` is refused outright,
- * and one starting just above it reads blocks the oracle cannot answer for,
- * which comes back as a scan gap rather than as an answer. A free-text date
- * field let somebody type 2021 and ask for five years of a chain the indexer
- * does not hold.
- *
- * The second is that a rescan is a search for ONE payment somebody is waiting
- * on. A month of blocks is hours of scanning against a shared oracle to find
- * something that was sent on Tuesday. Past a week, "where is my payment" is no
- * longer the question, and the From/To fields in the web app are the tool for
- * whatever is.
- */
-export const MAX_LOOKBACK_DAYS = 7;
+/** How wide a rescan may be, wherever it starts. See the note above. */
+export const MAX_WINDOW_DAYS = 7;
 
-/** The offered spans. 1 is the ordinary case: "it has not shown up yet". */
+/** The offered spans, back from the tip. 1 is "it has not shown up yet". */
 export const DAY_OPTIONS = [1, 3, 5, 7] as const;
 
 /** Sunday-first, to index `Date.getDay()`. Not `Intl` — Hermes may not have it. */
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 export type Lookback =
   | { kind: 'days'; days: number }
   | { kind: 'date'; date: string };
 
-/** Blocks to cover `seconds` of chain, rounded UP and never zero. */
+/** Blocks to cover `seconds` of chain, rounded UP, never zero, never over a week. */
 export function blocksForSeconds(seconds: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 1;
-  const capped = Math.min(seconds, MAX_LOOKBACK_DAYS * 86400);
+  const capped = Math.min(seconds, MAX_WINDOW_DAYS * 86400);
   return Math.max(1, Math.ceil(capped / PLANNING_SECONDS_PER_BLOCK));
 }
 
@@ -64,13 +72,20 @@ export function blocksForDays(days: number): number {
   return blocksForSeconds(days * 86400);
 }
 
+/** The widest window, in blocks. */
+export function windowBlocks(): number {
+  return blocksForDays(MAX_WINDOW_DAYS);
+}
+
 /**
  * Local midnight on the day `ms` falls in, as epoch SECONDS.
  *
  * Local, not UTC: the user picked a date off their own calendar, and in the
  * half of the world that is behind UTC a date parsed as UTC midnight starts
  * part way through the previous day — which would be a range that misses the
- * end of the day they asked for.
+ * end of the day they asked for. This is also what gets sent to the server,
+ * so the timezone stays the client's business and nothing there has to guess
+ * where the phone is.
  */
 export function startOfDay(ms: number): number {
   const d = new Date(ms);
@@ -78,7 +93,7 @@ export function startOfDay(ms: number): number {
   return Math.floor(d.getTime() / 1000);
 }
 
-/** `YYYY-MM-DD`, as the picker's option values and the stored selection. */
+/** `YYYY-MM-DD` for a moment, in local time. */
 export function formatDate(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -86,91 +101,46 @@ export function formatDate(ms: number): string {
 }
 
 /**
- * The pickable days: today back to the limit, newest first.
+ * `YYYY-MM-DD` -> local midnight in epoch seconds, or null if it is not a day.
  *
- * A LIST, not a calendar. The furthest the rescan may reach is a week, so the
- * set of valid dates is seven — small enough to tap, and nothing in it can be
- * out of range. The free-text field this replaced accepted 2021, which asked
- * for five years of a chain the indexer does not hold.
+ * Calendar validity only; the bounds are `withinRange`'s job. The round-trip
+ * check is not pedantry: `new Date(2026, 1, 31)` is the 3rd of March, so a
+ * Date built from parts silently accepts the 31st of February and hands back
+ * a day the user did not pick.
  */
-export function dateOptions(
-  nowMs: number = Date.now(),
-): { date: string; label: string }[] {
-  const out: { date: string; label: string }[] = [];
-  for (let back = 0; back <= MAX_LOOKBACK_DAYS; back++) {
-    // Stepped in whole days off local midnight rather than by subtracting
-    // 86,400,000 from `now`: across a DST change a day is 23 or 25 hours, and
-    // fixed-millisecond arithmetic either repeats a date or skips one.
-    const d = new Date(nowMs);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - back);
-    out.push({
-      date: formatDate(d.getTime()),
-      label: back === 0 ? 'Today' : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`,
-    });
-  }
-  return out;
-}
-
-/**
- * `YYYY-MM-DD` -> local midnight in epoch seconds, or null.
- *
- * Kept as the one validator even though a picker now produces the string: the
- * bounds are enforced here whatever wrote it, so a stale selection left in
- * state across midnight, or any future caller, meets the same limit.
- *
- * The round-trip check is not pedantry: `new Date(2026, 1, 31)` is the 3rd of
- * March, so a Date built from parts silently accepts the 31st of February and
- * hands back a range starting after the date the user meant.
- */
-export function parseDate(text: string, nowMs: number = Date.now()): number | null {
+export function parseDate(text: string): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((text || '').trim());
   if (!m) return null;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const at = new Date(y, mo - 1, d, 0, 0, 0, 0);
-  if (
-    at.getFullYear() !== y ||
-    at.getMonth() !== mo - 1 ||
-    at.getDate() !== d
-  ) {
+  if (at.getFullYear() !== y || at.getMonth() !== mo - 1 || at.getDate() !== d) {
     return null;
   }
-  const seconds = Math.floor(at.getTime() / 1000);
-  // A date in the future has no blocks in it. Refused rather than clamped:
-  // clamping would scan a range nobody asked for.
-  if (seconds > Math.floor(nowMs / 1000)) return null;
-  // Past the limit, refused for the same reason. The oracle may not hold those
-  // blocks, and a week is as far as "where is my payment" reaches.
-  if (seconds < earliestSeconds(nowMs)) return null;
-  return seconds;
-}
-
-/** Local midnight MAX_LOOKBACK_DAYS ago — the oldest date a rescan may name. */
-export function earliestSeconds(nowMs: number = Date.now()): number {
-  const d = new Date(nowMs);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - MAX_LOOKBACK_DAYS);
-  return Math.floor(d.getTime() / 1000);
+  return Math.floor(at.getTime() / 1000);
 }
 
 /**
- * How many blocks a selection reaches back, or null when it does not name one
- * (an unparseable or unfinished date).
+ * Is this day one a rescan may start on?
+ *
+ * `minDate` is the day of the oldest indexed block, as `YYYY-MM-DD`. Empty
+ * means the server did not say — in which case only the day spans are offered
+ * and nothing calls this, because a floor nobody knows is not a floor to
+ * invent.
  */
-export function lookbackBlocks(
-  sel: Lookback | null,
+export function withinRange(
+  date: string,
+  minDate: string,
   nowMs: number = Date.now(),
-): number | null {
-  if (!sel) return null;
-  if (sel.kind === 'days') return blocksForDays(sel.days);
-  const at = parseDate(sel.date, nowMs);
-  if (at == null) return null;
-  // From the START of the chosen day, so picking today's date covers today.
-  return blocksForSeconds(Math.floor(nowMs / 1000) - at);
+): boolean {
+  if (!date || !minDate) return false;
+  if (parseDate(date) == null || parseDate(minDate) == null) return false;
+  // String comparison is the date comparison for this format, which is why it
+  // is this format.
+  return date >= minDate && date <= formatDate(nowMs);
 }
 
 /**
- * The height range a lookback resolves to.
+ * The height range for a day span, anchored on the tip.
  *
  * Clamped at `minHeight` — the server refuses a start below its own floor with
  * a 400, and a chooser that can produce one is a button that just errors.
@@ -184,6 +154,23 @@ export function rangeFor(
   return { from: Math.min(from, tip), to: tip };
 }
 
+/**
+ * The height range for a start height the server resolved from a date.
+ *
+ * A week WIDE, from there — not from there to the tip. A date two years back
+ * would otherwise be two years of scanning, which is the thing the width limit
+ * exists to refuse. Clipped at the tip, so a start date inside the last week
+ * simply reaches the present and stops.
+ */
+export function windowFrom(
+  startHeight: number,
+  tip: number,
+  minHeight: number,
+): { from: number; to: number } {
+  const from = Math.max(Math.min(startHeight, tip), minHeight || 1);
+  return { from, to: Math.min(from + windowBlocks(), tip) };
+}
+
 /** What the button says it is about to do. */
 export function describeLookback(
   sel: Lookback | null,
@@ -194,6 +181,88 @@ export function describeLookback(
     return `last ${sel.days} day${sel.days === 1 ? '' : 's'}`;
   }
   if (!sel.date) return '';
-  // "since <today's date>" is a roundabout way of saying today.
-  return sel.date === formatDate(nowMs) ? 'today' : `since ${sel.date}`;
+  // "a week from today's date" is a roundabout way of saying it.
+  return sel.date === formatDate(nowMs) ? 'from today' : `from ${sel.date}`;
+}
+
+// ── the calendar ────────────────────────────────────────────────────────────
+//
+// Built here rather than in the screen, and with no date library, because the
+// awkward parts are arithmetic and want pinning: a month's leading blanks, the
+// length of February, and stepping a month without landing on the 31st of a
+// 30-day one.
+
+export interface Month {
+  year: number;
+  month: number; // 0-11
+  label: string; // "October 2026"
+  /** Six rows of seven, `null` where the grid runs outside the month. */
+  weeks: ({ date: string; day: number } | null)[][];
+}
+
+/** Which month a `YYYY-MM-DD` (or a moment) sits in. */
+export function monthOf(dateOrMs: string | number): { year: number; month: number } {
+  const ms =
+    typeof dateOrMs === 'number'
+      ? dateOrMs
+      : (parseDate(dateOrMs) ?? Math.floor(Date.now() / 1000)) * 1000;
+  const d = new Date(ms);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+/**
+ * `delta` months away.
+ *
+ * Via `setDate(1)` first: stepping from the 31st of October by one month lands
+ * on the 1st of December, because the 31st of November does not exist and
+ * `Date` rolls it forward. Anchoring on the 1st is what makes a month step a
+ * month step.
+ */
+export function shiftMonth(
+  year: number,
+  month: number,
+  delta: number,
+): { year: number; month: number } {
+  const d = new Date(year, month, 1, 12, 0, 0, 0);
+  d.setMonth(d.getMonth() + delta);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+export function monthGrid(year: number, month: number): Month {
+  const first = new Date(year, month, 1, 12, 0, 0, 0);
+  const lead = first.getDay(); // Sunday-first, matching WEEKDAYS
+  // Day 0 of the NEXT month is the last day of this one, which is how the
+  // length of February stops being a special case.
+  const days = new Date(year, month + 1, 0, 12, 0, 0, 0).getDate();
+
+  const cells: ({ date: string; day: number } | null)[] = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let day = 1; day <= days; day++) {
+    cells.push({
+      date: formatDate(new Date(year, month, day, 12, 0, 0, 0).getTime()),
+      day,
+    });
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const weeks: ({ date: string; day: number } | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return { year, month, label: `${MONTHS[month]} ${year}`, weeks };
+}
+
+/** Whether paging that way lands anywhere still selectable. */
+export function canPage(
+  year: number,
+  month: number,
+  delta: number,
+  minDate: string,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!minDate) return false;
+  const to = shiftMonth(year, month, delta);
+  const grid = monthGrid(to.year, to.month);
+  return grid.weeks.some((w) =>
+    w.some((c) => c && withinRange(c.date, minDate, nowMs)),
+  );
 }

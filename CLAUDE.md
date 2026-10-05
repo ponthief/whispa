@@ -82,6 +82,7 @@ npm run check:admin         # the payout ledger reports earnings and debts apart
 npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
 npm run check:plain         # a fresh plain address stays inside the gap limit
+npm run check:scan          # a rescan reaches back at least as far as it says
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -302,13 +303,28 @@ so a deliberate rescan must not rewind it — the next scan would redo
 everything above, which on mainnet is hours.
 
 That second rule is what makes a rescan control safe to offer at all, and the
-phone now has one: a lookback chooser on the scan screen (10 / 144 / 1,008 /
-4,320 blocks back from the tip), live **even when the wallet is up to date**,
-because that is exactly when somebody needs it — a payment that never appeared
-is in a block the wallet believes it has already read. Before it, the phone
-computed its range and never offered the fields, so "Up to date" disabled the
-only button and there was no way back. The web has had editable From/To all
-along.
+phone now has one: a lookback chooser on the scan panel inside Receive, live
+**even when the wallet is up to date**, because that is exactly when somebody
+needs it — a payment that never appeared is in a block the wallet believes it
+has already read. Before it, the phone computed its range and never offered
+the fields, so "Up to date" disabled the only button and there was no way
+back. The web has had editable From/To all along.
+
+It asks in **days (1 / 3 / 5 / 7) or a specific date**, not blocks. It offered
+block counts with "about a day" printed beside each, which is the conversion
+done in the user's head off a label; somebody whose payment never arrived
+knows when it was sent. `services/scanLookback.ts` does the arithmetic and
+`check:scan` pins the one rule that matters: **it must overshoot.** A rescan's
+only cost is the blocks it reads, because the resume point never moves
+backwards — but a range one block short of the payment reports nothing, which
+is what the scan that missed it already did. So blocks are planned at nine
+minutes against a target of ten, which is above every sustained real-world
+rate, and every option covers at least its nominal span. A typed date is
+parsed at **local** midnight and round-tripped through `Date`, because
+`new Date(2026, 1, 31)` is the 3rd of March: built from parts it accepts the
+31st of February and answers about a later day. An armed-but-unresolved date
+disables the button rather than falling back to the computed catch-up range,
+which would be a different scan from the one the screen is offering.
 
 Separately, a block the scan could not read holds the resume point below it
 and is reported as `gap` on the progress record, so neither client claims the

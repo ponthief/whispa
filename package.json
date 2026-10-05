@@ -41,6 +41,7 @@
     "check:payout": "node scripts/check-tango-payout.cjs",
     "check:slider": "node scripts/check-send-slider.mjs",
     "check:plain": "node scripts/check-plain-receive.mjs",
+    "check:scan": "node scripts/check-scan-lookback.mjs",
     "check:vue": "node scripts/check-vue-imports.cjs",
     "check:admin": "node scripts/check-admin-payouts.cjs",
     "check:lock": "node scripts/check-app-lock.cjs"

@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,6 +20,13 @@ import {
 } from '@services/scanCooldown';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
 import RecoverKeysModal from '../components/RecoverKeysModal';
+import {
+  DAY_OPTIONS,
+  describeLookback,
+  lookbackBlocks,
+  rangeFor,
+  type Lookback,
+} from '@services/scanLookback';
 import { colors } from '@/theme';
 
 const PRIMARY = colors.primary;
@@ -33,15 +41,11 @@ const POLL_MS = 1500;
 // button, and the range is computed, not typed. Recovering a mainnet balance
 // on 2026-10-03 meant editing last_scan_height in the database by hand.
 //
-// Blocks rather than dates because that is what the server takes, with the
-// rough time beside each so the number means something. 1 is deliberate: a
-// payment one block back is the ordinary case for "it has not shown up yet".
-const LOOKBACK: { label: string; blocks: number; about: string }[] = [
-  { label: '10', blocks: 10, about: 'about 1½ hours' },
-  { label: '144', blocks: 144, about: 'about a day' },
-  { label: '1,008', blocks: 1008, about: 'about a week' },
-  { label: '4,320', blocks: 4320, about: 'about a month' },
-];
+// Days and a date, not block counts. It offered 10 / 144 / 1,008 / 4,320 with
+// "about a day" printed beside each, which is the conversion done in the
+// user's head off a label — and somebody whose payment never arrived knows
+// when it was sent, not what height that was. services/scanLookback.ts does
+// the arithmetic, and overshoots on purpose; see the note there.
 
 function groupThousands(n: number): string {
   return Math.floor(n)
@@ -104,7 +108,11 @@ export default function ScanPanel() {
   // Which lookback is armed, or null for the ordinary catch-up. Cleared after
   // a scan starts so the next press is the ordinary one again — a rescan is a
   // thing you choose each time, not a mode the screen stays in.
-  const [lookback, setLookback] = useState<number | null>(null);
+  const [lookback, setLookback] = useState<Lookback | null>(null);
+  // The date field is shown only once asked for: it is the uncommon answer,
+  // and four chips plus a permanently open text input is a lot of screen for
+  // "my payment has not arrived".
+  const [dateOpen, setDateOpen] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Holds the latest `poll` so `load` can attach to a running scan without a
@@ -337,11 +345,17 @@ export default function ScanPanel() {
     // this screen that deliberately goes BACKWARDS, and the server will not
     // let it rewind the resume point (set_last_scan_height only moves
     // forward), so it costs the blocks it scans and nothing else.
-    const from =
-      lookback != null && tip
-        ? Math.max(tip - lookback, minHeight || 1)
-        : Number(fromHeight);
-    const to = lookback != null && tip ? tip : Number(toHeight);
+    //
+    // Resolved HERE rather than held in state, so a date sits in the field
+    // across midnight and still means the day it names.
+    const back = lookback != null && tip ? lookbackBlocks(lookback) : null;
+    if (lookback?.kind === 'date' && back == null) {
+      setError('Enter a past date as YYYY-MM-DD.');
+      return;
+    }
+    const armed = back != null && tip ? rangeFor(back, tip, minHeight) : null;
+    const from = armed ? armed.from : Number(fromHeight);
+    const to = armed ? armed.to : Number(toHeight);
     if (!Number.isFinite(from) || !Number.isFinite(to)) {
       setError('Enter both From and To heights.');
       return;
@@ -428,6 +442,21 @@ export default function ScanPanel() {
 
   const behind =
     tip && wallet ? Math.max(0, tip - effectiveScanned) : null;
+
+  // What the armed lookback resolves to right now, or null when nothing is
+  // armed and when a typed date is not yet a date. Both the caption and the
+  // button read it, so a half-typed date disables the button instead of
+  // scanning some other range.
+  const armedBlocks = lookback != null && tip ? lookbackBlocks(lookback) : null;
+  const armedRange =
+    armedBlocks != null && tip ? rangeFor(armedBlocks, tip, minHeight) : null;
+  // Nothing to scan forward to AND nothing armed, or armed but not yet
+  // resolvable.
+  const scanBlocked = armedRange
+    ? false
+    : lookback != null
+    ? true
+    : upToDate;
 
   return (
     <View style={styles.container}>
@@ -520,10 +549,10 @@ export default function ScanPanel() {
               </>
             ) : (
               <>
-                {lookback != null && tip ? (
+                {armedRange ? (
                   <Text style={styles.rangeCaption}>
-                    Blocks {groupThousands(Math.max(tip - lookback, minHeight || 1))} –{' '}
-                    {groupThousands(tip)}
+                    Blocks {groupThousands(armedRange.from)} –{' '}
+                    {groupThousands(armedRange.to)}
                   </Text>
                 ) : !upToDate && behind && fromHeight && toHeight ? (
                   <Text style={styles.rangeCaption}>
@@ -534,18 +563,17 @@ export default function ScanPanel() {
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
-                    ((upToDate && lookback == null) || cooldown > 0) &&
-                      styles.btnDisabled,
+                    (scanBlocked || cooldown > 0) && styles.btnDisabled,
                   ]}
                   onPress={onStart}
-                  disabled={(upToDate && lookback == null) || cooldown > 0}>
+                  disabled={scanBlocked || cooldown > 0}>
                   <Text style={styles.primaryBtnText}>
                     {cooldown > 0
                       ? `Scan again in ${cooldown}s`
+                      : armedRange
+                      ? `Rescan ${describeLookback(lookback)}`
                       : lookback != null
-                      ? `Rescan last ${groupThousands(lookback)} block${
-                          lookback === 1 ? '' : 's'
-                        }`
+                      ? 'Enter a date'
                       : upToDate
                       ? 'Up to date'
                       : behind
@@ -564,30 +592,57 @@ export default function ScanPanel() {
                     point, so the only cost is the blocks it scans. */}
                 <View style={styles.lookback}>
                   <Text style={styles.lookbackLabel}>
-                    Payment missing? Look at recent blocks again:
+                    Payment missing? Look again from:
                   </Text>
                   <View style={styles.lookbackRow}>
-                    {LOOKBACK.map((o) => {
-                      const on = lookback === o.blocks;
+                    {DAY_OPTIONS.map((days) => {
+                      const on =
+                        lookback?.kind === 'days' && lookback.days === days;
                       return (
                         <TouchableOpacity
-                          key={o.blocks}
+                          key={days}
                           style={[styles.chip, on && styles.chipOn]}
-                          onPress={() =>
-                            setLookback(on ? null : o.blocks)
-                          }>
+                          onPress={() => {
+                            setDateOpen(false);
+                            setLookback(on ? null : { kind: 'days', days });
+                          }}>
                           <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                            {o.label}
+                            {days}d
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
+                    <TouchableOpacity
+                      style={[styles.chip, dateOpen && styles.chipOn]}
+                      onPress={() => {
+                        const open = !dateOpen;
+                        setDateOpen(open);
+                        setLookback(open ? { kind: 'date', date: '' } : null);
+                      }}>
+                      <Text
+                        style={[styles.chipText, dateOpen && styles.chipTextOn]}>
+                        Date
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+                  {dateOpen ? (
+                    <TextInput
+                      style={styles.dateInput}
+                      value={lookback?.kind === 'date' ? lookback.date : ''}
+                      onChangeText={(date) => setLookback({ kind: 'date', date })}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={colors.faint}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="numbers-and-punctuation"
+                      maxLength={10}
+                    />
+                  ) : null}
                   <Text style={styles.lookbackHelp}>
-                    {lookback != null
-                      ? `${LOOKBACK.find((o) => o.blocks === lookback)?.about} of blocks. ` +
+                    {armedBlocks != null
+                      ? `About ${groupThousands(armedBlocks)} blocks. ` +
                         'Nothing already scanned is lost.'
-                      : 'Blocks back from the tip. Pick one, then scan.'}
+                      : 'Pick how far back, then scan.'}
                   </Text>
                 </View>
               </>
@@ -695,6 +750,17 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: colors.text },
   chipTextOn: { color: colors.onPrimary, fontWeight: '600' },
   lookbackHelp: { fontSize: 12, color: colors.faint, marginTop: 8, lineHeight: 17 },
+  dateInput: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+    fontSize: 15,
+  },
   rangeCaption: {
     fontSize: 13,
     color: colors.muted,

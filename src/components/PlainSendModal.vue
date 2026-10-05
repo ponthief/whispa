@@ -230,7 +230,7 @@ async function confirm() {
   <div v-if="show && wallet && chain" class="modal-overlay" @click.self="emit('close')">
     <div class="card modal plain-send-modal">
       <div class="card-header">
-        <h2>{{ stage === 'done' ? 'Sent' : 'Send from plain addresses' }}</h2>
+        <h2>{{ stage === 'done' ? 'Sent' : 'Send from SegWit addresses' }}</h2>
         <button class="btn btn-ghost btn-sm btn-icon" @click="emit('close')">✕</button>
       </div>
 
@@ -242,7 +242,7 @@ async function confirm() {
               coins, linked to this transaction like any other.
             </template>
             <template v-else>
-              Pays straight out of your plain addresses. These coins go to the
+              Pays straight out of your SegWit addresses. These coins go to the
               recipient without entering your Silent Payments wallet, so nothing links
               them to the rest of your balance.
             </template>
@@ -361,7 +361,7 @@ async function confirm() {
               confirms and the block is scanned — Activity will show it then.
             </template>
             <template v-else>
-              Broadcast. These coins went straight from your plain addresses to the
+              Broadcast. These coins went straight from your SegWit addresses to the
               recipient — they never touched your Silent Payments wallet, so nothing
               links them to the rest of your balance.
             </template>

@@ -256,7 +256,7 @@ export default function PlainSendModal({
           amountSats: built.amount,
           kind: 'plain',
         });
-        useTxLabelStore.getState().setLabel(res.txid, 'From plain address');
+        useTxLabelStore.getState().setLabel(res.txid, 'From SegWit address');
       }
       setStage('done');
     } catch (e: any) {
@@ -277,7 +277,7 @@ export default function PlainSendModal({
                 <Text style={styles.sub}>
                   {isSelf
                     ? 'Moves these coins into your wallet balance. They become ordinary wallet coins, linked to this transaction like any other.'
-                    : 'Pays straight out of your plain addresses. These coins go to the recipient without entering your Silent Payments wallet, so nothing links them to the rest of your balance.'}
+                    : 'Pays straight out of your SegWit addresses. These coins go to the recipient without entering your Silent Payments wallet, so nothing links them to the rest of your balance.'}
                 </Text>
 
                 <Text style={styles.label}>To</Text>
@@ -464,7 +464,7 @@ export default function PlainSendModal({
                 <Text style={styles.sub}>
                   {isSelf
                     ? 'Broadcast. These coins land in your wallet balance once the transaction confirms and the block is scanned — you\'ll get a notice when that happens.'
-                    : 'Broadcast. These coins went straight from your plain addresses to the recipient — they never touched your Silent Payments wallet, so nothing links them to the rest of your balance.'}
+                    : 'Broadcast. These coins went straight from your SegWit addresses to the recipient — they never touched your Silent Payments wallet, so nothing links them to the rest of your balance.'}
                 </Text>
                 <Text style={styles.mono}>{txid}</Text>
                 <TouchableOpacity

@@ -55,8 +55,13 @@ interface Props {
 }
 
 /**
- * A plain bech32 pocket beside the Silent Payments wallet: receive to it, and
+ * A native SegWit pocket beside the Silent Payments wallet: receive to it, and
  * pay straight out of it, for anyone who can't handle an sp1… address.
+ *
+ * Called "Plain" in the UI until 2026-10-05, which named it by what it is not.
+ * It is a standard BIP-84 chain — P2WPKH, bc1q… — and saying so is what tells
+ * somebody which option to pick in another wallet. The code keeps the `plain`
+ * names, because they are the same chain whatever the label says.
  *
  * The coins never enter the SP wallet, and there is deliberately no "move them
  * in" button. Doing so would be a second transaction and a second fee for coins
@@ -69,7 +74,7 @@ interface Props {
  * history, so two payments never share one. The server is asked about a window
  * of derived addresses but never given the xpub, so it cannot derive the next.
  *
- * Owns the "Plain" segment of the Receive screen. It used to be a collapsed row
+ * Owns the "SegWit" segment of the Receive screen. It used to be a collapsed row
  * beneath the Silent Payments address and the BIP-353 card, which nobody found;
  * the Silent Payments address is still the one to use wherever a sender will
  * accept it, and being second in the segment is enough to say so.
@@ -136,7 +141,7 @@ export default function PlainAddressCard({ wallet }: Props) {
         unconfirmedSats: next.unconfirmedSats,
       });
     } catch (e: any) {
-      setError(e?.message || 'Could not check your plain addresses.');
+      setError(e?.message || 'Could not check your SegWit addresses.');
     } finally {
       setLoading(false);
     }
@@ -147,10 +152,15 @@ export default function PlainAddressCard({ wallet }: Props) {
   // elsewhere in the app would otherwise leave the card showing its "set up"
   // prompt — and the plain balance hidden — until it was remounted.
   const refreshTick = usePlainStatus((s) => s.refreshTick);
+  // The background watcher bumps this when a poll finds the totals changed.
+  // With no Refresh button, this is how new coins reach the card without the
+  // user doing anything — and it cannot be leant on, because it moves at the
+  // watcher's five-minute interval rather than at tap speed.
+  const observedAt = usePlainStatus((s) => s.observedAt);
 
   useEffect(() => {
     refresh();
-  }, [refresh, refreshTick]);
+  }, [refresh, refreshTick, observedAt]);
 
   const onCopy = useCallback(() => {
     if (!chain) return;
@@ -177,12 +187,12 @@ export default function PlainAddressCard({ wallet }: Props) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Plain bitcoin address</Text>
+      <Text style={styles.title}>Native SegWit address</Text>
 
       {!accountXprv ? (
         <>
           <Text style={styles.caption}>
-            This wallet predates plain addresses. Enter your recovery phrase once
+            This wallet predates SegWit addresses. Enter your recovery phrase once
             to set them up — after that it's handled on this device.
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setSetupOpen(true)}>
@@ -197,24 +207,26 @@ export default function PlainAddressCard({ wallet }: Props) {
           <Text style={styles.mono}>
             {truncateMiddle(shown?.address || chain.receiveAddress, 16, 12)}
           </Text>
+          {/* The warning, and not the reasoning behind it. "so nothing links
+              them" is an explanation of privacy in front of an instruction,
+              and the instruction is the part that has to land. */}
           <Text style={styles.caption}>
-            A plain bitcoin address for senders that can't pay a Silent Payments
-            address. Unused — ask for another to give two payers different
-            ones, so nothing links them.
+            For senders that can't pay a Silent Payments address. Use each
+            address once.
           </Text>
 
+          {/* TWO buttons. There were three — Copy, Refresh, New address — and
+              at phone width three of them is a row of cramped stubs. Refresh
+              is the one that went, because the chain is already re-walked when
+              the background watcher sees the totals change (usePlainWatch
+              publishes, this card reads `observedAt`), when the card mounts,
+              and after a send. A button is the one of those a waiting user can
+              lean on, several times a second, against an endpoint with no
+              cooldown of its own. */}
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.secondaryBtn} onPress={onCopy}>
               <Text style={styles.secondaryBtnText}>
                 {copied ? 'Copied' : 'Copy address'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={refresh}
-              disabled={loading}>
-              <Text style={styles.secondaryBtnText}>
-                {loading ? 'Checking…' : 'Refresh'}
               </Text>
             </TouchableOpacity>
             {/* Disabled at the gap limit rather than hidden: a control that
@@ -339,10 +351,15 @@ export default function PlainAddressCard({ wallet }: Props) {
                   </Text>
                 </TouchableOpacity>
               ))}
+              {/* BIP-84, not BIP-85. These addresses hang off
+                  m/84'/coin'/0' from this wallet's own seed — see
+                  services/derivationPaths.ts — so any wallet that takes a
+                  recovery phrase reaches them. BIP-85 is a different thing
+                  (deriving child SEEDS from a master one), and somebody
+                  hunting for a BIP-85 option would not find these coins. */}
               <Text style={styles.hint}>
-                Kept on this device only — no server holds a record of coins
-                leaving these addresses, so a payment made on another device
-                won't be listed here. Tap a row to copy its transaction ID.
+                You'll need your recovery phrase to restore these coins in
+                another wallet, on the standard BIP-84 path.
               </Text>
             </>
           ) : null}

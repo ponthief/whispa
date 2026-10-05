@@ -79,7 +79,7 @@ export default function ReceiveScreen() {
               onPress={() => setView('address')}
             />
             <SegmentButton
-              label="Plain"
+              label="SegWit"
               active={view === 'plain'}
               onPress={() => setView('plain')}
             />

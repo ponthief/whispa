@@ -167,7 +167,7 @@ export default function WalletScreen() {
         id: x.txid,
         direction: 'in',
         amountSats: x.amountSats ?? 0,
-        label: txLabelMap[x.txid] || 'From plain address',
+        label: txLabelMap[x.txid] || 'From SegWit address',
         timestamp: Math.floor(x.addedAt / 1000),
         pending: true,
       }));
@@ -474,7 +474,7 @@ export default function WalletScreen() {
                 <View style={styles.scanTextWrap}>
                   <Text style={styles.scanTitle}>
                     {hidden ? MASK : groupThousands(plainSpendable || plainIncoming)}{' '}
-                    sats on a plain address
+                    sats on a SegWit address
                   </Text>
                   <Text style={styles.scanSub}>
                     {plainSpendable > 0

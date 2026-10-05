@@ -14,6 +14,18 @@ register(new URL('./ts-resolve.mjs', import.meta.url).href);
 const { GAP_LIMIT, maxAhead, nextReceiveAddress, coinsByAddress } =
   await import(new URL('../src/services/plainChain.ts', import.meta.url).href);
 
+// Comments out, including JSX blocks and their continuation lines: several of
+// these notes QUOTE the wording or the identifier they exist to explain, and a
+// bare grep matches the explanation and reports the fix as missing.
+function strip(src) {
+  return src
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((l) => !/^\s*\/\//.test(l))
+    .join('\n');
+}
+
 let failed = 0;
 function ok(name, cond, detail = '') {
   console.log((cond ? '  ok   ' : '  FAIL ') + name);
@@ -121,6 +133,97 @@ console.log('\nthe card uses them');
   ok('the QR follows the stepped address', /shown\?\.address/.test(CARD));
   ok('copy follows it too', /nextReceiveAddress\([\s\S]{0,120}\)\.address/.test(CARD));
   ok('the per-address list is rendered', /coinsByAddress\(/.test(CARD));
+}
+
+console.log('\ntwo buttons, and no way to poke the index on a loop');
+{
+  const fs = await import('node:fs');
+  const CARD = fs.readFileSync(
+    new URL('../src/components/PlainAddressCard.tsx', import.meta.url), 'utf8',
+  );
+  const code = strip(CARD);
+
+  // THREE BUTTONS IN A ROW AT PHONE WIDTH is three cramped stubs. Refresh is
+  // the one that went: the chain is already re-walked on mount, after a send,
+  // and when the background watcher sees the totals change.
+  // The row itself, not everything after it: `styles.primaryBtn` is the Send
+  // button far below, and slicing to that counted four.
+  const row = code.slice(code.indexOf('styles.actionRow'));
+  const justTheRow = row.slice(0, row.indexOf('</View>'));
+  const buttons = (justTheRow.match(/<TouchableOpacity/g) || []).length;
+  ok('two buttons in the action row', buttons === 2, justTheRow);
+  ok('and Refresh is not one of them', !/>\s*\{?loading \? 'Checking/.test(code));
+  ok('Copy address is', /'Copied' : 'Copy address'/.test(code));
+  ok('New address is', /New address/.test(code));
+
+  // The replacement for it. Without this the card would only learn about new
+  // coins on a remount, which is the thing the button was there for.
+  ok('the card re-walks when the watcher sees a change',
+     /observedAt/.test(code), code);
+  ok('and that is in the effect that walks',
+     /\[refresh, refreshTick, observedAt\]/.test(code), code);
+  const WATCH = fs.readFileSync(
+    new URL('../src/hooks/usePlainWatch.ts', import.meta.url), 'utf8',
+  );
+  ok('the watcher publishes through observe', /\.observe\(\{/.test(WATCH));
+  // A SEPARATE counter from refreshTick, in both directions: the watcher's own
+  // effect depends on refreshTick, so bumping that from inside it would poll
+  // forever; and the card publishes its own walk through `set`, which must not
+  // bump observedAt or the card would see its own result as news.
+  const STORE = fs.readFileSync(
+    new URL('../src/stores/plainStatus.ts', import.meta.url), 'utf8',
+  );
+  ok('observe only bumps when the totals changed',
+     /observedAt: prev\.observedAt \+ 1/.test(STORE), STORE);
+  ok('and plain `set` never bumps it',
+     /set: \(s\) => set\(s\),/.test(STORE), STORE);
+  ok('the watcher does not bump refreshTick',
+     !/requestRefresh/.test(WATCH), WATCH);
+}
+
+console.log('\nthe copy says what to do, not why');
+{
+  const fs = await import('node:fs');
+  const CARD = fs.readFileSync(
+    new URL('../src/components/PlainAddressCard.tsx', import.meta.url), 'utf8',
+  );
+  const PANEL = fs.readFileSync(
+    new URL('../src/components/PlainAddressPanel.vue', import.meta.url), 'utf8',
+  );
+  for (const [name, src] of [['the card', CARD], ['the panel', PANEL]]) {
+    const text = strip(src);
+    ok(`${name} warns about reuse`, /Use each\s+address once\./.test(text), name);
+    // The reasoning behind it was in front of the instruction, which is the
+    // part that has to land.
+    ok(`${name} does not explain linking`, !/nothing links them/.test(text), name);
+    ok(`${name} does not say "Unused"`, !/Unused —/.test(text), name);
+  }
+
+  // BIP-84, not 85. These hang off m/84'/coin'/0' from the wallet's own seed,
+  // so any wallet taking a recovery phrase reaches them. BIP-85 derives child
+  // SEEDS from a master one — a different thing, and somebody hunting for a
+  // BIP-85 option would not find these coins.
+  const text = strip(CARD);
+  ok('the card names the recovery phrase for restoring elsewhere',
+     /recovery phrase to restore these coins/.test(text), text);
+  ok('and names BIP-84', /BIP-84 path/.test(text), text);
+  ok('never BIP-85', !/BIP-?85/.test(text), text);
+  const PATHS = fs.readFileSync(
+    new URL('../src/services/derivationPaths.ts', import.meta.url), 'utf8',
+  );
+  ok('which is the path the keys are actually on',
+     /m\/84'\/\$\{coinType\(network\)\}'\/0'/.test(PATHS), PATHS);
+
+  // One name for one thing, in both clients. "Plain" named it by what it is
+  // not, which tells nobody which option to pick in another wallet.
+  ok('the card is titled by what it is',
+     /Native SegWit address/.test(text), text);
+  const SCREEN = fs.readFileSync(
+    new URL('../src/screens/ReceiveScreen.tsx', import.meta.url), 'utf8',
+  );
+  ok('and so is the segment', /label="SegWit"/.test(SCREEN));
+  ok('no user-facing "plain address" is left on the phone',
+     !/plain address/i.test(text), text);
 }
 
 console.log('\na payment still being mined does not read as done');

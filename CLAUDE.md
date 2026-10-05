@@ -251,6 +251,44 @@ so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
 
+## It is a native SegWit address, and calling it "Plain" said nothing
+
+Renamed on 2026-10-05, in both clients. "Plain" named it by what it is *not*,
+which is no help to somebody trying to reach those coins in another wallet.
+It is a standard **BIP-84** chain — P2WPKH, `bc1q…`, at
+`m/84'/coin'/0'` (`services/derivationPaths.ts`) — so the title, the Receive
+segment and every user-facing string say **SegWit**. The code keeps its
+`plain` names: it is the same chain whatever the label reads.
+
+**BIP-84, not BIP-85**, and the difference matters to someone recovering
+funds. BIP-85 derives child *seeds* from a master one; these addresses hang off
+the wallet's own seed on the standard path, so any wallet that takes a recovery
+phrase reaches them. Somebody hunting for a BIP-85 option would not find their
+coins. `check:plain` bans the string.
+
+The card's copy is the **instruction without the reasoning**: "Use each address
+once." It used to carry "so nothing links them", which puts an explanation of
+privacy in front of the thing that has to land.
+
+**Two buttons, not three.** Copy and New address; Refresh came off, because
+three of them at phone width is a row of cramped stubs. The chain is re-walked
+on mount, after a send, and when the foreground watcher finds the totals
+changed — `usePlainWatch` publishes through `plainStatus.observe`, and the card
+re-walks off `observedAt`. That counter is **separate from `refreshTick`** in
+both directions, and both halves are load-bearing: the watcher's own effect
+depends on `refreshTick`, so bumping that from inside it would poll forever;
+and the card publishes its own walk through `set`, which must not bump
+`observedAt` or the card would read its own result as news and walk again.
+
+The button was raised as a way to poke the server, and that was right — but
+**removing a button is not a server-side limit**. `GET /api/v1/plain/{id}`
+opens a chain-index connection per call and had no cap of any kind, so
+`check_plain_preview_allowed` now holds it to 30 a minute per user, checked
+**after** ownership so a stranger's refused request cannot spend the owner's
+allowance. Ordinary use is four calls. The web app keeps its Refresh button: it
+has no background watcher, only `onMounted`, so removing it there would leave
+no way to re-check at all.
+
 ## A wallet id does not survive a reinstall
 
 `wallet_id = urlsafe_short_hash()` at create time, so removing a wallet and

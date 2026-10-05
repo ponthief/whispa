@@ -116,7 +116,7 @@ async function refresh() {
       pendingSpend.value = null
     }
   } catch (e) {
-    error.value = e.message || 'Could not check your plain addresses.'
+    error.value = e.message || 'Could not check your SegWit addresses.'
   } finally {
     loading.value = false
   }
@@ -182,7 +182,7 @@ async function runSetup() {
     passphrase.value = ''
     await refresh()
   } catch (e) {
-    setupError.value = e.message || 'Could not set up plain addresses.'
+    setupError.value = e.message || 'Could not set up SegWit addresses.'
   } finally {
     setupBusy.value = false
   }
@@ -193,9 +193,9 @@ async function runSetup() {
   <div class="plain-panel">
     <button v-if="!open" class="collapsed" @click="open = true">
       <span class="collapsed-text">
-        <b v-if="sats > 0">{{ groupThousands(sats) }} sats on a plain address</b>
+        <b v-if="sats > 0">{{ groupThousands(sats) }} sats on a SegWit address</b>
         <b v-else-if="arriving > 0">{{ groupThousands(arriving) }} sats arriving</b>
-        <b v-else>Need a plain bitcoin address?</b>
+        <b v-else>Need a SegWit address?</b>
         <span class="text-dim text-xs">
           <template v-if="sats > 0">Held separately from this balance, ready to send.</template>
           <template v-else-if="arriving > 0">Waiting to be mined — held separately from this balance.</template>
@@ -207,13 +207,13 @@ async function runSetup() {
 
     <div v-else class="expanded">
       <div class="flex justify-between items-center" style="margin-bottom:10px">
-        <b style="font-size:13px">Plain address</b>
+        <b style="font-size:13px">SegWit address</b>
         <button class="btn btn-ghost btn-sm" @click="open = false">Hide</button>
       </div>
 
       <template v-if="!accountXprv">
         <p class="text-dim text-xs" style="margin:0 0 10px;line-height:1.6">
-          This wallet predates plain addresses, so its key for them needs deriving
+          This wallet predates SegWit addresses, so its key for them needs deriving
           once. Enter your recovery phrase and this browser handles them from then
           on — you won't be asked again.
         </p>
@@ -256,10 +256,9 @@ async function runSetup() {
           </button>
         </div>
         <p class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
-          A plain bitcoin address for senders that can't pay a Silent Payments
-          address. Unused — a new one appears once this is paid, so two payments
-          are never linked by sharing an address.
-        </p>
+          For senders that can't pay a Silent Payments address. Use each
+          address once.
+</p>
 
         <div v-if="error" class="alert alert-error" style="margin-top:10px">⚠ {{ error }}</div>
 
@@ -338,7 +337,7 @@ async function runSetup() {
     <QrModal
       :show="qrOpen"
       :address="chain?.receiveAddress || ''"
-      title="Plain address"
+      title="SegWit address"
       @close="qrOpen = false"
     />
   </div>

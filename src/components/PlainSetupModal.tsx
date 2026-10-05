@@ -81,7 +81,7 @@ export default function PlainSetupModal({
       onReady();
       onClose();
     } catch (e: any) {
-      setError(e?.message || 'Could not set up plain addresses.');
+      setError(e?.message || 'Could not set up SegWit addresses.');
     } finally {
       setBusy(false);
     }
@@ -92,9 +92,9 @@ export default function PlainSetupModal({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.heading}>Set up plain addresses</Text>
+            <Text style={styles.heading}>Set up SegWit addresses</Text>
             <Text style={styles.sub}>
-              This wallet predates plain addresses, so its key for them needs
+              This wallet predates SegWit addresses, so its key for them needs
               deriving once. Enter your recovery phrase and this device handles
               them from then on — you won't be asked again.
             </Text>

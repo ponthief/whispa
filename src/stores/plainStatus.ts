@@ -38,7 +38,21 @@ interface PlainStatusState {
   // poll — pulling to refresh on the wallet screen should refresh this too,
   // not leave it up to five minutes stale.
   refreshTick: number;
+  // Bumped when a WATCHER POLL finds the totals changed, which is what tells
+  // the card on Receive to re-walk and show the new coins.
+  //
+  // A separate counter from refreshTick on purpose, in both directions. The
+  // watcher's own effect depends on refreshTick, so bumping that from inside
+  // the watcher would restart it and poll forever. And the card publishes its
+  // own walk through `set`, which must NOT bump this, or the card would see
+  // its own result as news and walk again.
+  observedAt: number;
   set: (s: { walletId: string; spendableSats: number; unconfirmedSats: number }) => void;
+  observe: (s: {
+    walletId: string;
+    spendableSats: number;
+    unconfirmedSats: number;
+  }) => void;
   markSpent: (spend: PendingPlainSpend) => void;
   clearSpent: () => void;
   requestRefresh: () => void;
@@ -50,7 +64,16 @@ export const usePlainStatus = create<PlainStatusState>((set) => ({
   unconfirmedSats: 0,
   pendingSpend: null,
   refreshTick: 0,
+  observedAt: 0,
   set: (s) => set(s),
+  observe: (s) =>
+    set((prev) =>
+      prev.walletId === s.walletId &&
+      prev.spendableSats === s.spendableSats &&
+      prev.unconfirmedSats === s.unconfirmedSats
+        ? s
+        : { ...s, observedAt: prev.observedAt + 1 },
+    ),
   markSpent: (pendingSpend) => set({ pendingSpend }),
   clearSpent: () => set({ pendingSpend: null }),
   requestRefresh: () => set((s) => ({ refreshTick: s.refreshTick + 1 })),

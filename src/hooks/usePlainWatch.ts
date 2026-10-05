@@ -75,8 +75,14 @@ export function usePlainWatch() {
 
     // The wallet screen prompts from this, so it does not have to walk the
     // chain itself just to know whether there is anything to prompt about.
+    //
+    // `observe`, not `set`: it bumps a counter when the totals actually
+    // changed, and the card on Receive re-walks off that. This poll is the
+    // card's only way of learning about new coins now that it has no Refresh
+    // button — and it is the right one, because a five-minute interval cannot
+    // be leant on the way a button can.
     const publish = (walletId: string, spendable: number, unconfirmed: number) =>
-      usePlainStatus.getState().set({
+      usePlainStatus.getState().observe({
         walletId,
         spendableSats: spendable,
         unconfirmedSats: unconfirmed,

@@ -638,7 +638,7 @@ watch(swapCompletedAt, () => {
       <div>
         <h1>Wallet</h1>
         <p class="text-dim text-sm" style="margin-top:2px">
-          Silent Payments, plus a plain address for senders that need one
+          Silent Payments, plus a native SegWit address for senders that need one
         </p>
       </div>
       <div class="flex gap-2" style="align-items:center">

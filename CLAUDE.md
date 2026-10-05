@@ -131,6 +131,13 @@ future-rounds setting off. Two tests assert that direction, by lines of code
 rather than by prose, because the comments at both sites mention `enabled` to
 say exactly this.
 
+There is a third way into the same stranding, found on 2026-10-05 and shut
+before it happened: `enqueue_tango_payouts` finds the change output's vout
+**by `a_change_spk`**, and skips a side whose script is missing. So anything
+that clears that column on a broadcast round — `purge_tango_side` was about
+to, removing a wallet — loses a payout for a round that has already routed.
+The value is owed whatever the user has since done with their wallet.
+
 And it lives on the **Tango screen, and only there**. It was in Settings as
 well for one commit, on the reasoning that an account setting belongs with the
 account settings; two screens answering the same question, with nothing to say
@@ -242,6 +249,35 @@ The app lock is the ONLY thing in the wallet written with an `accessControl`,
 so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
+
+## A wallet id does not survive a reinstall
+
+`wallet_id = urlsafe_short_hash()` at create time, so removing a wallet and
+adding the **same seed** back is a new id for the same wallet. Anything keyed
+on it loses that wallet's past. The user id survives, because the LNbits
+account does.
+
+Both halves of one bug, reported 2026-10-05 after a mainnet wallet was removed
+and re-added. `list_tango_rounds_for_user` and `_tango_role` were keyed on the
+user and kept working, so the round was on the Tango screen and a plain send in
+the transaction list, which is where `get_tango_txids_for_wallet` was keyed on
+the wallet. Round `7e180d9e…` read **"Sent -384"** — both sides of a mix put in
+and take back the same amount, so the net is the fee share. That is what a mix
+looks like once nothing names it.
+
+The other half: a `tango_rounds` row is **one record shared by two wallets**,
+and `delete_silnt_wallet` deleted it outright, so removing a wallet took the
+**partner's** Tango history with it. `purge_tango_side` redacts one side
+instead, and only two columns — `a_inputs`, which maps the transaction's inputs
+to this wallet's coins and is the one thing on the row not already public, and
+`a_wallet_id`, emptied so the labelling sweeper stops chasing coins in a wallet
+that no longer exists. A round that never reached the chain is still deleted:
+nobody's money moved, and leaving it would hold the partner's coins reserved
+against a wallet that is gone. Only an **account** deletion takes the user id
+and username, and only once both sides are gone does the row go.
+
+Nothing recovers the rows already deleted this way. Going forward, both sides
+keep the round.
 
 ## The resume point
 

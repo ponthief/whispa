@@ -19,13 +19,34 @@
 // around nine and a quarter; at nine the estimate is above every sustained
 // real-world rate, and the error lands on the safe side of the one that
 // matters.
+//
+// It overshoots WITHIN A WEEK. Everything here is capped at
+// MAX_LOOKBACK_DAYS; see the note on it.
 export const PLANNING_SECONDS_PER_BLOCK = 540;
 
-/** Bitcoin's genesis block, as a floor on anything the user types. */
-export const GENESIS_SECONDS = 1231006505; // 2009-01-03
+/**
+ * A WEEK, and nothing further. The hard limit on everything here.
+ *
+ * Two reasons, and the first is not about cost. The oracle only has what it
+ * has indexed: a range starting below `min_scan_height` is refused outright,
+ * and one starting just above it reads blocks the oracle cannot answer for,
+ * which comes back as a scan gap rather than as an answer. A free-text date
+ * field let somebody type 2021 and ask for five years of a chain the indexer
+ * does not hold.
+ *
+ * The second is that a rescan is a search for ONE payment somebody is waiting
+ * on. A month of blocks is hours of scanning against a shared oracle to find
+ * something that was sent on Tuesday. Past a week, "where is my payment" is no
+ * longer the question, and the From/To fields in the web app are the tool for
+ * whatever is.
+ */
+export const MAX_LOOKBACK_DAYS = 7;
 
-/** The offered choices. 1 is the ordinary case: "it has not shown up yet". */
+/** The offered spans. 1 is the ordinary case: "it has not shown up yet". */
 export const DAY_OPTIONS = [1, 3, 5, 7] as const;
+
+/** Sunday-first, to index `Date.getDay()`. Not `Intl` — Hermes may not have it. */
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export type Lookback =
   | { kind: 'days'; days: number }
@@ -34,7 +55,8 @@ export type Lookback =
 /** Blocks to cover `seconds` of chain, rounded UP and never zero. */
 export function blocksForSeconds(seconds: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 1;
-  return Math.max(1, Math.ceil(seconds / PLANNING_SECONDS_PER_BLOCK));
+  const capped = Math.min(seconds, MAX_LOOKBACK_DAYS * 86400);
+  return Math.max(1, Math.ceil(capped / PLANNING_SECONDS_PER_BLOCK));
 }
 
 export function blocksForDays(days: number): number {
@@ -56,8 +78,46 @@ export function startOfDay(ms: number): number {
   return Math.floor(d.getTime() / 1000);
 }
 
+/** `YYYY-MM-DD`, as the picker's option values and the stored selection. */
+export function formatDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * The pickable days: today back to the limit, newest first.
+ *
+ * A LIST, not a calendar. The furthest the rescan may reach is a week, so the
+ * set of valid dates is seven — small enough to tap, and nothing in it can be
+ * out of range. The free-text field this replaced accepted 2021, which asked
+ * for five years of a chain the indexer does not hold.
+ */
+export function dateOptions(
+  nowMs: number = Date.now(),
+): { date: string; label: string }[] {
+  const out: { date: string; label: string }[] = [];
+  for (let back = 0; back <= MAX_LOOKBACK_DAYS; back++) {
+    // Stepped in whole days off local midnight rather than by subtracting
+    // 86,400,000 from `now`: across a DST change a day is 23 or 25 hours, and
+    // fixed-millisecond arithmetic either repeats a date or skips one.
+    const d = new Date(nowMs);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - back);
+    out.push({
+      date: formatDate(d.getTime()),
+      label: back === 0 ? 'Today' : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`,
+    });
+  }
+  return out;
+}
+
 /**
  * `YYYY-MM-DD` -> local midnight in epoch seconds, or null.
+ *
+ * Kept as the one validator even though a picker now produces the string: the
+ * bounds are enforced here whatever wrote it, so a stale selection left in
+ * state across midnight, or any future caller, meets the same limit.
  *
  * The round-trip check is not pedantry: `new Date(2026, 1, 31)` is the 3rd of
  * March, so a Date built from parts silently accepts the 31st of February and
@@ -76,11 +136,21 @@ export function parseDate(text: string, nowMs: number = Date.now()): number | nu
     return null;
   }
   const seconds = Math.floor(at.getTime() / 1000);
-  // A date in the future has no blocks in it, and one before genesis is a
-  // typo. Both would otherwise resolve to a range and scan something.
+  // A date in the future has no blocks in it. Refused rather than clamped:
+  // clamping would scan a range nobody asked for.
   if (seconds > Math.floor(nowMs / 1000)) return null;
-  if (seconds < GENESIS_SECONDS) return null;
+  // Past the limit, refused for the same reason. The oracle may not hold those
+  // blocks, and a week is as far as "where is my payment" reaches.
+  if (seconds < earliestSeconds(nowMs)) return null;
   return seconds;
+}
+
+/** Local midnight MAX_LOOKBACK_DAYS ago — the oldest date a rescan may name. */
+export function earliestSeconds(nowMs: number = Date.now()): number {
+  const d = new Date(nowMs);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - MAX_LOOKBACK_DAYS);
+  return Math.floor(d.getTime() / 1000);
 }
 
 /**
@@ -115,10 +185,15 @@ export function rangeFor(
 }
 
 /** What the button says it is about to do. */
-export function describeLookback(sel: Lookback | null): string {
+export function describeLookback(
+  sel: Lookback | null,
+  nowMs: number = Date.now(),
+): string {
   if (!sel) return '';
   if (sel.kind === 'days') {
     return `last ${sel.days} day${sel.days === 1 ? '' : 's'}`;
   }
-  return `since ${sel.date}`;
+  if (!sel.date) return '';
+  // "since <today's date>" is a roundabout way of saying today.
+  return sel.date === formatDate(nowMs) ? 'today' : `since ${sel.date}`;
 }

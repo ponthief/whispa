@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -22,6 +21,7 @@ import { resetCatchUp } from '../hooks/useCatchUpScan';
 import RecoverKeysModal from '../components/RecoverKeysModal';
 import {
   DAY_OPTIONS,
+  dateOptions,
   describeLookback,
   lookbackBlocks,
   rangeFor,
@@ -350,7 +350,7 @@ export default function ScanPanel() {
     // across midnight and still means the day it names.
     const back = lookback != null && tip ? lookbackBlocks(lookback) : null;
     if (lookback?.kind === 'date' && back == null) {
-      setError('Enter a past date as YYYY-MM-DD.');
+      setError('Pick a date to look back from.');
       return;
     }
     const armed = back != null && tip ? rangeFor(back, tip, minHeight) : null;
@@ -573,7 +573,7 @@ export default function ScanPanel() {
                       : armedRange
                       ? `Rescan ${describeLookback(lookback)}`
                       : lookback != null
-                      ? 'Enter a date'
+                      ? 'Pick a date'
                       : upToDate
                       ? 'Up to date'
                       : behind
@@ -625,18 +625,34 @@ export default function ScanPanel() {
                       </Text>
                     </TouchableOpacity>
                   </View>
+                  {/* A LIST, not a calendar and not a text field. A week is
+                      the furthest a rescan may reach, so the set of valid
+                      dates is seven — small enough to tap, and nothing in it
+                      can be out of range. The field this replaced accepted
+                      2021, which asked for five years of a chain the indexer
+                      does not hold. */}
                   {dateOpen ? (
-                    <TextInput
-                      style={styles.dateInput}
-                      value={lookback?.kind === 'date' ? lookback.date : ''}
-                      onChangeText={(date) => setLookback({ kind: 'date', date })}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={colors.faint}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="numbers-and-punctuation"
-                      maxLength={10}
-                    />
+                    <View style={[styles.lookbackRow, styles.dateRow]}>
+                      {dateOptions().map((o) => {
+                        const on =
+                          lookback?.kind === 'date' && lookback.date === o.date;
+                        return (
+                          <TouchableOpacity
+                            key={o.date}
+                            style={[styles.chip, on && styles.chipOn]}
+                            onPress={() =>
+                              setLookback(
+                                on ? { kind: 'date', date: '' } : { kind: 'date', date: o.date },
+                              )
+                            }>
+                            <Text
+                              style={[styles.chipText, on && styles.chipTextOn]}>
+                              {o.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   ) : null}
                   <Text style={styles.lookbackHelp}>
                     {armedBlocks != null
@@ -750,17 +766,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: colors.text },
   chipTextOn: { color: colors.onPrimary, fontWeight: '600' },
   lookbackHelp: { fontSize: 12, color: colors.faint, marginTop: 8, lineHeight: 17 },
-  dateInput: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-    backgroundColor: colors.surfaceAlt,
-    fontSize: 15,
-  },
+  dateRow: { marginTop: 8 },
   rangeCaption: {
     fontSize: 13,
     color: colors.muted,

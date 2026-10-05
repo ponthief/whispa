@@ -88,23 +88,95 @@ console.log('\na typed date');
 
   // `new Date(2026, 1, 31)` is the 3rd of March. A Date built from parts
   // accepts the 31st of February and silently answers about a later day.
-  ok('the 31st of February is refused', at('2026-02-31') === null);
-  ok('the 32nd of a month is refused', at('2026-01-32') === null);
-  ok('a 13th month is refused', at('2026-13-01') === null);
-  ok('a leap day in a leap year is fine', at('2024-02-29') !== null);
-  ok('a leap day in a common year is refused', at('2026-02-29') === null);
+  // Calendar validity, checked with `now` sitting just after each date so the
+  // week-long limit below is not what is doing the refusing.
+  const near = (s, nowStr) =>
+    L.parseDate(s, new Date(`${nowStr}T12:00:00`).getTime());
+  ok('the 31st of February is refused',
+     near('2026-02-31', '2026-03-02') === null);
+  ok('the 32nd of a month is refused',
+     near('2026-01-32', '2026-02-02') === null);
+  ok('a 13th month is refused', near('2026-13-01', '2027-01-02') === null);
+  ok('a leap day in a leap year is fine',
+     near('2024-02-29', '2024-03-02') !== null);
+  ok('a leap day in a common year is refused',
+     near('2026-02-29', '2026-03-02') === null);
 
-  // A future date has no blocks in it; before genesis is a typo. Both would
-  // otherwise resolve to a range and scan something.
+  // A future date has no blocks in it. Refused rather than clamped: clamping
+  // would scan a range nobody asked for.
   ok('tomorrow is refused', at('2026-10-06') === null);
   ok('today is allowed', at('2026-10-05') !== null);
-  ok('before genesis is refused', at('2008-10-31') === null);
+
+  // THE REPORTED BUG. The free-text field accepted 2021 — five years of a
+  // chain the indexer does not hold, and hours of scanning for a payment that
+  // was sent this week.
+  ok('2021 is refused', at('2021-06-01') === null);
+  ok('a month back is refused', at('2026-09-05') === null);
+  ok('exactly a week back is the oldest allowed', at('2026-09-28') !== null);
+  ok('a day past the week is refused', at('2026-09-27') === null);
 
   for (const bad of ['', '  ', '2026-9-28', '28-09-2026', '2026/09/28',
                      'yesterday', '2026-09-28T00:00', '20260928']) {
     ok(`"${bad}" is refused`, at(bad) === null, String(at(bad)));
   }
   ok('surrounding space is tolerated', at(' 2026-09-28 ') !== null);
+}
+
+console.log('\nnothing reaches past a week');
+{
+  // The cap is on the ARITHMETIC, not only on what the picker offers, so a
+  // selection left in state, a stale value or any future caller meets it too.
+  ok('the limit is a week', L.MAX_LOOKBACK_DAYS === 7,
+     String(L.MAX_LOOKBACK_DAYS));
+  const week = L.blocksForDays(7);
+  ok('a month of seconds is capped at a week',
+     L.blocksForSeconds(30 * DAY) === week, String(L.blocksForSeconds(30 * DAY)));
+  ok('five years of seconds is capped at a week',
+     L.blocksForSeconds(1826 * DAY) === week);
+  ok('and so is a month of days', L.blocksForDays(30) === week);
+  ok('every offered span is within the limit',
+     L.DAY_OPTIONS.every((d) => d <= L.MAX_LOOKBACK_DAYS));
+  // The oracle's own floor is a separate, lower limit — rangeFor still
+  // applies it, because a week back can still be below min_scan_height on an
+  // instance that started indexing recently.
+  const young = L.rangeFor(week, 900_000, 899_990);
+  ok('the oracle floor still wins when it is higher',
+     young.from === 899_990, JSON.stringify(young));
+}
+
+console.log('\nthe pickable days');
+{
+  const now = new Date(2026, 9, 5, 12, 0, 0).getTime(); // Mon 5 Oct 2026
+  const opts = L.dateOptions(now);
+  ok('today plus the whole week back',
+     opts.length === L.MAX_LOOKBACK_DAYS + 1, String(opts.length));
+  ok('newest first', opts[0].date === '2026-10-05');
+  ok('today says so', opts[0].label === 'Today');
+  ok('the oldest is exactly a week back', opts.at(-1).date === '2026-09-28');
+  ok('the others are named by weekday',
+     opts[1].label === 'Sun 4', opts[1].label);
+  // NOTHING IN THE LIST CAN BE OUT OF RANGE. That is the point of a list.
+  for (const o of opts) {
+    ok(`${o.date} is accepted by the validator`,
+       L.parseDate(o.date, now) !== null, o.date);
+    ok(`${o.date} resolves to a span`,
+       L.lookbackBlocks({ kind: 'date', date: o.date }, now) !== null);
+  }
+  ok('no date repeats', new Set(opts.map((o) => o.date)).size === opts.length);
+
+  // Stepped in whole days off local midnight, not by subtracting 86,400,000:
+  // across a DST change a day is 23 or 25 hours, and fixed-millisecond
+  // arithmetic either repeats a date or skips one. Checked over a European
+  // autumn change (25 Oct 2026) if the runner is in a zone that has one.
+  const dst = new Date(2026, 9, 26, 12, 0, 0).getTime();
+  const across = L.dateOptions(dst);
+  ok('a DST change neither repeats nor skips a date',
+     new Set(across.map((o) => o.date)).size === across.length,
+     across.map((o) => o.date).join(' '));
+  ok('and the dates still step by one',
+     across.every((o, i) =>
+       i === 0 || Number(o.date.slice(8)) !== Number(across[i - 1].date.slice(8))),
+     across.map((o) => o.date).join(' '));
 }
 
 console.log('\nwhat a selection resolves to');
@@ -128,6 +200,11 @@ console.log('\nwhat a selection resolves to');
   ok('a week ago reaches past seven nominal days',
      weekAgo >= 7 * NOMINAL_PER_DAY, String(weekAgo));
   ok('and the further date is the bigger span', weekAgo > today);
+  // Past the limit the selection is refused outright, not shortened: a
+  // silently shortened range would report "nothing found" about blocks it
+  // never looked at, which is the failure this whole screen exists to undo.
+  ok('a date beyond the limit resolves to nothing',
+     L.lookbackBlocks({ kind: 'date', date: '2021-06-01' }, now) === null);
 }
 
 console.log('\nthe height range');
@@ -158,10 +235,15 @@ console.log('\nwhat the button says');
      L.describeLookback({ kind: 'days', days: 1 }) === 'last 1 day');
   ok('more than one is plural',
      L.describeLookback({ kind: 'days', days: 3 }) === 'last 3 days');
+  const now = new Date(2026, 9, 5, 12, 0, 0).getTime();
   ok('a date names itself',
-     L.describeLookback({ kind: 'date', date: '2026-09-28' }) ===
+     L.describeLookback({ kind: 'date', date: '2026-09-28' }, now) ===
        'since 2026-09-28');
-  ok('nothing armed says nothing', L.describeLookback(null) === '');
+  ok('today is not "since today\'s date"',
+     L.describeLookback({ kind: 'date', date: '2026-10-05' }, now) === 'today');
+  ok('nothing armed says nothing', L.describeLookback(null, now) === '');
+  ok('a date not yet picked says nothing',
+     L.describeLookback({ kind: 'date', date: '' }, now) === '');
 }
 
 console.log('\nthe screen uses them');
@@ -172,8 +254,13 @@ console.log('\nthe screen uses them');
     .join('\n');
 
   ok('the day chips come from the service', /DAY_OPTIONS\.map\(/.test(code));
+  ok('the dates come from the service', /dateOptions\(\)\.map\(/.test(code));
   ok('the range comes from the service', /rangeFor\(/.test(code));
   ok('and so does the span', /lookbackBlocks\(/.test(code));
+  // A FIELD, NOT A PICKER, is what let 2021 in. Nothing here may take a typed
+  // date again: the validator would refuse it, but refusing what somebody has
+  // finished typing is a worse screen than not offering it.
+  ok('no text input on this screen', !/TextInput/.test(code), code);
   // The old block counts are what this replaced. Left anywhere they would be
   // a second answer to the same question.
   ok('no hand-rolled block counts remain',

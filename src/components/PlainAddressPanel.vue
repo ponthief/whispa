@@ -17,7 +17,7 @@
  * Collapsed by default: the Silent Payments address above needs none of this
  * machinery and should be used wherever the sender will accept it.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { loadPlainChain } from '@/services/plainChain'
@@ -49,6 +49,12 @@ const qrOpen      = ref(false)
 // a walk disagrees with the balance recorded at broadcast.
 const pendingSpend = ref(null)
 const SPEND_STALE_MS = 15 * 60 * 1000
+
+// When the server was last asked about these addresses. Written by refresh()
+// and read by the watcher's visibility catch-up, so every path that walks
+// counts against the same floor. Declared up here rather than beside the
+// timer because refresh() is defined above it.
+let lastWalkAt = 0
 
 // Setup for wallets stored before the plain chain existed: their vault entry has
 // no account key, so it is derived from the recovery phrase once and saved.
@@ -101,6 +107,10 @@ async function refresh() {
   if (!accountXprv.value) { chain.value = null; return }
   loading.value = true
   error.value = null
+  // Recorded HERE, not in the poll, so every path that walks counts: a mount,
+  // a key change and the way out of the send modal all spend the same
+  // allowance a poll does.
+  lastWalkAt = Date.now()
   try {
     const next = await loadPlainChain(
       (addresses) => api.getPlainPreview(auth.inkey, props.wallet.id, addresses),
@@ -124,10 +134,78 @@ async function refresh() {
 
 // Walked once when the wallet card renders, not on expand. The panel is
 // collapsed by default, so without this nobody would learn that coins had
-// arrived — there is no background watcher here as there is in the mobile app,
-// and no push to fall back on. A wallet with no account key costs one vault read
-// and no network at all, and the walk itself is a single batched request.
-onMounted(refresh)
+// arrived — and there is no push to fall back on. A wallet with no account key
+// costs one vault read and no network at all, and the walk itself is a single
+// batched request.
+//
+// ── the watcher ────────────────────────────────────────────────────────────
+//
+// Then every five minutes, matching the phone's usePlainWatch. This is what
+// replaced the Refresh button, here as there: a button is the one thing a user
+// waiting on a payment can lean on, several times a second, and
+// `check_plain_preview_allowed` on the server holds the endpoint to thirty a
+// minute per account. An interval cannot be leant on.
+//
+// THREE THINGS IT MUST NOT DO, each of which would be a new bug rather than a
+// missing feature:
+//
+//   Poll under an open send modal. PlainSendModal is handed `chain` as a prop
+//   and builds a transaction from the coins in it; replacing that object
+//   underneath an open modal churns what it was opened with. The phone's card
+//   says the same thing at its onClose, and refreshes on the way OUT.
+//
+//   Poll a hidden tab. Pure waste against a rate-limited endpoint, and a
+//   browser throttles the timer anyway, so the interval it claims to keep is
+//   not the one it would get.
+//
+//   Overlap itself. A slow walk with a five-minute timer behind it is fine; a
+//   slow walk with a second walk started on top of it spends two of the
+//   account's thirty and can land out of order.
+const POLL_MS = 5 * 60 * 1000
+let timer = null
+
+function pollable() {
+  return (
+    !!accountXprv.value &&
+    !loading.value &&
+    !sendOpen.value &&
+    !setupOpen.value &&
+    document.visibilityState === 'visible'
+  )
+}
+
+function tick() {
+  if (pollable()) refresh()
+}
+
+// Coming back to the tab after an hour should not show an hour-old balance,
+// and the interval's next fire could be five minutes away.
+//
+// Behind the same five-minute floor, though, or alt-tabbing is a Refresh
+// button with no label on it — one walk per switch, which is the exact shape
+// of poking this endpoint that taking the button away was meant to stop.
+function onVisible() {
+  if (
+    document.visibilityState === 'visible' &&
+    Date.now() - lastWalkAt >= POLL_MS
+  ) {
+    tick()
+  }
+}
+
+onMounted(() => {
+  refresh()
+  timer = setInterval(tick, POLL_MS)
+  document.addEventListener('visibilitychange', onVisible)
+})
+
+// Or a card the user has navigated away from keeps polling for the life of the
+// page — and WalletsView renders one panel per wallet.
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+  timer = null
+  document.removeEventListener('visibilitychange', onVisible)
+})
 
 // Re-read when this browser's stored keys change. The account key is read once,
 // on mount, so recovering a wallet's keys from the card above left this panel
@@ -251,9 +329,6 @@ async function runSetup() {
                   :title="copied ? 'Copied' : 'Copy address'">{{ copied ? '✓' : '⎘' }}</button>
           <button class="btn btn-ghost btn-sm btn-icon" @click="qrOpen = true"
                   title="Show QR code">▦</button>
-          <button class="btn btn-ghost btn-sm" @click="refresh" :disabled="loading">
-            {{ loading ? 'Checking…' : 'Refresh' }}
-          </button>
         </div>
         <p class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
           For senders that can't pay a Silent Payments address. Use each

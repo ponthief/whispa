@@ -285,9 +285,20 @@ The button was raised as a way to poke the server, and that was right — but
 opens a chain-index connection per call and had no cap of any kind, so
 `check_plain_preview_allowed` now holds it to 30 a minute per user, checked
 **after** ownership so a stranger's refused request cannot spend the owner's
-allowance. Ordinary use is four calls. The web app keeps its Refresh button: it
-has no background watcher, only `onMounted`, so removing it there would leave
-no way to re-check at all.
+allowance. Ordinary use is four calls.
+
+The web dropped its Refresh button too, once `PlainAddressPanel.vue` got a
+watcher of its own — the same five minutes, since it had only `onMounted` and
+removing the button before that would have left no way to re-check. Its three
+guards are each a bug if they go. It must not poll **under an open send
+modal**, because `PlainSendModal` takes `chain` as a prop and builds a
+transaction from the coins in it. Not a **hidden tab**, which is waste against
+a limited endpoint and throttled by the browser anyway, so the interval it
+claims is not the one it gets. And not **on top of a walk already running**,
+which spends two of the thirty and can land out of order. The
+visibility catch-up sits behind the same five-minute floor, recorded in
+`refresh()` so every walk counts: without it, alt-tabbing is a Refresh button
+with no label on it.
 
 ## A wallet id does not survive a reinstall
 

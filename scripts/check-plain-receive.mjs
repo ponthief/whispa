@@ -181,6 +181,70 @@ console.log('\ntwo buttons, and no way to poke the index on a loop');
      !/requestRefresh/.test(WATCH), WATCH);
 }
 
+console.log('\nand the web has a watcher of its own');
+{
+  const fs = await import('node:fs');
+  const PANEL = strip(fs.readFileSync(
+    new URL('../src/components/PlainAddressPanel.vue', import.meta.url), 'utf8',
+  ));
+
+  ok('Refresh is gone from the panel too',
+     !/'Checking…' : 'Refresh'/.test(PANEL), PANEL);
+  ok('and an interval replaced it', /setInterval\(tick, POLL_MS\)/.test(PANEL));
+  ok('at the same five minutes as the phone',
+     /POLL_MS = 5 \* 60 \* 1000/.test(PANEL), PANEL);
+
+  // THREE GUARDS, each of which would be a new bug rather than a missing
+  // feature if it went.
+  //
+  // PlainSendModal is handed `chain` as a prop and builds a transaction from
+  // the coins in it. Replacing that object under an open modal churns what it
+  // was opened with — the phone's card says the same thing at its onClose and
+  // refreshes on the way OUT.
+  ok('it does not poll under an open send modal',
+     /!sendOpen\.value/.test(PANEL), PANEL);
+  // A hidden tab is waste against a rate-limited endpoint, and a browser
+  // throttles the timer anyway, so the interval it claims is not the one it
+  // would get.
+  ok('nor a hidden tab',
+     /document\.visibilityState === 'visible'/.test(PANEL), PANEL);
+  // Two walks at once spend two of the account's thirty and can land out of
+  // order.
+  ok('nor on top of a walk already running',
+     /!loading\.value/.test(PANEL), PANEL);
+
+  // Coming back after an hour must not show an hour-old balance, and the
+  // interval's next fire could be five minutes away.
+  ok('it catches up when the tab becomes visible',
+     /addEventListener\('visibilitychange', onVisible\)/.test(PANEL), PANEL);
+  // But behind the same floor, or alt-tabbing is a Refresh button with no
+  // label on it — one walk per switch, which is exactly what taking the
+  // button away was meant to stop.
+  ok('and the catch-up is behind the five-minute floor',
+     /Date\.now\(\) - lastWalkAt >= POLL_MS/.test(PANEL), PANEL);
+  // Recorded in refresh(), not in the poll, so a mount, a key change and the
+  // way out of the send modal all count against that floor.
+  // The second argument to indexOf matters: `loadPlainChain` is also the
+  // import at the top of the file, which is BEFORE refresh() and made this
+  // slice run backwards.
+  const refreshAt = PANEL.indexOf('async function refresh');
+  const body = PANEL.slice(refreshAt, PANEL.indexOf('loadPlainChain(', refreshAt));
+  ok('every walk counts against it',
+     /lastWalkAt = Date\.now\(\)/.test(body), body);
+
+  // WalletsView renders one panel per wallet, so a card the user navigated
+  // away from would otherwise poll for the life of the page.
+  ok('the timer is cleared on unmount',
+     /onUnmounted\(/.test(PANEL) && /clearInterval\(timer\)/.test(PANEL), PANEL);
+  ok('and the listener with it',
+     /removeEventListener\('visibilitychange', onVisible\)/.test(PANEL), PANEL);
+  ok('onUnmounted is imported', /onUnmounted/.test(
+     fs.readFileSync(
+       new URL('../src/components/PlainAddressPanel.vue', import.meta.url),
+       'utf8',
+     ).split('\n').find((l) => /^import \{.*\} from 'vue'/.test(l)) || ''));
+}
+
 console.log('\nthe copy says what to do, not why');
 {
   const fs = await import('node:fs');

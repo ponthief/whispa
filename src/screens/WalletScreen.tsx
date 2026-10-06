@@ -27,7 +27,6 @@ import BitcoinSign from '../components/BitcoinSign';
 import { usePendingSends } from '@stores/pendingSends';
 import { usePlainStatus } from '@stores/plainStatus';
 import { useSeedBackup } from '@stores/seedBackup';
-import { useNavStore } from '@stores/navStore';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { MASK, useBalancePrivacy } from '@stores/balancePrivacy';
 import { useCatchUpScan } from '../hooks/useCatchUpScan';
@@ -143,7 +142,6 @@ export default function WalletScreen() {
   const plainSats = usePlainStatus((s) => s.spendableSats);
   const plainArriving = usePlainStatus((s) => s.unconfirmedSats);
   const plainSpendPending = usePlainStatus((s) => !!s.pendingSpend);
-  const goToPlain = useNavStore((s) => s.goToPlain);
   // Hidden while a payment from there is in flight: the chain index lags a
   // mempool spend, so the figure it reports is coins already on their way.
   const plainOwn = !!spWallet && plainWalletId === spWallet.id && !plainSpendPending;
@@ -171,9 +169,27 @@ export default function WalletScreen() {
         timestamp: Math.floor(x.addedAt / 1000),
         pending: true,
       }));
+    // And a payment OUT of the SegWit chain, which the server knows even less
+    // about: it never holds those coins, so there is no row of any kind coming
+    // later. Without this the money left the balance with nothing to say where
+    // it went until the next chain walk. The local record IS the row until it
+    // confirms, which is why it carries the destination as its label.
+    const outgoing = pendingLocal
+      .filter(
+        (x) =>
+          x.kind === 'segwit' && x.walletId === spWallet?.id && !known.has(x.txid),
+      )
+      .map<TxItem>((x) => ({
+        id: x.txid,
+        direction: 'out',
+        amountSats: x.amountSats ?? 0,
+        label: txLabelMap[x.txid] || 'Sent',
+        timestamp: Math.floor(x.addedAt / 1000),
+        pending: true,
+      }));
     // Newest first, matching the server's ordering — one of these is always the
     // most recent thing that happened.
-    return [...incoming, ...rows];
+    return [...incoming, ...outgoing, ...rows];
   }, [spRawTxs, txLabelMap, pendingLocal, spWallet?.id]);
 
   const load = useCallback(async () => {
@@ -496,20 +512,21 @@ export default function WalletScreen() {
                 An unconfirmed payment is the case nothing else announces: it
                 is not in any total, and the card that would show it is on
                 another tab. */}
+            {/* NO VIEW BUTTON. It went to the Receive tab's card, which is
+                not where these coins are any more — the payment is a pending
+                row in Recent transactions right below this, and the balance
+                takes it the moment it confirms. A button that navigates away
+                from the answer is worse than no button. */}
             {!keysMissing && plainIncoming > 0 ? (
               <View style={styles.plainBanner}>
                 <View style={styles.scanTextWrap}>
                   <Text style={styles.scanTitle}>
-                    {hidden ? MASK : groupThousands(plainIncoming)}{' '}
-                    sats arriving on a SegWit address
+                    {hidden ? MASK : groupThousands(plainIncoming)} sats arriving
                   </Text>
                   <Text style={styles.scanSub}>
                     Waiting to be mined. It joins your balance once it confirms.
                   </Text>
                 </View>
-                <TouchableOpacity style={styles.scanBtn} onPress={goToPlain}>
-                  <Text style={styles.scanBtnText}>View</Text>
-                </TouchableOpacity>
               </View>
             ) : null}
 

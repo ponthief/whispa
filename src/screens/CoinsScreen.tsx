@@ -586,16 +586,6 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             </>
           ) : null}
 
-          <Text style={styles.hint}>
-            Frozen coins are excluded when sending. Dust = small coins from
-            others; your own change is never flagged. Set the threshold in Settings.
-          </Text>
-          {segwitReady && segwit.length > 0 ? (
-            <Text style={styles.hint}>
-              SegWit labels stay on this device. The server is never told these
-              coins exist, so it is never told who paid them either.
-            </Text>
-          ) : null}
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -752,11 +742,4 @@ const styles = StyleSheet.create({
   smallGhost: { paddingHorizontal: 8, paddingVertical: 9 },
   smallGhostText: { color: colors.muted, fontSize: 13, fontWeight: '600' },
 
-  hint: {
-    fontSize: 12,
-    color: colors.faint,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 17,
-  },
 });

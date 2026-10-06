@@ -460,10 +460,6 @@ watch(selectedWallet, () => { loadSegwit() })
           </div>
         </div>
       </div>
-      <p class="text-dim text-xs" style="margin-top:8px">
-        SegWit labels stay in this browser. The server is never told these coins
-        exist, so it is never told who paid them either.
-      </p>
     </div>
   </div>
 </template>

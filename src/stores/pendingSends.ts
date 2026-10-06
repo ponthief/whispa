@@ -20,12 +20,19 @@ export interface PendingSend {
   walletId: string;
   amountSats: number | null;
   addedAt: number; // ms, for the grace period below
-  // 'plain' is a payment from the plain BIP-84 chain into this wallet's own
+  // 'plain' is a payment from the SegWit BIP-84 chain into this wallet's own
   // Silent Payments address. It is watched here for exactly one reason: on
   // confirmation the watcher scans that block, which is the only way the output
   // is ever found. The wallet spent no coins it owned, so the server will never
   // list it as pending and `sync` below must not evict it.
-  kind?: 'send' | 'plain';
+  //
+  // 'segwit' is a payment OUT of that chain to somebody else. The server knows
+  // nothing about it either — those coins are never stored there — so without
+  // an entry here the money simply vanished from the balance with no row to
+  // explain it until the next walk. Reported 2026-10-06: "coins being sent are
+  // not shown as pending". Same eviction exemption as 'plain', for the same
+  // reason: a list that never contains it cannot be evidence it confirmed.
+  kind?: 'send' | 'plain' | 'segwit';
 }
 
 // How long a locally-registered send is kept even though the server hasn't
@@ -71,9 +78,10 @@ export const usePendingSends = create<PendingSendsState>((set) => ({
     })),
 
   // The server's list is authoritative: anything it no longer calls pending has
-  // confirmed (or been replaced) and stops being watched. Two exceptions: a very
-  // recent local entry, per SYNC_GRACE_MS above, and a 'plain' entry — which the
-  // server never lists at all, because the wallet did not own its inputs.
+  // confirmed (or been replaced) and stops being watched. Three exceptions: a
+  // very recent local entry, per SYNC_GRACE_MS above, and the two SegWit kinds
+  // — which the server never lists at all, because those coins are not stored
+  // there and the wallet owned no SP input to spend.
   sync: (pending) =>
     set((s) => {
       const now = Date.now();
@@ -82,6 +90,7 @@ export const usePendingSends = create<PendingSendsState>((set) => ({
       const kept = s.sends.filter(
         (x) =>
           x.kind === 'plain' ||
+          x.kind === 'segwit' ||
           fromServer.has(x.txid) ||
           now - x.addedAt < SYNC_GRACE_MS,
       );

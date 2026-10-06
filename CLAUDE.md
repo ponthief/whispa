@@ -309,11 +309,21 @@ Payments form (`components/SegwitSendPanel.tsx`), and the card keeps the half
 it is named for. The picker only appears when there is something on the SegWit
 side — a second option that is always empty is a question nobody needs asked.
 
-**Not one form with branches.** The two look similar and are not: the SegWit
-chain is walked on the device, picks coins **by address** rather than by
-outpoint, has its own fee arithmetic in `services/plainSign.ts`, and cannot
-share a transaction with an SP coin. One form doing both would branch at every
-field, and the branch nobody noticed would be the one that signs.
+**One form, and the coin rows are the only branch.** This was two panels for a
+day — on the reasoning that a form doing both would branch at every field —
+and that was wrong: it meant two of every control. The recipient, the amount
+and its slider, the fee tiers, the summary, Review and the review step itself
+are the same controls whichever side pays. What differs is the coin list (an
+SP coin is an outpoint, a SegWit holding is an address that spends every
+payment under it at once), the builder, and the broadcast.
+
+Three things the shared form has to count in **inputs, not rows**: the fee,
+the coin-merging warning, and the review's coin count. One SegWit address
+holding three payments links three coins on chain exactly as three SP coins
+do, and counting rows would skip the warning for the case that most needs it.
+`selectedInputCount` is that number on both clients. Selection keys are
+prefixed (`sw:<index>`) so a leftover from one side could never be handed to
+the other's builder, and flipping clears the selection and the amount anyway.
 
 **The balance is the sum, and the split is named directly under it.** "How
 much have I got" has one answer, and the SegWit coins used to sit below the
@@ -352,7 +362,17 @@ since the preview endpoint is capped at thirty a minute.
 The in-app banner for an arriving payment used to say "a payment to your plain
 address… Open Receive to view it", which named an internal distinction nobody
 asked about and pointed at a tab that no longer holds these coins. It says what
-happened and stops.
+happened and stops. The arriving-coins banner on Wallet lost its **View**
+button for the same reason: the payment is a pending row in Recent
+transactions directly below it, and a button that navigates away from the
+answer is worse than no button.
+
+**A SegWit send has to be registered as pending by the client**, because
+nothing else will. The server never lists these — it does not hold the coins —
+so `pendingSends` grew a `'segwit'` kind beside `'plain'`, exempt from the
+server-list eviction for the same reason: a list that can never contain it is
+not evidence it confirmed. Without it the money left the balance with no row
+to say where it went until the next chain walk (reported 2026-10-06).
 
 Freeze for SegWit coins was built and then removed the same day, before it
 shipped. The decision not to store these coins server-side was taken

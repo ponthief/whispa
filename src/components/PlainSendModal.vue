@@ -216,10 +216,16 @@ async function confirm() {
     // transaction was broadcast. Handing it to the global send watcher is what
     // makes it scan the confirming block — the only reason the payment ever
     // shows up in Activity.
-    if (toSelf.value) {
-      addPendingSend(res.txid, props.wallet.id, built.value.amount)
-      try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
-    }
+    // A self-send needs the watcher for a second reason: the wallet cannot see
+    // a payment to its own SP address by itself — the output is found only by
+    // SCANNING, and nothing scans just because a transaction was broadcast.
+    // Handing it over is what makes it scan the confirming block.
+    //
+    // A payment OUT is registered too. The server never lists these as pending
+    // because it does not hold the coins, so without an entry the money simply
+    // leaves with nothing watching for it to land. Reported 2026-10-06.
+    addPendingSend(res.txid, props.wallet.id, built.value.amount)
+    try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
     stage.value = 'done'
   } catch (e) { error.value = e.message }
   finally { busy.value = false }

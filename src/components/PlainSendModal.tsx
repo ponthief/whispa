@@ -257,6 +257,26 @@ export default function PlainSendModal({
           kind: 'plain',
         });
         useTxLabelStore.getState().setLabel(res.txid, 'From SegWit address');
+      } else {
+        // A payment OUT of the SegWit chain to somebody else. Registered for a
+        // different reason than the self-send above: the server never hears
+        // about these coins, so nothing would list the send as pending and the
+        // money just left the balance with no row to explain it until the next
+        // walk. Reported 2026-10-06.
+        usePendingSends.getState().add({
+          txid: res.txid,
+          walletId: wallet.id,
+          amountSats: built.amount,
+          kind: 'segwit',
+        });
+        // Who it went to, so the pending row says something. Device-local like
+        // every other label here — see services/txLabels.ts.
+        const to = destination.trim();
+        if (to) {
+          useTxLabelStore
+            .getState()
+            .setLabel(res.txid, to.length > 20 ? `${to.slice(0, 10)}…${to.slice(-8)}` : to);
+        }
       }
       setStage('done');
     } catch (e: any) {

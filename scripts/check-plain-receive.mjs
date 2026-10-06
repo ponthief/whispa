@@ -202,12 +202,7 @@ console.log('\nand the web has a watcher of its own');
   // was opened with — the phone says the same thing at its onClose and
   // refreshes on the way OUT. The guard lives with the modal, which moved to
   // the Send page: the receive panel no longer has one to guard against.
-  const SENDPANEL = strip(fs.readFileSync(
-    new URL('../src/components/SegwitSendPanel.vue', import.meta.url), 'utf8',
-  ));
-  ok('the send panel does not poll under its own open modal',
-     /!sendOpen\.value/.test(SENDPANEL), SENDPANEL);
-  ok('and the receive panel has no modal left to guard',
+  ok('the receive panel has no modal left to guard',
      !/PlainSendModal/.test(PANEL), PANEL);
   // A hidden tab is waste against a rate-limited endpoint, and a browser
   // throttles the timer anyway, so the interval it claims is not the one it
@@ -338,36 +333,71 @@ console.log('\nspending lives on the Send tab, receiving on Receive');
   const SEND = strip(fs.readFileSync(
     new URL('../src/screens/SendScreen.tsx', import.meta.url), 'utf8',
   ));
-  const PANEL = strip(fs.readFileSync(
-    new URL('../src/components/SegwitSendPanel.tsx', import.meta.url), 'utf8',
-  ));
-
   // GOING TO RECEIVE IN ORDER TO SEND is what this was.
   ok('the receive card no longer sends', !/PlainSendModal/.test(CARD), CARD);
   ok('and carries no dead spend state', !/spendOpen/.test(CARD), CARD);
   ok('the Send screen offers a chain to pay from',
-     /setSource\('segwit'\)|setSource\(s\)/.test(SEND), SEND);
-  ok('and renders the SegWit panel for it',
-     /<SegwitSendPanel wallet=\{wallet\} \/>/.test(SEND), SEND);
-  ok('the panel is what opens the send modal',
-     /PlainSendModal/.test(PANEL), PANEL);
+     /setSource\(s\)/.test(SEND), SEND);
+
+  // ONE FORM, NOT TWO. The recipient, the amount and its slider, the fee
+  // tiers, the summary, Review and the review step itself are the same
+  // controls whichever side pays. Only the coin rows and the builder differ —
+  // a second panel meant a second one of everything.
+  ok('there is no separate SegWit panel',
+     !fs.existsSync(new URL('../src/components/SegwitSendPanel.tsx', import.meta.url)));
+  ok('the coin list is the branch', /isSegwit \? segwitTotals/.test(SEND), SEND);
+  ok('and the builder is the other one', /buildSegwit\(\)/.test(SEND), SEND);
+  ok('one review step serves both',
+     /const reviewing = isSegwit \? segwitBuilt : built;/.test(SEND), SEND);
+  ok('the unlock gate guards both builds',
+     /if \(isSegwit\) buildSegwit\(\);/.test(SEND), SEND);
 
   // The picker is only worth showing when there is a second pocket to pick.
   ok('the chain picker hides when SegWit is empty',
      /segwitSpendable > 0 \|\| source === 'segwit'/.test(SEND), SEND);
 
-  // The two cannot share a transaction, so the SP form must not be reachable
-  // under a SegWit selection — one form branching at every field is how the
-  // branch nobody noticed ends up signing.
-  ok('the two forms are exclusive', /source === 'segwit'\s*\?/.test(SEND), SEND);
+  // A SELECTION ON ONE SIDE MEANS NOTHING ON THE OTHER, and the keys are
+  // prefixed so a leftover could never be spent by the wrong builder.
+  ok('flipping clears the selection',
+     /setSelected\(new Set\(\)\);\s*\n\s*setAmount\(''\);/.test(SEND), SEND);
+  ok('and the two key spaces cannot collide',
+     /return `sw:\$\{index\}`/.test(SEND), SEND);
 
-  // Same in-flight guard as the card had: the index lags a mempool spend, and
-  // offering those coins again builds a conflicting transaction.
-  ok('the panel refuses coins already on their way',
-     /!inFlight && sats > 0/.test(PANEL), PANEL);
-  // And the same watcher-driven re-walk, since neither has a Refresh button.
-  ok('the panel re-walks off the watcher',
-     /observedAt/.test(PANEL), PANEL);
+  // INPUTS, not rows. One SegWit address holding three payments links three
+  // coins on chain exactly as three SP coins do, so the fee, the merge
+  // warning and the review count all have to price the inputs.
+  ok('the fee prices inputs',
+     /estimateSegwitFee\(selectedInputCount/.test(SEND), SEND);
+  ok('the merge warning counts inputs',
+     /if \(selectedInputCount > 1\)/.test(SEND), SEND);
+  ok('and so does the review row',
+     /selectedInputCount > 1\s*\n?\s*\? `\$\{selectedInputCount\}/.test(SEND), SEND);
+}
+
+console.log('\na SegWit send shows as pending');
+{
+  const fs = await import('node:fs');
+  const read2 = (rel) =>
+    strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
+  const STORE = read2('src/stores/pendingSends.ts');
+  const SEND = read2('src/screens/SendScreen.tsx');
+  const MODAL = read2('src/components/PlainSendModal.tsx');
+  const WALLET = read2('src/screens/WalletScreen.tsx');
+
+  // THE MONEY JUST LEFT. The server never lists these as pending — it does not
+  // hold the coins — so without a local entry the balance dropped with no row
+  // to say where it went until the next chain walk.
+  ok('there is a kind for an outgoing SegWit send',
+     /'send' \| 'plain' \| 'segwit'/.test(STORE), STORE);
+  ok('the Send screen registers one', /kind: self \? 'plain' : 'segwit'/.test(SEND), SEND);
+  ok('and so does the modal', /kind: 'segwit'/.test(MODAL), MODAL);
+  // The server's list is what evicts a stale entry, and it will never contain
+  // this one — so a list that lacks it is not evidence that it confirmed.
+  ok('the server sync cannot evict it',
+     /x\.kind === 'segwit' \|\|/.test(STORE), STORE);
+  ok('the wallet list renders it as outgoing',
+     /x\.kind === 'segwit' && x\.walletId/.test(WALLET), WALLET);
+  ok('as a pending row', /direction: 'out',[\s\S]{0,200}pending: true/.test(WALLET), WALLET);
 }
 
 console.log('\none balance, two pockets, named');
@@ -449,7 +479,6 @@ console.log('\nthe browser does all of it too');
     strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
   const PANEL = read2('src/components/PlainAddressPanel.vue');
   const SEND = read2('src/views/SendView.vue');
-  const SENDPANEL = read2('src/components/SegwitSendPanel.vue');
   const WALLETS = read2('src/views/WalletsView.vue');
   const COINS = read2('src/views/UtxosView.vue');
   const STORE = read2('src/stores/segwitlabels.js');
@@ -460,9 +489,20 @@ console.log('\nthe browser does all of it too');
      !/PlainSendModal/.test(PANEL) && !/sendOpen/.test(PANEL), PANEL);
   ok('the web Send page has a chain picker',
      /source = 'segwit'/.test(SEND), SEND);
-  ok('and renders the SegWit panel', /<SegwitSendPanel/.test(SEND), SEND);
-  ok('the SP form is hidden under a SegWit selection',
-     /v-show="source === 'sp'"/.test(SEND), SEND);
+  // ONE FORM THERE TOO. The recipient, amount, slider, fee tiers, summary,
+  // Build and review are the same controls whichever side pays.
+  ok('there is no separate SegWit panel',
+     !fs.existsSync(new URL('../src/components/SegwitSendPanel.vue', import.meta.url)));
+  ok('the coin list is the branch', /v-else-if="isSegwit" class="utxo-list"/.test(SEND), SEND);
+  ok('and the builder is the other one',
+     /return buildSegwitTransaction\(\)/.test(SEND), SEND);
+  ok('flipping clears the selection',
+     /selectedSegwit\.value = \[\]/.test(SEND), SEND);
+  ok('the fee prices inputs', /nIn \* INPUT_VBYTES/.test(SEND), SEND);
+  ok('and the merge warning counts them',
+     /selectedInputCount\.value > 1 && !mixedLabels/.test(SEND), SEND);
+  ok('a SegWit send is registered as pending',
+     /addPendingSend\(res\.txid, selectedWallet\.value, segwitBuilt/.test(SEND), SEND);
   // Gated on HAVING a chain, not on its balance: gating on the balance needs a
   // walk before the thing that walks has mounted, and would hide the route to
   // coins that arrived since the page loaded.

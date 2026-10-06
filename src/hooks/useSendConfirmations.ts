@@ -127,7 +127,11 @@ export function useSendConfirmations() {
             usePendingSends.getState().markConfirmed(send.txid);
             // Bring in the change output so the balance settles and the
             // transaction becomes labellable, without the user scanning.
-            if (inkey && res.block_height) {
+            //
+            // Not for a SegWit send: it spends no Silent Payments coin, so
+            // there is no SP change output for a scan to find, and the walk
+            // that updates that balance is the panel's own.
+            if (inkey && res.block_height && send.kind !== 'segwit') {
               const started = await scanForChange(inkey, send.walletId, res.block_height);
               // Don't await: the banner and the list update should not wait on
               // a scan finishing.
@@ -143,11 +147,15 @@ export function useSendConfirmations() {
                 send.amountSats != null && !hidden
                   ? `${groupThousands(send.amountSats)} sats`
                   : 'Your payment';
+              // WHICH CHAIN IT CAME FROM IS NOT THE NEWS, and 'plain' was the
+              // old name for the SegWit one anyway. Both of these are a
+              // payment confirming; the only difference worth a separate
+              // sentence is that one of them landed in this wallet.
               usePushBanner.getState().show(
                 send.kind === 'plain'
                   ? {
                       title: 'Coins moved in',
-                      body: `${amount} arrived from your plain address.`,
+                      body: `${amount} arrived in your wallet.`,
                     }
                   : {
                       title: 'Payment confirmed',

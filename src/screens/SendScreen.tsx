@@ -30,7 +30,24 @@ import { getWalletKeys } from '@services/secureKeys';
 import { usePendingSends } from '@stores/pendingSends';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { usePlainStatus } from '@stores/plainStatus';
-import SegwitSendPanel from '../components/SegwitSendPanel';
+import {
+  isOwnSpAddress,
+  keyMapForIndices,
+  loadPlainChain,
+  plainAddressTotals,
+  type PlainAddressTotal,
+  type PlainChainState,
+} from '@services/plainChain';
+import {
+  buildSignedPlainTx,
+  CHANGE_VBYTES,
+  INPUT_VBYTES,
+  OVERHEAD_VBYTES,
+  type PlainBuiltTx,
+} from '@services/plainSign';
+import { usePlainHistory } from '@stores/plainHistoryStore';
+import { labelFor } from '@services/segwitLabels';
+import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { markScanStarted } from '@services/scanCooldown';
 import { parseScannedAddress } from '@services/addressUri';
 import { colors } from '@/theme';
@@ -88,6 +105,13 @@ function groupThousands(n: number): string {
 // Blocks a wallet may lag the tip before the Send screen says so (~1 hour).
 const STALE_BLOCKS = 6;
 
+// A SegWit address's place in the shared selection set. Prefixed so it can
+// never collide with an SP outpoint key, which would let a stale selection
+// from the other side survive a flip and be spent.
+function segwitKey(index: number): string {
+  return `sw:${index}`;
+}
+
 function utxoKey(u: api.Utxo): string {
   return `${u.txid}:${u.vout}`;
 }
@@ -108,6 +132,27 @@ function estimateFee(
     outputVbytesForAddress(recipient),
     TAPROOT_OUTPUT_VBYTES,
   ]);
+  return Math.max(1, Math.ceil(vsize * feeRate));
+}
+
+// The same estimate for the SegWit chain, whose inputs are a different size.
+// P2WPKH in, not P2TR — services/plainSign.ts owns both numbers, so this reads
+// them rather than carrying a second copy that could drift.
+//
+// An ESTIMATE, like its sibling: it drives the fee shown and the slider's
+// ceiling. The server's prepare step does the arithmetic the signature
+// commits to, and the two are cross-checked before anything is broadcast.
+function estimateSegwitFee(
+  numInputs: number,
+  feeRate: number,
+  recipient: string = '',
+): number {
+  if (!numInputs || !feeRate) return 0;
+  const vsize =
+    OVERHEAD_VBYTES +
+    numInputs * INPUT_VBYTES +
+    outputVbytesForAddress(recipient) +
+    CHANGE_VBYTES;
   return Math.max(1, Math.ceil(vsize * feeRate));
 }
 
@@ -150,12 +195,23 @@ export default function SendScreen() {
   // the BIP-84 chain, which used to be spendable only from the card on the
   // RECEIVE tab — going to Receive in order to send.
   const [source, setSource] = useState<'sp' | 'segwit'>('sp');
+  const isSegwit = source === 'segwit';
   const segwitSpendable = usePlainStatus((s) =>
     wallet && s.walletId === wallet.id && !s.pendingSpend ? s.spendableSats : 0,
   );
+  // The SegWit chain, walked on the device. Held here rather than in a panel
+  // of its own because the FORM is shared: one recipient field, one amount,
+  // one fee control, one Review button, and only the coin list and the builder
+  // change underneath. Two panels meant two of everything, which is what was
+  // reported on 2026-10-06.
+  const [segwitXprv, setSegwitXprv] = useState<string | null>(null);
+  const [segwitChain, setSegwitChain] = useState<PlainChainState | null>(null);
+  const [segwitTotals, setSegwitTotals] = useState<PlainAddressTotal[]>([]);
+  const [segwitLoading, setSegwitLoading] = useState(false);
 
   const [step, setStep] = useState<Step>('form');
   const [built, setBuilt] = useState<SignedTx | null>(null);
+  const [segwitBuilt, setSegwitBuilt] = useState<PlainBuiltTx | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txid, setTxid] = useState('');
@@ -397,6 +453,21 @@ export default function SendScreen() {
     [inkey, loadContacts],
   );
 
+  const segwitLabels = useSegwitLabels((st) => st.byWallet);
+  const segwitLabelOf = useCallback(
+    (address: string) => labelFor(segwitLabels, wallet?.id, address),
+    [segwitLabels, wallet?.id],
+  );
+  const toggleSegwit = useCallback((index: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = segwitKey(index);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }, []);
+
   const toggleUtxo = useCallback((u: api.Utxo) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -438,25 +509,94 @@ export default function SendScreen() {
     });
   }, [walletId, selected, amount, recipient]);
 
+  // Walked when the SegWit side is chosen, not on every mount: it costs a
+  // chain-index request, and the endpoint is capped at thirty a minute.
+  useEffect(() => {
+    let dead = false;
+    if (!isSegwit || !wallet || !inkey) return;
+    (async () => {
+      setSegwitLoading(true);
+      try {
+        const keys = await getWalletKeys(wallet.id);
+        const xprv = keys?.sweepAccount || null;
+        if (dead) return;
+        setSegwitXprv(xprv);
+        if (!xprv) {
+          setSegwitChain(null);
+          setSegwitTotals([]);
+          return;
+        }
+        const next = await loadPlainChain(
+          (addresses) => api.getPlainPreview(inkey, wallet.id, addresses),
+          xprv,
+          wallet.network,
+        );
+        if (dead) return;
+        setSegwitChain(next);
+        setSegwitTotals(plainAddressTotals(next));
+      } catch {
+        if (!dead) {
+          setSegwitChain(null);
+          setSegwitTotals([]);
+        }
+      } finally {
+        if (!dead) setSegwitLoading(false);
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [isSegwit, wallet, inkey]);
+
+  // A selection made on one side means nothing on the other, and the keys are
+  // prefixed so a leftover could not be spent by accident — but leaving it
+  // would show a coin count against a list that does not contain it.
+  useEffect(() => {
+    setSelected(new Set());
+    setAmount('');
+  }, [source]);
+
   const selectedUtxos = useMemo(
     () => utxos.filter((u) => selected.has(utxoKey(u))),
     [utxos, selected],
   );
+  // The SegWit side of the same selection. Keyed by DERIVATION INDEX, because
+  // that chain picks by address: one key is derived per address and spends
+  // every UTXO under it, so there is no choosing between two payments that
+  // landed on the same one.
+  const selectedSegwit = useMemo(
+    () => segwitTotals.filter((t) => selected.has(segwitKey(t.index))),
+    [segwitTotals, selected],
+  );
+  // How many INPUTS the selection is worth, which is what a fee is priced on.
+  // An address holding three payments is three inputs, not one — the
+  // difference between those two numbers is the fee being wrong.
+  const selectedInputCount = isSegwit
+    ? selectedSegwit.reduce((n, t) => n + t.utxoCount, 0)
+    : selectedUtxos.length;
   const selectedTotal = useMemo(
-    () => selectedUtxos.reduce((s, u) => s + u.amount, 0),
-    [selectedUtxos],
+    () =>
+      isSegwit
+        ? selectedSegwit.reduce((s, t) => s + t.sats, 0)
+        : selectedUtxos.reduce((s, u) => s + u.amount, 0),
+    [isSegwit, selectedSegwit, selectedUtxos],
   );
   const amountSats = Number(amount) || 0;
-  const estFee = estimateFee(selectedUtxos.length, feeRate, recipient);
+  const estFee = isSegwit
+    ? estimateSegwitFee(selectedInputCount, feeRate, recipient)
+    : estimateFee(selectedInputCount, feeRate, recipient);
   const insufficient =
     amountSats > 0 && selectedTotal > 0 && amountSats + estFee > selectedTotal;
 
-  // Every spendable coin in the wallet, which is what the amount slider runs
-  // over before any have been picked. `utxos` is already filtered to unspent,
-  // unfrozen and not held by a live Tango.
+  // Every spendable coin on the chosen side, which is what the amount slider
+  // runs over before any have been picked. `utxos` is already filtered to
+  // unspent, unfrozen and not held by a live Tango.
   const spendableTotal = useMemo(
-    () => utxos.reduce((s, u) => s + u.amount, 0),
-    [utxos],
+    () =>
+      isSegwit
+        ? segwitTotals.reduce((s, t) => s + t.sats, 0)
+        : utxos.reduce((s, u) => s + u.amount, 0),
+    [isSegwit, segwitTotals, utxos],
   );
   // The most the selection can pay once the fee is taken. Negative when the
   // coins cannot even cover the fee.
@@ -469,7 +609,7 @@ export default function SendScreen() {
   // affordable — it is just not a payment anyone can make. Flagging the
   // selection rather than the amount matters: there is nothing to retype.
   const selectionTooSmall =
-    selectedUtxos.length > 0 && feeRate > 0 && maxSendable < DUST_SATS;
+    selectedInputCount > 0 && feeRate > 0 && maxSendable < DUST_SATS;
 
   // How far this wallet has been scanned vs. the chain tip. last_scan_height is
   // progress, last_height the birth height (static) — a wallet born at the tip
@@ -498,6 +638,9 @@ export default function SendScreen() {
   const tangoPairing = useMemo(
     // The whole coin, not just its name: the guard needs the txid to see
     // two pieces of one round. See services/tango.ts::undoesARound.
+    // Reads the SP selection only, which is correct rather than incidental: a
+    // Tango share is always a Silent Payments coin, so the SegWit side has
+    // none to undo and `selectedUtxos` is empty there anyway.
     () => undoesARound(selectedUtxos.map((u) => ({ txid: u.txid, label: u.label }))),
     [selectedUtxos],
   );
@@ -514,7 +657,7 @@ export default function SendScreen() {
     !!recipient.trim() &&
     !chainWarning &&
     amountSats > 0 &&
-    selectedUtxos.length > 0 &&
+    selectedInputCount > 0 &&
     feeRate > 0 &&
     !insufficient &&
     !belowDust &&
@@ -617,6 +760,75 @@ export default function SendScreen() {
     [],
   );
 
+  // The SegWit build. Same shape as the Silent Payments one below — the server
+  // finds the coins and does the arithmetic because only it can reach the chain
+  // index, the device signs, and the two are cross-checked before anything is
+  // broadcast — but a different prepare, a different builder and a different
+  // broadcast. This is the whole of what the chain picker changes.
+  const buildSegwit = useCallback(async () => {
+    Keyboard.dismiss();
+    setError(null);
+    if (!wallet || !adminkey || !segwitXprv || !segwitChain) return;
+    setBusy(true);
+    try {
+      const indices = selectedSegwit.map((t) => t.index);
+      const keys = keyMapForIndices(segwitXprv, wallet.network, indices);
+      // Change goes to the chain's next unused address, so paying out does not
+      // put the remainder back on one that has now been seen spending.
+      const sendingAll = amountSats >= selectedTotal - estFee;
+      const changeAddress = sendingAll ? null : segwitChain.receiveAddress;
+
+      const plan = await api.preparePlainSpend(
+        adminkey,
+        wallet.id,
+        Object.keys(keys),
+        recipient.trim(),
+        amountSats,
+        changeAddress,
+        feeRate,
+      );
+
+      const res = buildSignedPlainTx({
+        destination: recipient.trim(),
+        utxos: plan.utxos,
+        keys,
+        amount: amountSats,
+        feeRate,
+        changeAddress,
+        network: wallet.network,
+        expectDestinationScriptHex: plan.destination_script,
+      });
+
+      // The server quoted these before anything was signed and the signature
+      // commits to them. A disagreement means the two sides built different
+      // transactions, and neither should go out.
+      if (res.fee !== plan.fee || res.change !== plan.change || res.amount !== plan.amount) {
+        throw new Error(
+          `Refusing to send: this phone and the server disagree on the amounts ` +
+            `(fee ${res.fee} vs ${plan.fee}, change ${res.change} vs ` +
+            `${plan.change}). Try again in a moment.`,
+        );
+      }
+      setSegwitBuilt(res);
+      setStep('review');
+    } catch (e: any) {
+      setError(e?.detail || e?.message || 'Could not build the transaction.');
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    wallet,
+    adminkey,
+    segwitXprv,
+    segwitChain,
+    selectedSegwit,
+    recipient,
+    amountSats,
+    feeRate,
+    selectedTotal,
+    estFee,
+  ]);
+
   const doBuild = useCallback(async () => {
     Keyboard.dismiss();
     setError(null);
@@ -711,7 +923,68 @@ export default function SendScreen() {
   ]);
 
   const doBroadcast = useCallback(async () => {
-    if (!built || !wallet || !adminkey) return;
+    if (!wallet || !adminkey) return;
+
+    // The SegWit broadcast. Separate from the Silent Payments one because the
+    // server tracks nothing about these coins: there are no outpoints to mark
+    // spent, and the only record of where the money went is the one written
+    // here.
+    if (isSegwit) {
+      if (!segwitBuilt) return;
+      setError(null);
+      setBusy(true);
+      try {
+        const to = recipient.trim();
+        const self = !!wallet.sp_address && isOwnSpAddress(to, wallet.sp_address);
+        const res = await api.broadcastPlainTx(
+          adminkey,
+          wallet.id,
+          segwitBuilt.tx_hex,
+          self ? segwitBuilt.amount : null,
+        );
+        setTxid(res.txid);
+        // WITHOUT THIS THE MONEY JUST LEAVES. The server never lists these as
+        // pending — it does not hold the coins — so the local entry IS the row
+        // until it confirms. Reported 2026-10-06.
+        usePendingSends.getState().add({
+          txid: res.txid,
+          walletId: wallet.id,
+          amountSats: segwitBuilt.amount || null,
+          kind: self ? 'plain' : 'segwit',
+        });
+        if (to) {
+          useTxLabelStore
+            .getState()
+            .setLabel(
+              res.txid,
+              self
+                ? 'From SegWit address'
+                : to.length > 20
+                ? `${to.slice(0, 10)}…${to.slice(-8)}`
+                : to,
+            )
+            .catch(() => {});
+        }
+        // The only durable record of a payment OUT of this chain. Device-only
+        // on purpose — see services/plainHistory.ts.
+        usePlainHistory.getState().record(wallet.id, {
+          txid: res.txid,
+          amount: segwitBuilt.amount,
+          fee: segwitBuilt.fee,
+          destination: to,
+          at: Date.now(),
+          toSelf: self,
+        });
+        setStep('done');
+      } catch (e: any) {
+        failed('Broadcast failed', e?.detail || e?.message || 'Broadcast failed.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (!built) return;
     setError(null);
     setBusy(true);
     try {
@@ -745,7 +1018,7 @@ export default function SendScreen() {
     } finally {
       setBusy(false);
     }
-  }, [built, wallet, adminkey, selectedUtxos, recipient, amountSats, failed]);
+  }, [built, segwitBuilt, isSegwit, wallet, adminkey, selectedUtxos, recipient, amountSats, failed]);
 
   // Start a catch-up scan from here, so a wallet that's behind can be brought
   // up to date without leaving the Send screen. The existing poller takes over:
@@ -794,8 +1067,9 @@ export default function SendScreen() {
       setAuthOpen(true);
       return;
     }
-    doBuild();
-  }, [lockEnabled, doBuild]);
+    if (isSegwit) buildSegwit();
+    else doBuild();
+  }, [lockEnabled, isSegwit, buildSegwit, doBuild]);
 
   // The coin-merging confirmation, split out so the self-send warning can run
   // ahead of it and still chain into it.
@@ -804,11 +1078,14 @@ export default function SendScreen() {
     // broadcast — the link between them is published on-chain for good. The
     // inline note sits below a long coin list where it's easy to scroll past,
     // so confirm it here, where it can't be missed.
-    if (selectedUtxos.length > 1) {
+    // INPUTS, not rows. Spending one SegWit address holding three payments
+    // links three coins on chain exactly as picking three SP coins does, and
+    // counting rows would skip the warning for the case that needs it most.
+    if (selectedInputCount > 1) {
       Keyboard.dismiss();
       Alert.alert(
-        `Combine ${selectedUtxos.length} coins?`,
-        `Spending ${selectedUtxos.length} coins in one transaction publicly ` +
+        `Combine ${selectedInputCount} coins?`,
+        `Spending ${selectedInputCount} coins in one transaction publicly ` +
           'links them to the same owner — you — and that link is permanent. ' +
           'Spend a single coin when one covers the amount.',
         [
@@ -819,7 +1096,7 @@ export default function SendScreen() {
       return;
     }
     proceedToReview();
-  }, [selectedUtxos.length, proceedToReview]);
+  }, [selectedInputCount, proceedToReview]);
 
   const onReview = useCallback(() => {
     if (busy) return;
@@ -840,10 +1117,13 @@ export default function SendScreen() {
     confirmCoinsThenReview();
   }, [busy, isSelfSend, confirmCoinsThenReview]);
 
+  // The unlock gate guards both builds — it is the device authorising a spend,
+  // and which chain pays is beneath that question, not above it.
   const onAuthenticated = useCallback(() => {
     setAuthOpen(false);
-    doBuild();
-  }, [doBuild]);
+    if (isSegwit) buildSegwit();
+    else doBuild();
+  }, [isSegwit, buildSegwit, doBuild]);
 
   const reset = useCallback(() => {
     setStep('form');
@@ -922,8 +1202,12 @@ export default function SendScreen() {
     );
   }
 
-  if (step === 'review' && built) {
-    const total = amountSats + (built.fee || 0);
+  // ONE REVIEW SCREEN. Whichever side paid, what the user is being asked to
+  // confirm is the same four numbers, so the step reads the fee off whichever
+  // build produced it rather than existing twice.
+  const reviewing = isSegwit ? segwitBuilt : built;
+  if (step === 'review' && reviewing) {
+    const total = amountSats + (reviewing.fee || 0);
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView contentContainerStyle={styles.content}>
@@ -933,15 +1217,18 @@ export default function SendScreen() {
             <ReviewRow label="Amount" value={`${groupThousands(amountSats)} sats`} />
             <ReviewRow
               label="Network fee"
-              value={`${groupThousands(built.fee || 0)} sats`}
+              value={`${groupThousands(reviewing.fee || 0)} sats`}
             />
             {/* The coin count drives both the fee and the on-chain link between
-                them, so it belongs on the last screen before broadcast. */}
+                them, so it belongs on the last screen before broadcast. The
+                SegWit count is INPUTS, not addresses: an address holding three
+                payments links three coins, and saying "1" would understate
+                exactly the thing this row is for. */}
             <ReviewRow
               label="Coins"
               value={
-                selectedUtxos.length > 1
-                  ? `${selectedUtxos.length} — linked on-chain`
+                selectedInputCount > 1
+                  ? `${selectedInputCount} — linked on-chain`
                   : '1'
               }
             />
@@ -1011,12 +1298,6 @@ export default function SendScreen() {
             </View>
           ) : null}
 
-          {source === 'segwit' ? (
-            wallet ? (
-              <SegwitSendPanel wallet={wallet} />
-            ) : null
-          ) : (
-          <>
 
           {noKeys ? (
             <Text style={styles.warn}>
@@ -1279,11 +1560,50 @@ export default function SendScreen() {
             </View>
           ) : null}
 
+          {/* THE ONE PART THAT DIFFERS. Everything above and below — the
+              recipient, the amount and its slider, the fee tiers, the summary,
+              Review — is the same control whichever side is paying. An SP coin
+              is an outpoint; a SegWit holding is an address that spends every
+              payment under it at once. So the rows differ and nothing else
+              does. */}
           <Text style={styles.label}>
-            Coins ({selectedUtxos.length}/{utxos.length} selected)
+            Coins ({isSegwit ? selectedSegwit.length : selectedUtxos.length}/
+            {isSegwit ? segwitTotals.length : utxos.length} selected)
           </Text>
-          {utxos.length === 0 ? (
+          {isSegwit && segwitLoading && !segwitTotals.length ? (
+            <ActivityIndicator color={colors.primary} style={styles.coinSpinner} />
+          ) : isSegwit && !segwitXprv ? (
+            <Text style={styles.info}>
+              This wallet predates SegWit addresses. Set them up from the
+              Receive tab with your recovery phrase.
+            </Text>
+          ) : (isSegwit ? segwitTotals.length : utxos.length) === 0 ? (
             <Text style={styles.info}>No spendable coins in this wallet yet.</Text>
+          ) : isSegwit ? (
+            segwitTotals.map((t) => {
+              const on = selected.has(segwitKey(t.index));
+              const label = segwitLabelOf(t.address);
+              return (
+                <TouchableOpacity
+                  key={segwitKey(t.index)}
+                  style={styles.utxoRow}
+                  onPress={() => toggleSegwit(t.index)}>
+                  <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                    {on ? <Text style={styles.checkMark}>✓</Text> : null}
+                  </View>
+                  <View style={styles.utxoInfo}>
+                    <Text style={styles.utxoAmount}>
+                      {groupThousands(t.sats)} sats
+                    </Text>
+                    <Text style={styles.utxoMeta} numberOfLines={1}>
+                      {label ? `${label} · ` : ''}
+                      {t.address.slice(0, 10)}…{t.address.slice(-8)}
+                      {t.utxoCount > 1 ? ` · ${t.utxoCount} payments` : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           ) : (
             utxos.map((u) => {
               const on = selected.has(utxoKey(u));
@@ -1309,7 +1629,7 @@ export default function SendScreen() {
             })
           )}
 
-          {selectedUtxos.length > 0 ? (
+          {selectedInputCount > 0 ? (
             <View style={styles.summary}>
               <SummaryRow
                 label="Selected"
@@ -1350,10 +1670,10 @@ export default function SendScreen() {
                 <Text style={styles.privacyText}>{TANGO_UNDO_ACK}</Text>
               </TouchableOpacity>
             </View>
-          ) : selectedUtxos.length > 1 ? (
+          ) : selectedInputCount > 1 ? (
             <View style={styles.privacyWarn}>
               <Text style={styles.privacyText}>
-                ⚠ Combining {selectedUtxos.length} coins in one transaction links
+                ⚠ Combining {selectedInputCount} coins in one transaction links
                 them together on-chain, which reduces your privacy. Spend a single
                 coin when you can.
               </Text>
@@ -1399,8 +1719,6 @@ export default function SendScreen() {
               </Text>
             )}
           </TouchableOpacity>
-          </>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1482,6 +1800,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   content: { padding: 16 },
+  coinSpinner: { marginVertical: 16 },
   sourceRow: { flexDirection: 'row', gap: 8, marginBottom: 18 },
   sourceChip: {
     flex: 1,

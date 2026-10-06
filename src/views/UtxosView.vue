@@ -77,6 +77,16 @@ const mempoolUrl     = ref('https://mempool.space')
 
 const stateOptions = ['all', 'unspent', 'spent', 'unconfirmed_spent']
 
+// SegWit holdings are always unspent — the chain walk only ever returns UTXOs,
+// and there is no freeze on that side — so they belong under the filters that
+// mean "spendable" and nowhere else. The section sat below the table ignoring
+// the filter entirely, which under `spent` says the opposite of what was asked
+// for. Same gate as the phone's Coins screen (CoinsScreen.tsx::showSegwit).
+const showSegwit = computed(
+  () => segwitReady.value && segwit.value.length > 0 &&
+        (stateFilter.value === 'unspent' || stateFilter.value === 'all'),
+)
+
 const filtered = computed(() => {
   if (stateFilter.value === 'all') return utxos.value
   return utxos.value.filter(u => u.utxo_state === stateFilter.value)
@@ -429,7 +439,7 @@ watch(selectedWallet, () => { loadSegwit() })
          spends every UTXO under it, and two payments to one address are
          already publicly linked — so there is no such thing as labelling one
          of them differently. -->
-    <div v-if="segwitReady && segwit.length" style="margin-top:28px">
+    <div v-if="showSegwit" style="margin-top:28px">
       <h2 style="font-size:15px;margin-bottom:10px">SegWit addresses</h2>
       <div class="card">
         <div class="card-body" style="padding:0">

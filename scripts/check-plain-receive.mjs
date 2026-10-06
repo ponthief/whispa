@@ -574,6 +574,13 @@ console.log('\nthe browser does all of it too');
 
   // Labels, not freezing, and local like every other label here.
   ok('the web coins page labels them', /setSegwitLabel\(/.test(COINS), COINS);
+  // Same gate as the phone's: these holdings are always unspent, so a section
+  // that ignored the filter said the opposite of what `spent` asked for.
+  ok('and gates the section on the filter',
+     /stateFilter\.value === 'unspent' \|\| stateFilter\.value === 'all'/.test(COINS),
+     COINS);
+  ok('with the section reading that gate',
+     /v-if="showSegwit"/.test(COINS), COINS);
   ok('and does not freeze them', !/freeze/i.test(
      COINS.slice(COINS.indexOf('SegWit addresses'))), COINS);
   ok('an emptied label removes the entry',

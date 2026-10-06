@@ -11,6 +11,21 @@ import QrModal from '@/components/QrModal.vue'
 import EditWalletModal from '@/components/EditWalletModal.vue'
 import SeedInput from '@/components/SeedInput.vue'
 import PlainAddressPanel from '@/components/PlainAddressPanel.vue'
+
+// What each wallet's SegWit chain holds, reported by its own panel below.
+// ONE BALANCE, TWO POCKETS: "how much have I got" has a single answer, and
+// these coins used to sit under the badge described as "held separately from
+// the balance above" — true about how they SPEND and useless as an answer to
+// what you own. The split stays named, because the two cannot share a
+// transaction and a total that hid that would promise a payment Send refuses.
+const segwitByWallet = ref({})
+function onSegwitBalance({ walletId, spendable }) {
+  if (!walletId) return
+  segwitByWallet.value = { ...segwitByWallet.value, [walletId]: spendable || 0 }
+}
+function segwitSats(walletId) {
+  return segwitByWallet.value[walletId] || 0
+}
 // Client-side Silent Payments derivation — the same module the mobile app uses,
 // verified byte-for-byte against the backend. Keeps the seed on this device.
 import { deriveSilentPayment, generateMnemonic, isValidMnemonic, validateNewWalletPassphrase } from '@/services/spKeys'
@@ -696,7 +711,10 @@ watch(swapCompletedAt, () => {
               </div>
             </div>
             <div class="balance-badge">
-              <span class="text-orange mono" style="font-size:18px;font-weight:600">{{ fmt(w.balance ?? 0) }}</span>
+              <span class="text-orange mono" style="font-size:18px;font-weight:600">{{ fmt((w.balance ?? 0) + segwitSats(w.id)) }}</span>
+              <div v-if="segwitSats(w.id) > 0" class="text-dim text-xs mono" style="margin-top:2px">
+                {{ fmt(w.balance ?? 0) }} SP · {{ fmt(segwitSats(w.id)) }} SegWit
+              </div>
             </div>
           </div>
 
@@ -790,10 +808,10 @@ watch(swapCompletedAt, () => {
             ↓ Receive scans the blockchain for Silent Payments sent to this wallet — payments only appear in your balance after a scan.
           </p>
 
-          <!-- Plain bech32 pocket: for senders that can't pay an sp1… address.
-               Held separately from the balance above and spent from there, so
-               those coins are never linked to the wallet's own. -->
-          <PlainAddressPanel :wallet="w" />
+          <!-- The SegWit chain: for senders that can't pay an sp1… address.
+               Counted in the badge above, spent from the Send page, and never
+               mixed into a transaction with the wallet's own coins. -->
+          <PlainAddressPanel :wallet="w" @balance="onSegwitBalance" />
         </div>
       </div>
     </div>

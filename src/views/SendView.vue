@@ -27,6 +27,7 @@ import {
 import { pushToast } from '@/stores/toasts'
 import { addPendingSend } from '@/stores/pendingsends'
 import QrScanModal from '@/components/QrScanModal.vue'
+import SegwitSendPanel from '@/components/SegwitSendPanel.vue'
 
 const route = useRoute()
 const auth  = useAuthStore()
@@ -41,6 +42,34 @@ const { fmt } = useAmount()
 const wallets       = ref([])
 const selectedWallet = ref(route.query.wallet_id || '')
 const hasKeys = computed(() => !!(selectedWallet.value && auth.hasWalletKeys(selectedWallet.value)))
+const currentWallet = computed(
+  () => wallets.value.find((w) => w.id === selectedWallet.value) || null,
+)
+watch(selectedWallet, async (id) => {
+  segwitAvailable.value = false
+  // Back to the Silent Payments form when the wallet changes: a chain picker
+  // left on 'segwit' would show the new wallet's coins under a choice made
+  // about the old one's.
+  source.value = 'sp'
+  if (!id) return
+  try {
+    const keys = await auth.getWalletKeys(id)
+    segwitAvailable.value = !!keys?.sweepAccount
+  } catch {
+    segwitAvailable.value = false
+  }
+}, { immediate: true })
+// Which chain pays. 'sp' is the Silent Payments form below; 'segwit' is the
+// BIP-84 chain, which used to be spendable only from the card on the Wallets
+// page — the surface that hands out the address.
+const source = ref('sp')
+// Offered when this wallet HAS a SegWit chain at all — a vault read, no
+// network. Gating on the balance instead would need a chain walk before the
+// panel that does the walking has mounted, and would hide the only route to
+// coins that arrived since the page loaded. A wallet created before the chain
+// existed has no account key and gets no second option.
+const segwitAvailable = ref(false)
+
 const utxos         = ref([])
 const loadingUtxos  = ref(false)
 
@@ -634,6 +663,24 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
       <p class="text-dim text-sm" style="margin-top:2px">Build and broadcast a Bitcoin transaction</p>
     </div>
 
+    <!-- WHICH POCKET. Both are spendable balances on this wallet and they
+         cannot share a transaction, so the choice has to be made before
+         anything else on the form means something: a recipient and an amount
+         read differently depending on which chain pays them. -->
+    <div v-if="segwitAvailable || source === 'segwit'" class="flex gap-2" style="margin-bottom:20px">
+      <button class="btn btn-sm" :class="source === 'sp' ? 'btn-primary' : 'btn-ghost'"
+              @click="source = 'sp'">Silent Payments</button>
+      <button class="btn btn-sm" :class="source === 'segwit' ? 'btn-primary' : 'btn-ghost'"
+              @click="source = 'segwit'">SegWit</button>
+    </div>
+
+    <SegwitSendPanel
+      v-if="source === 'segwit' && currentWallet"
+      :wallet="currentWallet"
+    />
+
+    <div v-show="source === 'sp'">
+
     <!-- A Tango undone: a share selected with change, from any round. Top of
          the page and in the tampering alert's colours, because it is the only
          warning here about something that cannot be taken back once the
@@ -1058,6 +1105,8 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
         </div>
       </div>
     </div>
+
+    </div><!-- /source === 'sp' -->
 
     <QrScanModal :show="showScan" @close="showScan = false" @scanned="onScanned" />
   </div>

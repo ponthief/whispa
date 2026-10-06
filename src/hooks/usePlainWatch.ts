@@ -157,18 +157,23 @@ export function usePlainWatch() {
 
       // Confirmation wins when both moved at once: it is the more final of the
       // two, and one banner at a time is enough.
+      // WHICH CHAIN IT LANDED ON IS NOT THE NEWS. This said "a payment to your
+      // plain address", which named an internal distinction the reader did not
+      // ask about and then pointed at the Receive tab to go and look — back
+      // when these coins were a separate pot spendable from there. They are in
+      // the balance now and spendable from Send like anything else, so the
+      // banner says the thing that happened and stops.
       usePushBanner.getState().show(
         isNewConfirmed
           ? {
               title: 'Payment confirmed',
-              body: 'A payment to your plain address has been mined. Open Receive to view it.',
+              body: 'A payment has been mined. It is in your balance now.',
             }
           : {
-              // Not "on the way" — the card already uses that for an OUTGOING
-              // spend waiting on the chain index, and these would read as the
-              // same event.
+              // Not "on the way" — that is used for an OUTGOING spend waiting
+              // on the chain index, and these would read as the same event.
               title: 'Payment incoming',
-              body: 'A payment to your plain address is waiting to be mined. Open Receive to view it.',
+              body: 'A payment is waiting to be mined.',
             },
       );
     };

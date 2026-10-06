@@ -199,10 +199,16 @@ console.log('\nand the web has a watcher of its own');
   //
   // PlainSendModal is handed `chain` as a prop and builds a transaction from
   // the coins in it. Replacing that object under an open modal churns what it
-  // was opened with — the phone's card says the same thing at its onClose and
-  // refreshes on the way OUT.
-  ok('it does not poll under an open send modal',
-     /!sendOpen\.value/.test(PANEL), PANEL);
+  // was opened with — the phone says the same thing at its onClose and
+  // refreshes on the way OUT. The guard lives with the modal, which moved to
+  // the Send page: the receive panel no longer has one to guard against.
+  const SENDPANEL = strip(fs.readFileSync(
+    new URL('../src/components/SegwitSendPanel.vue', import.meta.url), 'utf8',
+  ));
+  ok('the send panel does not poll under its own open modal',
+     /!sendOpen\.value/.test(SENDPANEL), SENDPANEL);
+  ok('and the receive panel has no modal left to guard',
+     !/PlainSendModal/.test(PANEL), PANEL);
   // A hidden tab is waste against a rate-limited endpoint, and a browser
   // throttles the timer anyway, so the interval it claims is not the one it
   // would get.
@@ -434,6 +440,59 @@ console.log('\nSegWit coins are labelled, not frozen');
   ));
   ok('and wiped under duress',
      /useSegwitLabels\.getState\(\)\.clearAll\(\)/.test(DURESS), DURESS);
+}
+
+console.log('\nthe browser does all of it too');
+{
+  const fs = await import('node:fs');
+  const read2 = (rel) =>
+    strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
+  const PANEL = read2('src/components/PlainAddressPanel.vue');
+  const SEND = read2('src/views/SendView.vue');
+  const SENDPANEL = read2('src/components/SegwitSendPanel.vue');
+  const WALLETS = read2('src/views/WalletsView.vue');
+  const COINS = read2('src/views/UtxosView.vue');
+  const STORE = read2('src/stores/segwitlabels.js');
+
+  // Spending moved off the surface that hands out the address, same as the
+  // phone. A rule enforced in one client belongs in the other.
+  ok('the web receive panel no longer sends',
+     !/PlainSendModal/.test(PANEL) && !/sendOpen/.test(PANEL), PANEL);
+  ok('the web Send page has a chain picker',
+     /source = 'segwit'/.test(SEND), SEND);
+  ok('and renders the SegWit panel', /<SegwitSendPanel/.test(SEND), SEND);
+  ok('the SP form is hidden under a SegWit selection',
+     /v-show="source === 'sp'"/.test(SEND), SEND);
+  // Gated on HAVING a chain, not on its balance: gating on the balance needs a
+  // walk before the thing that walks has mounted, and would hide the route to
+  // coins that arrived since the page loaded.
+  ok('the picker is gated on having a chain at all',
+     /segwitAvailable/.test(SEND), SEND);
+  // Switching wallet must drop back, or the picker would show one wallet's
+  // coins under a choice made about another's.
+  ok('switching wallet resets the picker',
+     /source\.value = 'sp'/.test(SEND), SEND);
+
+  // One balance on the card, split named under it.
+  ok('the wallet card adds them up',
+     /\(w\.balance \?\? 0\) \+ segwitSats\(w\.id\)/.test(WALLETS), WALLETS);
+  ok('and names the split', /SP · .*SegWit|SegWit<\/div>/.test(WALLETS), WALLETS);
+  // The panel is the only thing that walks the chain, so the card takes the
+  // number from it rather than walking again against a limited endpoint.
+  ok('the total comes from the panel, not a second walk',
+     /@balance="onSegwitBalance"/.test(WALLETS) && /emit\('balance'/.test(PANEL),
+     WALLETS);
+  ok('nothing still calls them held separately',
+     !/held separately/i.test(WALLETS), WALLETS);
+
+  // Labels, not freezing, and local like every other label here.
+  ok('the web coins page labels them', /setSegwitLabel\(/.test(COINS), COINS);
+  ok('and does not freeze them', !/freeze/i.test(
+     COINS.slice(COINS.indexOf('SegWit addresses'))), COINS);
+  ok('an emptied label removes the entry',
+     /else delete inner\[address\]/.test(STORE), STORE);
+  ok('stored in this browser only', /localStorage/.test(STORE), STORE);
+  ok('and never sent anywhere', !/fetch\(|api\./.test(STORE), STORE);
 }
 
 console.log('');

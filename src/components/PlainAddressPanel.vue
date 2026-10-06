@@ -23,13 +23,18 @@ import * as api from '@/api'
 import { loadPlainChain } from '@/services/plainChain'
 import { listPlainSends } from '@/stores/plainhistory'
 import { deriveSilentPayment, isValidMnemonic } from '@/services/spKeys'
-import PlainSendModal from './PlainSendModal.vue'
 import QrModal from './QrModal.vue'
 import SeedInput from './SeedInput.vue'
 
 const props = defineProps({
   wallet: { type: Object, required: true },
 })
+
+// Reported upward so the wallet card can add it to the headline. The panel is
+// the only thing here that walks the chain, so it is the only thing that knows
+// — and the card asking separately would be a second walk against an endpoint
+// limited to thirty a minute.
+const emit = defineEmits(['balance'])
 
 const auth = useAuthStore()
 
@@ -39,7 +44,6 @@ const chain       = ref(null)
 const loading     = ref(false)
 const error       = ref(null)
 const copied      = ref(false)
-const sendOpen    = ref(false)
 const qrOpen      = ref(false)
 
 // A payment broadcast from here that the chain index hasn't caught up with. Its
@@ -98,7 +102,6 @@ const inFlight = computed(() => !!pendingSpend.value)
 const hasCoins = computed(
   () => sats.value > 0 && !!accountXprv.value && !!chain.value?.fundedIndices.length,
 )
-const canSend = computed(() => !inFlight.value && hasCoins.value)
 
 async function refresh() {
   reloadHistory()
@@ -118,6 +121,11 @@ async function refresh() {
       props.wallet.network,
     )
     chain.value = next
+    emit('balance', {
+      walletId: props.wallet.id,
+      spendable: next.confirmedSats,
+      unconfirmed: next.unconfirmedSats,
+    })
     if (
       pendingSpend.value &&
       (Date.now() - pendingSpend.value.at > SPEND_STALE_MS ||
@@ -149,10 +157,8 @@ async function refresh() {
 // THREE THINGS IT MUST NOT DO, each of which would be a new bug rather than a
 // missing feature:
 //
-//   Poll under an open send modal. PlainSendModal is handed `chain` as a prop
-//   and builds a transaction from the coins in it; replacing that object
-//   underneath an open modal churns what it was opened with. The phone's card
-//   says the same thing at its onClose, and refreshes on the way OUT.
+//   (The send modal's guard moved with the modal: spending is on the Send
+//   page now, and SegwitSendPanel.vue carries that check.)
 //
 //   Poll a hidden tab. Pure waste against a rate-limited endpoint, and a
 //   browser throttles the timer anyway, so the interval it claims to keep is
@@ -168,7 +174,6 @@ function pollable() {
   return (
     !!accountXprv.value &&
     !loading.value &&
-    !sendOpen.value &&
     !setupOpen.value &&
     document.visibilityState === 'visible'
   )
@@ -219,15 +224,6 @@ function copyAddress() {
   navigator.clipboard?.writeText(chain.value.receiveAddress)
   copied.value = true
   setTimeout(() => { copied.value = false }, 1500)
-}
-
-function onSent(txid) {
-  reloadHistory()
-  pendingSpend.value = {
-    txid,
-    balanceAtSpend: chain.value?.confirmedSats ?? 0,
-    at: Date.now(),
-  }
 }
 
 // The phrase is checked by re-deriving the wallet's Silent Payment address from
@@ -356,14 +352,12 @@ async function runSetup() {
           </template>
         </div>
 
-        <button class="btn btn-primary btn-sm" style="width:100%" :disabled="!canSend"
-                @click="sendOpen = true">
-          Send these coins
-        </button>
+        <!-- NO SEND BUTTON. Spending these coins lived here, on the panel
+             that hands out the address, so paying from them meant opening the
+             receiving surface. It is on the Send page now, under a chain
+             picker beside the Silent Payments form. -->
         <p v-if="hasCoins && !inFlight" class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
-          Paid straight from here, these reach the recipient without being linked
-          to the rest of your balance — or send them to your own Silent Payments
-          address to hold them in the wallet.
+          Spend these from the Send page.
         </p>
         <p v-if="!hasCoins && !inFlight" class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
           Nothing here yet. Send coins to the address above, then check back once
@@ -397,15 +391,6 @@ async function runSetup() {
         <button class="btn btn-primary btn-sm" @click="refresh">Retry</button>
       </template>
     </div>
-
-    <PlainSendModal
-      :show="sendOpen"
-      :wallet="wallet"
-      :account-xprv="accountXprv"
-      :chain="chain"
-      @sent="onSent"
-      @close="sendOpen = false; refresh()"
-    />
 
     <!-- The address only reaches the sender by being read off a screen, so it
          needs a QR as much as the Silent Payments one above does. -->

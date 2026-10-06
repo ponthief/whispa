@@ -9,6 +9,8 @@ import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { useAmount } from '@/composables/useAmount'
 import { useCsvExport } from '@/composables/useCsvExport'
+import { loadPlainChain, plainAddressTotals } from '@/services/plainChain'
+import { getSegwitLabel, setSegwitLabel, MAX_LABEL_LENGTH } from '@/stores/segwitlabels'
 
 const route  = useRoute()
 const auth   = useAuthStore()
@@ -16,6 +18,56 @@ const { fmt } = useAmount()
 
 const wallets        = ref([])
 const utxos          = ref([])
+// The SegWit side. Two different things in one page, shown as separate
+// sections rather than one merged list: a Silent Payments coin is a UTXO the
+// server holds and can freeze, a SegWit holding is an ADDRESS this browser
+// derives and the server never stores. A single list would have to pretend
+// they are the same kind of row.
+//
+// NO FREEZE HERE. Freezing is a defence against coins you did not ask for — a
+// dust attack arrives unannounced and refusing to spend it is the answer. A
+// SegWit address is one you handed somebody on purpose, so what is actually
+// hard is remembering which somebody. These rows label instead.
+const segwit        = ref([])
+const segwitReady   = ref(false)
+const segwitEditing = ref('')
+const segwitDraft   = ref('')
+// Bumped on every write so the rendered labels re-read localStorage; the store
+// is a module, not reactive state.
+const segwitLabelTick = ref(0)
+function segwitLabelOf(address) {
+  segwitLabelTick.value
+  return getSegwitLabel(selectedWallet.value, address)
+}
+function saveSegwitLabel(address) {
+  setSegwitLabel(selectedWallet.value, address, segwitDraft.value)
+  segwitLabelTick.value++
+  segwitEditing.value = ''
+  segwitDraft.value = ''
+}
+async function loadSegwit() {
+  segwitReady.value = false
+  segwit.value = []
+  if (!selectedWallet.value) { segwitReady.value = true; return }
+  try {
+    const w = wallets.value.find((x) => x.id === selectedWallet.value)
+    const keys = await auth.getWalletKeys(selectedWallet.value)
+    if (w && keys?.sweepAccount) {
+      const chain = await loadPlainChain(
+        (addresses) => api.getPlainPreview(auth.inkey, selectedWallet.value, addresses),
+        keys.sweepAccount,
+        w.network,
+      )
+      segwit.value = plainAddressTotals(chain)
+    }
+  } catch {
+    // Failing on its own: a chain index that will not answer must not take the
+    // Silent Payments coins down with it — they are why this page exists.
+    segwit.value = []
+  } finally {
+    segwitReady.value = true
+  }
+}
 const selectedWallet = ref(route.query.wallet_id || '')
 const hasKeys = computed(() => !!(selectedWallet.value && auth.hasWalletKeys(selectedWallet.value)))
 const loading        = ref(false)
@@ -186,8 +238,12 @@ function copyText(t) { navigator.clipboard.writeText(t).catch(() => {}) }
 
 onMounted(async () => {
   await Promise.all([loadWallets(), loadConfig()])
-  if (selectedWallet.value) await loadUtxos()
+  if (selectedWallet.value) await Promise.all([loadUtxos(), loadSegwit()])
 })
+
+// Both sides follow the wallet picker, or the SegWit section would keep
+// showing the previous wallet's addresses under the new one's coins.
+watch(selectedWallet, () => { loadSegwit() })
 
 </script>
 
@@ -367,6 +423,48 @@ onMounted(async () => {
         <button class="btn btn-ghost btn-sm" :disabled="page >= pageCount" @click="page++">Next ›</button>
       </div>
     </div>
+
+    <!-- BY ADDRESS, not by coin, which is the same call the spend path makes
+         (plainChain.plainAddressTotals). One key is derived per address and
+         spends every UTXO under it, and two payments to one address are
+         already publicly linked — so there is no such thing as labelling one
+         of them differently. -->
+    <div v-if="segwitReady && segwit.length" style="margin-top:28px">
+      <h2 style="font-size:15px;margin-bottom:10px">SegWit addresses</h2>
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <div v-for="t in segwit" :key="t.address" class="segwit-row">
+            <div style="min-width:0;flex:1">
+              <div class="mono text-xs text-dim">{{ t.address }}</div>
+              <div style="margin-top:4px">
+                <template v-if="segwitEditing === t.address">
+                  <input class="input label-input" v-model="segwitDraft"
+                         :maxlength="MAX_LABEL_LENGTH"
+                         placeholder="Who did you give this to?"
+                         @keyup.enter="saveSegwitLabel(t.address)" />
+                  <button class="btn btn-ghost btn-sm" @click="saveSegwitLabel(t.address)">Save</button>
+                  <button class="btn btn-ghost btn-sm" @click="segwitEditing = ''">Cancel</button>
+                </template>
+                <button v-else class="btn btn-ghost btn-sm"
+                        @click="segwitEditing = t.address; segwitDraft = segwitLabelOf(t.address)">
+                  {{ segwitLabelOf(t.address) || '+ label' }}
+                </button>
+              </div>
+            </div>
+            <div style="text-align:right;white-space:nowrap">
+              <b class="mono text-sm">{{ fmt(t.sats) }}</b>
+              <div v-if="t.utxoCount > 1" class="text-dim text-xs" style="margin-top:2px">
+                {{ t.utxoCount }} payments
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="text-dim text-xs" style="margin-top:8px">
+        SegWit labels stay in this browser. The server is never told these coins
+        exist, so it is never told who paid them either.
+      </p>
+    </div>
   </div>
 </template>
 
@@ -421,4 +519,9 @@ onMounted(async () => {
 .txid-link { font-size:12px; color: var(--orange); text-decoration:none; transition: opacity .15s; }
 .txid-link:hover { opacity: .75; text-decoration: underline; }
 .utxo-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+.segwit-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.segwit-row:last-child { border-bottom: none; }
 </style>

@@ -338,6 +338,22 @@ not the derivation index — the index is internal bookkeeping that moves if the
 chain is re-walked from a different account; the address is the thing that was
 given away. Wiped by the duress PIN with the keys.
 
+**Both clients**, which is the rule for anything like this. The web's
+`SegwitSendPanel.vue` sits on `SendView.vue` under the same picker,
+`PlainAddressPanel.vue` lost its send modal, `WalletsView.vue` adds the two
+balances in the card badge, and `UtxosView.vue` grew the label section.
+`stores/segwitlabels.js` is the localStorage half, beside `txlabels.js`. Two
+differences worth knowing: the web's picker is gated on the wallet *having* a
+SegWit chain rather than on its balance, because gating on the balance would
+need a walk before the panel that does the walking has mounted; and the wallet
+card takes the total from the panel's `balance` emit rather than walking again,
+since the preview endpoint is capped at thirty a minute.
+
+The in-app banner for an arriving payment used to say "a payment to your plain
+address… Open Receive to view it", which named an internal distinction nobody
+asked about and pointed at a tab that no longer holds these coins. It says what
+happened and stops.
+
 Freeze for SegWit coins was built and then removed the same day, before it
 shipped. The decision not to store these coins server-side was taken
 deliberately (2026-10-06) and is why there is nowhere to put a freeze flag:

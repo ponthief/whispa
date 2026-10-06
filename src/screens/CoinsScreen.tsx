@@ -591,10 +591,13 @@ export default function CoinsScreen({ visible, onClose }: Props) {
                       <Text style={styles.amount}>
                         {hidden ? MASK : groupThousands(t.sats)} sats
                       </Text>
+                      {/* NO DERIVATION INDEX. It read "#6" beside the
+                          address and meant nothing to anybody: it is internal
+                          bookkeeping, and bookkeeping that MOVES — re-walking
+                          the chain from a different account renumbers it,
+                          which is exactly why the labels are keyed on the
+                          address instead. The address identifies the row. */}
                       <View style={styles.badges}>
-                        <View style={[styles.badge, styles.badgeGray]}>
-                          <Text style={styles.badgeGrayText}>#{t.index}</Text>
-                        </View>
                         {/* Several payments to one address are one balance and
                             one key spends them together, so the count is worth
                             saying and splitting them is not on offer. */}

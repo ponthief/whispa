@@ -75,7 +75,12 @@ const error          = ref(null)
 const stateFilter    = ref('unspent')   // default to the bounded, day-to-day view
 const mempoolUrl     = ref('https://mempool.space')
 
-const stateOptions = ['all', 'unspent', 'spent', 'unconfirmed_spent']
+// 'frozen' is not a utxo_state — it is a flag on an unspent coin — and it is
+// in this list for the same reason the phone has the chip: it is the only way
+// to FIND one. They sort nowhere in particular, their badge is the same grey
+// as the state badge beside it, and since the stats stopped counting them
+// (2026-10-06) there was nothing on the page that led to them at all.
+const stateOptions = ['all', 'unspent', 'frozen', 'spent', 'unconfirmed_spent']
 
 // SegWit holdings are always unspent — the chain walk only ever returns UTXOs,
 // and there is no freeze on that side — so they belong under the filters that
@@ -89,6 +94,12 @@ const showSegwit = computed(
 
 const filtered = computed(() => {
   if (stateFilter.value === 'all') return utxos.value
+  // Frozen is a flag, not a state, so it needs its own clause: filtering on
+  // `utxo_state === 'frozen'` would match nothing and the view would read as
+  // "you have none" rather than "that is not how this is stored".
+  if (stateFilter.value === 'frozen') {
+    return utxos.value.filter(u => u.frozen && u.utxo_state === 'unspent')
+  }
   return utxos.value.filter(u => u.utxo_state === stateFilter.value)
 })
 
@@ -310,7 +321,9 @@ watch(selectedWallet, () => { loadSegwit() })
       <div class="field">
         <label>State</label>
         <select class="input" v-model="stateFilter">
-          <option v-for="s in stateOptions" :key="s" :value="s">{{ s }}</option>
+          <option v-for="s in stateOptions" :key="s" :value="s">
+            {{ s }}{{ s === 'frozen' && frozenCount ? ` (${frozenCount})` : '' }}
+          </option>
         </select>
       </div>
       <button class="btn btn-ghost btn-sm" style="align-self:flex-end" :disabled="!filtered.length" @click="exportCsv">⬇ Export CSV</button>

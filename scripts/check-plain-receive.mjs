@@ -551,6 +551,23 @@ console.log('\nspendable means unfrozen, and says so, on both');
   ok('the web says what is held back', /frozen<\/div>|frozen\n/.test(WEB) &&
      /frozenBalance/.test(WEB), WEB);
   ok('and the phone does', /frozenHeld > 0 \?/.test(PHONE), PHONE);
+
+  // AND BOTH OFFER A WAY TO FIND THEM. Once the stats stopped counting frozen
+  // coins, a client with no frozen filter had nothing on the page leading to
+  // them at all. 'frozen' is a FLAG on an unspent coin, not a utxo_state, so
+  // filtering on the state would match nothing and read as "you have none".
+  ok('the web offers a frozen filter', /'frozen', 'spent'/.test(WEB), WEB);
+  ok('and filters on the flag, not the state',
+     /u\.frozen && u\.utxo_state === 'unspent'/.test(WEB), WEB);
+  ok('the phone has the same chip',
+     /key: 'frozen', label: 'Frozen'/.test(PHONE), PHONE);
+
+  // NO DERIVATION INDEX on a SegWit row. "#6" beside an address is internal
+  // bookkeeping, and bookkeeping that MOVES: re-walking the chain from another
+  // account renumbers it, which is why the labels are keyed on the address.
+  ok('no index badge on the coins screen', !/#\{t\.index\}/.test(PHONE), PHONE);
+  const CARD2 = read2('src/components/PlainAddressCard.tsx');
+  ok('nor on the receive card', !/#\$\{row\.index\}/.test(CARD2), CARD2);
 }
 
 console.log('\nthe browser does all of it too');

@@ -374,6 +374,18 @@ and both print what is held back beside the total rather than folding it in —
 frozen coins vanishing from every figure on the page is how somebody concludes
 their money is gone.
 
+Which made the web's **missing frozen filter** a real gap rather than a
+cosmetic one: once the stats stopped counting those coins, nothing on the page
+led to them at all. `'frozen'` is a FLAG on an unspent coin, not a
+`utxo_state`, so it needs its own clause — filtering on the state would match
+nothing and read as "you have none" rather than "that is not how this is
+stored". Both clients offer it now.
+
+A SegWit row shows **no derivation index**. It read `#6` beside the address and
+meant nothing to anybody: internal bookkeeping, and bookkeeping that *moves* —
+re-walking the chain from a different account renumbers it, which is the same
+reason the labels are keyed on the address. The address identifies the row.
+
 Still shared between the clients and still arguably wrong: neither excludes a
 coin a live Tango holds (`tango_reserved`) from these stats, though the send
 path does. They agree with each other, so it has not bitten; it would overstate

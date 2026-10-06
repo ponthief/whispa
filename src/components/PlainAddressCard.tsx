@@ -290,7 +290,6 @@ export default function PlainAddressCard({ wallet }: Props) {
               {funded.map((row) => (
                 <View key={row.address} style={styles.perAddressRow}>
                   <Text style={styles.perAddressName}>
-                    {row.index >= 0 ? `#${row.index}` : '—'}{' '}
                     <Text style={styles.perAddressMono}>
                       {truncateMiddle(row.address, 10, 8)}
                     </Text>

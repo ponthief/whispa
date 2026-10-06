@@ -125,9 +125,24 @@ watch([stateFilter, () => filtered.value.length], () => {
   if (stateFilter.value) page.value = 1
 })
 
-// Confirmed/spendable: unspent UTXOs
-const confirmedBalance = computed(() =>
+// What is on the SegWit chain. Counted into the stats below for the same
+// reason the wallet card adds it to the badge: "how much have I got" and "how
+// many coins" each have one answer, and leaving this side out made the web
+// report 7 coins where the phone reported 8 for the same wallet (2026-10-06).
+const segwitSpendable = computed(() =>
+  segwit.value.reduce((n, t) => n + t.sats, 0)
+)
+const segwitCoinCount = computed(() => segwit.value.length)
+
+// Confirmed/spendable: unspent UTXOs, plus the SegWit chain.
+const spConfirmedBalance = computed(() =>
   utxos.value.filter(u => u.utxo_state === 'unspent').reduce((s, u) => s + u.amount, 0)
+)
+const confirmedBalance = computed(
+  () => spConfirmedBalance.value + segwitSpendable.value
+)
+const spCoinCount = computed(
+  () => utxos.value.filter(u => u.utxo_state === 'unspent').length
 )
 // Pending outgoing: inputs to a broadcast tx not yet confirmed
 const pendingOutBalance = computed(() =>
@@ -297,6 +312,11 @@ watch(selectedWallet, () => { loadSegwit() })
       <div class="stat-card">
         <div class="stat-label">Confirmed Balance</div>
         <div class="stat-value text-orange">{{ fmt(confirmedBalance) }}</div>
+        <!-- Named, not merged: the two cannot share a transaction, so a total
+             that hid the division would promise a payment Send then refuses. -->
+        <div v-if="segwitSpendable" class="text-dim text-xs mono" style="margin-top:4px">
+          {{ fmt(spConfirmedBalance) }} SP · {{ fmt(segwitSpendable) }} SegWit
+        </div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Pending</div>
@@ -308,7 +328,10 @@ watch(selectedWallet, () => { loadSegwit() })
       </div>
       <div class="stat-card">
         <div class="stat-label">Spendable coins</div>
-        <div class="stat-value text-green">{{ utxos.filter(u=>u.utxo_state==='unspent').length }}</div>
+        <div class="stat-value text-green">{{ spCoinCount + segwitCoinCount }}</div>
+        <div v-if="segwitCoinCount" class="text-dim text-xs mono" style="margin-top:4px">
+          {{ spCoinCount }} SP · {{ segwitCoinCount }} SegWit
+        </div>
       </div>
     </div>
     <p v-if="hasPending" class="text-dim text-xs" style="margin:-12px 0 20px 0">

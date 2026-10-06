@@ -588,10 +588,25 @@ console.log('\nthe browser does all of it too');
   // coins under a choice made about another's.
   ok('switching wallet resets the picker',
      /source\.value = 'sp'/.test(SEND), SEND);
+  // AND THE WATCHER THAT DOES IT SITS BELOW THE REFS IT WRITES. `immediate:
+  // true` runs it during setup, so above them it read `source` and
+  // `segwitAvailable` in their temporal dead zone and the page died on load.
+  // check:vue has the general form of this; here is the instance.
+  ok('that watcher runs after its refs exist',
+     SEND.indexOf("const source = ref('sp')") <
+       SEND.indexOf('watch(selectedWallet, async (id)'), SEND);
 
   // One balance on the card, split named under it.
   ok('the wallet card adds them up',
      /\(w\.balance \?\? 0\) \+ segwitSats\(w\.id\)/.test(WALLETS), WALLETS);
+  // AND SO DOES THE COINS PAGE. The web reported 7 coins where the phone
+  // reported 8 for the same wallet, because its stats counted only the
+  // Silent Payments side (2026-10-06).
+  ok('the coins page counts both', /spCoinCount \+ segwitCoinCount/.test(COINS), COINS);
+  ok('and totals both',
+     /spConfirmedBalance\.value \+ segwitSpendable\.value/.test(COINS), COINS);
+  ok('with the split named there too',
+     /\{\{ spCoinCount \}\} SP/.test(COINS), COINS);
   ok('and names the split', /SP · .*SegWit|SegWit<\/div>/.test(WALLETS), WALLETS);
   // The panel is the only thing that walks the chain, so the card takes the
   // number from it rather than walking again against a limited endpoint.

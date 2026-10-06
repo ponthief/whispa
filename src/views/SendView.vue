@@ -55,20 +55,6 @@ const { fmt } = useAmount()
 const wallets       = ref([])
 const selectedWallet = ref(route.query.wallet_id || '')
 const hasKeys = computed(() => !!(selectedWallet.value && auth.hasWalletKeys(selectedWallet.value)))
-watch(selectedWallet, async (id) => {
-  segwitAvailable.value = false
-  // Back to the Silent Payments form when the wallet changes: a chain picker
-  // left on 'segwit' would show the new wallet's coins under a choice made
-  // about the old one's.
-  source.value = 'sp'
-  if (!id) return
-  try {
-    const keys = await auth.getWalletKeys(id)
-    segwitAvailable.value = !!keys?.sweepAccount
-  } catch {
-    segwitAvailable.value = false
-  }
-}, { immediate: true })
 // Which chain pays. 'sp' is the Silent Payments form below; 'segwit' is the
 // BIP-84 chain, which used to be spendable only from the card on the Wallets
 // page — the surface that hands out the address.
@@ -90,6 +76,30 @@ const segwitLoading = ref(false)
 const segwitBuilt   = ref(null)
 const selectedSegwit = ref([])   // derivation indices
 const isSegwit = computed(() => source.value === 'segwit')
+
+// AFTER the refs it writes, and that is not a style preference: `immediate:
+// true` runs this callback synchronously during setup, so placed above
+// `source` and `segwitAvailable` it read them in their temporal dead zone and
+// the page died with "Cannot access 'g' before initialization" — the minified
+// name of whichever one it reached first. Reported 2026-10-06.
+//
+// Nothing catches this: lint does not cover .vue, and vite compiles an SFC
+// without resolving identifiers, so it builds clean. check:vue now looks for
+// it specifically.
+watch(selectedWallet, async (id) => {
+  segwitAvailable.value = false
+  // Back to the Silent Payments form when the wallet changes: a chain picker
+  // left on 'segwit' would show the new wallet's coins under a choice made
+  // about the old one's.
+  source.value = 'sp'
+  if (!id) return
+  try {
+    const keys = await auth.getWalletKeys(id)
+    segwitAvailable.value = !!keys?.sweepAccount
+  } catch {
+    segwitAvailable.value = false
+  }
+}, { immediate: true })
 
 function segwitLabelOf(address) {
   return getSegwitLabel(selectedWallet.value, address)

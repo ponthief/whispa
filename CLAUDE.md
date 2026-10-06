@@ -192,6 +192,17 @@ page on 2026-10-01: the build passed and the page was dead on arrival.
 undefined-variable check, which would need real scope analysis to avoid
 crying wolf.
 
+It catches one more thing for the same reason, added 2026-10-06 after it
+shipped: **an immediate watcher reading a binding declared below it**.
+`watch(x, cb, { immediate: true })` and `watchEffect(cb)` run their callback
+synchronously during setup, so placed above a `const` they touch they read it
+in its temporal dead zone — and the page dies on load with *"Cannot access 'g'
+before initialization"*, `g` being whatever the minifier called it, which
+tells the reader nothing. Narrow on purpose: only those two forms, only
+top-level `const`/`let` in the same block, and only a reference literally
+below its declaration in source order. That is the whole of the bug and needs
+no scope analysis.
+
 It also checks that every `text-`, `badge-`, `alert-` and `btn-` class a
 `.vue` file uses is defined in `src/style.css`, for the same reason: nothing
 else did. `text-amber` was used ten times across four views and never
@@ -347,6 +358,11 @@ server is never even told these coins exist. Keyed on the **address string**,
 not the derivation index — the index is internal bookkeeping that moves if the
 chain is re-walked from a different account; the address is the thing that was
 given away. Wiped by the duress PIN with the keys.
+
+Every count and total that includes one side must include the other, on both
+clients: the web's Coins page reported **7 coins where the phone reported 8**
+for the same wallet, because its stats counted only the Silent Payments side
+(2026-10-06).
 
 **Both clients**, which is the rule for anything like this. The web's
 `SegwitSendPanel.vue` sits on `SendView.vue` under the same picker,

@@ -183,6 +183,76 @@ console.log('\nutility classes a .vue file uses are defined in style.css');
     report.join('\n         '));
 }
 
+// ── a ref read before it exists ─────────────────────────────────────────────
+//
+// `watch(x, cb, { immediate: true })` and `watchEffect(cb)` run their callback
+// SYNCHRONOUSLY during setup. Placed above a `const` they touch, they read it
+// in its temporal dead zone and the page dies on load with "Cannot access 'g'
+// before initialization" — 'g' being whatever the minifier called it, which
+// tells the reader nothing at all.
+//
+// That shipped to the Send page on 2026-10-06. Nothing else catches it: lint
+// does not cover .vue, and vite compiles an SFC without resolving
+// identifiers, so the build is clean and the failure is at runtime. Same
+// reason this file exists for missing imports.
+//
+// Narrow on purpose. Only these two forms, only top-level `const`/`let` in the
+// same block, and only a reference that is literally BELOW the declaration in
+// source order — which is the whole of the bug and needs no scope analysis.
+{
+  const report = [];
+  for (const file of files) {
+    const code = scriptSource(fs.readFileSync(file, 'utf8'));
+
+    // Where each top-level binding comes into existence.
+    const declaredAt = new Map();
+    for (const m of code.matchAll(/^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/gm)) {
+      if (!declaredAt.has(m[1])) declaredAt.set(m[1], m.index);
+    }
+    if (!declaredAt.size) continue;
+
+    // Statements that run while setup is still executing. The span is taken to
+    // the end of the call rather than parsed: a brace counter over a comment-
+    // and string-stripped source is enough to find it.
+    const eager = [];
+    for (const m of code.matchAll(/\bwatch(?:Effect)?\s*\(/g)) {
+      let depth = 0;
+      let end = m.index;
+      for (let i = m.index + m[0].length - 1; i < code.length; i++) {
+        const c = code[i];
+        if (c === '(') depth++;
+        else if (c === ')') {
+          depth--;
+          if (depth === 0) { end = i; break; }
+        }
+      }
+      const span = code.slice(m.index, end + 1);
+      // watchEffect always runs now; watch only with immediate.
+      const runsNow =
+        m[0].startsWith('watchEffect') || /immediate\s*:\s*true/.test(span);
+      if (runsNow) eager.push({ at: m.index, span });
+    }
+
+    for (const { at, span } of eager) {
+      const seen = new Set();
+      for (const id of span.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)) {
+        const name = id[1];
+        if (seen.has(name)) continue;
+        seen.add(name);
+        const declAt = declaredAt.get(name);
+        if (declAt != null && declAt > at) {
+          report.push(
+            `${path.relative(ROOT, file)}: an immediate watcher reads ` +
+              `'${name}', declared below it`,
+          );
+        }
+      }
+    }
+  }
+  ok('no immediate watcher reads a binding declared below it',
+    report.length === 0, report.join('\n         '));
+}
+
 console.log('');
 if (failures) {
   console.log(`${failures} check(s) failed`);

@@ -33,6 +33,10 @@ function groupThousands(n: number): string {
     .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+// Enough to fill a screen and then some, small enough that the pager is
+// reachable without a long scroll.
+const PAGE_SIZE = 25;
+
 function key(u: api.Utxo): string {
   return `${u.txid}:${u.vout}`;
 }
@@ -195,6 +199,33 @@ export default function CoinsScreen({ visible, onClose }: Props) {
     );
   }, [utxos, stateFilter]);
 
+  // THE SPENT LIST IS THE LONG ONE. Every coin the wallet has ever spent lives
+  // under that filter and it grows for the life of the wallet, so the screen
+  // became an unbounded scroll with the controls at the top of it. Paged, and
+  // the page resets whenever the filter changes — page 4 of "spent" means
+  // nothing once the filter is "unspent".
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+  }, [stateFilter]);
+  const pageCount = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
+  // Clamped rather than reset: deleting or restoring a coin can shorten the
+  // list under a page the user is already on, and jumping them to the first
+  // page for that would lose their place for no reason.
+  const pageSafe = Math.min(page, pageCount - 1);
+  const pageRows = useMemo(
+    () => displayed.slice(pageSafe * PAGE_SIZE, pageSafe * PAGE_SIZE + PAGE_SIZE),
+    [displayed, pageSafe],
+  );
+
+  // SegWit holdings are always unspent — the chain walk only ever returns
+  // UTXOs, and there is no freeze on that side — so they belong under the
+  // filters that mean "spendable" and nowhere else. They were rendering under
+  // every filter, including Spent, which said the opposite of what the filter
+  // was asking for.
+  const showSegwit =
+    segwitReady && segwit.length > 0 && (stateFilter === 'unspent' || stateFilter === 'all');
+
   const frozenCount = useMemo(
     () => utxos.filter((u) => u.frozen && u.utxo_state === 'unspent').length,
     [utxos],
@@ -324,7 +355,7 @@ export default function CoinsScreen({ visible, onClose }: Props) {
               the two cannot be spent in one transaction: a SegWit coin pays
               out of the SegWit chain and a Silent Payments coin out of the SP
               wallet, and a total that hid that would read as one pot. */}
-          {segwitReady && segwit.length > 0 ? (
+          {showSegwit ? (
             <Text style={styles.splitLine}>
               {hidden ? MASK : groupThousands(spSpendable)} Silent Payments ·{' '}
               {hidden ? MASK : groupThousands(segwitSpendable)} SegWit
@@ -371,7 +402,7 @@ export default function CoinsScreen({ visible, onClose }: Props) {
           ) : displayed.length === 0 && !error ? (
             <Text style={styles.empty}>No coins in this view.</Text>
           ) : (
-            displayed.map((u) => {
+            pageRows.map((u) => {
               const k = key(u);
               // Frozen dust is treated as handled, so it shows only the "frozen"
               // badge — matching the dust stat, which also excludes frozen dust.
@@ -494,13 +525,36 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             })
           )}
 
+          {pageCount > 1 ? (
+            <View style={styles.pager}>
+              <TouchableOpacity
+                style={[styles.pagerBtn, pageSafe === 0 && styles.disabled]}
+                onPress={() => setPage(pageSafe - 1)}
+                disabled={pageSafe === 0}>
+                <Text style={styles.pagerText}>‹ Prev</Text>
+              </TouchableOpacity>
+              <Text style={styles.pagerCount}>
+                {pageSafe + 1} / {pageCount} · {displayed.length} coins
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.pagerBtn,
+                  pageSafe >= pageCount - 1 && styles.disabled,
+                ]}
+                onPress={() => setPage(pageSafe + 1)}
+                disabled={pageSafe >= pageCount - 1}>
+                <Text style={styles.pagerText}>Next ›</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {/* BY ADDRESS, not by coin, and that is the same call the spend path
               makes (plainChain.plainAddressTotals). One key is derived per
               address and spends every UTXO under it, and two payments to one
               address are already publicly linked to each other — so there is
               no such thing as freezing one of them. Choosing between ADDRESSES
               is the choice that means anything. */}
-          {segwitReady && segwit.length > 0 ? (
+          {showSegwit ? (
             <>
               <Text style={styles.sectionLabel}>SegWit addresses</Text>
               {segwit.map((t) => {
@@ -661,6 +715,21 @@ const styles = StyleSheet.create({
   // stripe finds it while scrolling, and the dimmed amount says it is not part
   // of what this wallet can spend.
   coinFrozen: { borderLeftWidth: 3, borderLeftColor: colors.ice },
+  pager: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  pagerBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  pagerText: { fontSize: 13, fontWeight: '600', color: colors.text },
+  pagerCount: { fontSize: 12, color: colors.faint },
   splitLine: {
     fontSize: 12,
     color: colors.faint,

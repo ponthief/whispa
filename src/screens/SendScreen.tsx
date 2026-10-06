@@ -943,6 +943,17 @@ export default function SendScreen() {
           self ? segwitBuilt.amount : null,
         );
         setTxid(res.txid);
+        // The chain index lags a mempool spend, so until it catches up a walk
+        // still reports these coins as spendable — and the balance, the slider
+        // and the coin list would all offer money already on its way, building
+        // a conflicting transaction. PlainSendModal did this through `onSpent`
+        // and the shared form lost it in the move; without it the SegWit total
+        // simply does not change after a send.
+        usePlainStatus.getState().markSpent({
+          txid: res.txid,
+          balanceAtSpend: spendableTotal,
+          at: Date.now(),
+        });
         // WITHOUT THIS THE MONEY JUST LEAVES. The server never lists these as
         // pending — it does not hold the coins — so the local entry IS the row
         // until it confirms. Reported 2026-10-06.
@@ -1018,7 +1029,7 @@ export default function SendScreen() {
     } finally {
       setBusy(false);
     }
-  }, [built, segwitBuilt, isSegwit, wallet, adminkey, selectedUtxos, recipient, amountSats, failed]);
+  }, [built, segwitBuilt, isSegwit, wallet, adminkey, selectedUtxos, recipient, amountSats, spendableTotal, failed]);
 
   // Start a catch-up scan from here, so a wallet that's behind can be brought
   // up to date without leaving the Send screen. The existing poller takes over:

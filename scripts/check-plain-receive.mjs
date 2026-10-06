@@ -472,6 +472,53 @@ console.log('\nSegWit coins are labelled, not frozen');
      /useSegwitLabels\.getState\(\)\.clearAll\(\)/.test(DURESS), DURESS);
 }
 
+console.log('\nthe Coins screen says what the filter asked for');
+{
+  const fs = await import('node:fs');
+  const COINS = strip(fs.readFileSync(
+    new URL('../src/screens/CoinsScreen.tsx', import.meta.url), 'utf8',
+  ));
+
+  // SegWit holdings are always unspent — the chain walk only ever returns
+  // UTXOs and there is no freeze on that side — so they belong under the
+  // filters that mean "spendable" and nowhere else. They were rendering under
+  // every filter, Spent included, which said the opposite of what was asked.
+  ok('the SegWit section is gated on the filter',
+     /stateFilter === 'unspent' \|\| stateFilter === 'all'/.test(COINS), COINS);
+  ok('and the rows read that gate', /\{showSegwit \?/.test(COINS), COINS);
+
+  // THE SPENT LIST GROWS FOR THE LIFE OF THE WALLET. Unpaged it is an
+  // unbounded scroll with every control at the top of it.
+  ok('the list is paged', /pageRows\.map\(\(u\) => \{/.test(COINS), COINS);
+  ok('with a page size', /const PAGE_SIZE = \d+;/.test(COINS), COINS);
+  ok('and a pager when there is more than one page',
+     /pageCount > 1 \?/.test(COINS), COINS);
+  // Page 4 of "spent" means nothing once the filter says "unspent".
+  ok('changing the filter resets the page',
+     /setPage\(0\);\s*\n\s*\}, \[stateFilter\]\)/.test(COINS), COINS);
+  // CLAMPED, not reset: restoring or freezing a coin can shorten the list
+  // under the page somebody is on, and bouncing them to the front for that
+  // loses their place for no reason.
+  ok('a shortened list clamps rather than jumps',
+     /Math\.min\(page, pageCount - 1\)/.test(COINS), COINS);
+}
+
+console.log('\na SegWit spend is marked in flight');
+{
+  const fs = await import('node:fs');
+  const SEND = strip(fs.readFileSync(
+    new URL('../src/screens/SendScreen.tsx', import.meta.url), 'utf8',
+  ));
+  // The chain index lags a mempool spend, so until it catches up a walk still
+  // reports these coins as spendable — and the balance, the slider and the
+  // coin list would all offer money already on its way. PlainSendModal did
+  // this through `onSpent`; the shared form lost it in the move.
+  ok('the shared form marks the spend',
+     /usePlainStatus\.getState\(\)\.markSpent\(\{/.test(SEND), SEND);
+  ok('against the balance it was spent from',
+     /balanceAtSpend: spendableTotal,/.test(SEND), SEND);
+}
+
 console.log('\nthe browser does all of it too');
 {
   const fs = await import('node:fs');

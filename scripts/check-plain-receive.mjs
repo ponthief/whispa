@@ -549,7 +549,36 @@ console.log('\nthe browser does all of it too');
   ok('and the merge warning counts them',
      /selectedInputCount\.value > 1 && !mixedLabels/.test(SEND), SEND);
   ok('a SegWit send is registered as pending',
-     /addPendingSend\(res\.txid, selectedWallet\.value, segwitBuilt/.test(SEND), SEND);
+     /addPendingSend\(\s*\n?\s*res\.txid,/.test(SEND), SEND);
+
+  // AND IT SHOWS AS A ROW. The web's Activity list reads the same store, but
+  // hardcoded every local row 'receive' — written for a SegWit payment into
+  // this wallet's own SP address, and the opposite of the truth for a send.
+  const ACTIVITY = read2('src/views/TransactionsView.vue');
+  const PSTORE = read2('src/stores/pendingsends.js');
+  ok('the pending store records which way the money went',
+     /kind = 'send'\)/.test(PSTORE), PSTORE);
+  ok('with a default for rows written before it existed',
+     /export function sendKind/.test(PSTORE), PSTORE);
+  ok('Activity reads it rather than assuming',
+     /kind: incoming \? 'receive' : 'send'/.test(ACTIVITY), ACTIVITY);
+  // SIGNED like every server row (helpers/transactions.py returns a negative
+  // amount for a net outflow), or the label and the number disagree: "Sent
+  // +5,000".
+  ok('and signs the amount the same way',
+     /amount_sats: incoming \? \(p\.amount \|\| 0\) : -\(p\.amount \|\| 0\)/.test(ACTIVITY),
+     ACTIVITY);
+  // A local row has no server detail to expand into.
+  ok('a local row is not expandable', /!tx\._local && toggleExpand/.test(ACTIVITY), ACTIVITY);
+
+  // The confirming block is worth scanning only when an SP output landed in
+  // it. A SegWit send touched no SP coin, so asking spends scan budget on
+  // nothing.
+  const APP = read2('src/App.vue');
+  ok('no change scan for a pure SegWit send',
+     /if \(kind !== 'segwit'\) autoScanForChange/.test(APP), APP);
+  ok('and the toast says which thing happened',
+     /arrived in your wallet/.test(APP), APP);
   // Gated on HAVING a chain, not on its balance: gating on the balance needs a
   // walk before the thing that walks has mounted, and would hide the route to
   // coins that arrived since the page loaded.

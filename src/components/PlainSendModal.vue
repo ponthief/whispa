@@ -224,7 +224,12 @@ async function confirm() {
     // A payment OUT is registered too. The server never lists these as pending
     // because it does not hold the coins, so without an entry the money simply
     // leaves with nothing watching for it to land. Reported 2026-10-06.
-    addPendingSend(res.txid, props.wallet.id, built.value.amount)
+    addPendingSend(
+      res.txid,
+      props.wallet.id,
+      built.value.amount,
+      toSelf.value ? 'plain' : 'segwit',
+    )
     try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
     stage.value = 'done'
   } catch (e) { error.value = e.message }

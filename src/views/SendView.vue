@@ -569,7 +569,15 @@ async function broadcastTransaction() {
       // WITHOUT THIS NOTHING WATCHES IT. The server never lists these as
       // pending because it does not hold the coins, so the money would leave
       // with no confirmation ever reported. Reported 2026-10-06.
-      addPendingSend(res.txid, selectedWallet.value, segwitBuilt.value.amount)
+      addPendingSend(
+        res.txid,
+        selectedWallet.value,
+        segwitBuilt.value.amount,
+        // Into this wallet's own SP address is an INCOMING row and needs the
+        // confirming block scanned; out to somebody else is an outgoing one
+        // and has no SP output to find.
+        self ? 'plain' : 'segwit',
+      )
       try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
       await loadSegwitChain()
     } catch (e) {

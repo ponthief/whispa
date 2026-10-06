@@ -6,7 +6,7 @@ import * as api from '@/api'
 import { useAmount } from '@/composables/useAmount'
 import { useCsvExport } from '@/composables/useCsvExport'
 import { getTxRecipientLabel, getSwapTxLabel } from '@/stores/txlabels'
-import { pendingSends } from '@/stores/pendingsends'
+import { pendingSends, sendKind } from '@/stores/pendingsends'
 import { mixFeeNote } from '@/services/tangoTurns'
 
 const auth   = useAuthStore()
@@ -79,15 +79,27 @@ const rowsWithPending = computed(() => {
   const known = new Set(rows.map((t) => t.txid))
   const local = (pendingSends.value || [])
     .filter((p) => p.walletId === selectedWallet.value && !known.has(p.txid))
-    .map((p) => ({
-      txid: p.txid,
-      kind: 'receive',
-      amount_sats: p.amount || 0,
-      timestamp: Math.floor(p.since / 1000),
-      labels: [],
-      confirmed: false,
-      _local: true,
-    }))
+    .map((p) => {
+      // WHICH WAY THE MONEY WENT. Every local row was hardcoded 'receive',
+      // which is right only for a SegWit payment into this wallet's own SP
+      // address. An outgoing SegWit send rendered under it as money ARRIVING,
+      // which is worse than not showing it at all.
+      const k = sendKind(p)
+      const incoming = k === 'plain'
+      return {
+        txid: p.txid,
+        kind: incoming ? 'receive' : 'send',
+        // SIGNED, like every row the server sends: helpers/transactions.py
+        // returns a negative amount for a net outflow, and rowAmount prints
+        // it with its sign. Left positive, an outgoing send read "Sent
+        // +5,000" — the label and the number disagreeing on the same row.
+        amount_sats: incoming ? (p.amount || 0) : -(p.amount || 0),
+        timestamp: Math.floor(p.since / 1000),
+        labels: [],
+        confirmed: false,
+        _local: true,
+      }
+    })
   return [...local, ...rows]
 })
 

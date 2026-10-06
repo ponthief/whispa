@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useUnitsStore } from '@/stores/units'
 import { useToasts, pushToast, dismissToast } from '@/stores/toasts'
 import { notifySwapCompleted } from '@/stores/swapevents'
-import { getPendingSends, removePendingSend } from '@/stores/pendingsends'
+import { getPendingSends, removePendingSend, sendKind } from '@/stores/pendingsends'
 import { verifyBitmailTamper } from '@/stores/bitmailpins'
 import { setBitmailTamper, bitmailTampered } from '@/stores/bitmailalert'
 import { startPayjoinWatch, stopPayjoinWatch, payjoinPending } from '@/stores/payjoinwatch'
@@ -291,8 +291,14 @@ async function pollSends() {
     try {
       const res = await api.getTxConfirmation(auth.adminkey, s.txid, s.walletId)
       if (res && res.confirmed) {
+        const kind = sendKind(s)
         const amt = s.amount ? `${s.amount.toLocaleString()} sats` : 'Your transaction'
-        pushToast(`✓ ${amt} send confirmed on-chain.`, { type: 'success' })
+        pushToast(
+          kind === 'plain'
+            ? `✓ ${amt} arrived in your wallet.`
+            : `✓ ${amt} send confirmed on-chain.`,
+          { type: 'success' },
+        )
         removePendingSend(s.txid)
         notifySwapCompleted()   // reuse the balance-refresh signal (Lightning/Wallets watch it)
         // Auto-fetch the change output: the change UTXO becomes scannable only
@@ -300,7 +306,11 @@ async function pollSends() {
         // to the rate limiter) so the change lands in the balance without the
         // user manually scanning. Best-effort and silent — guarded on keys and
         // no scan already running.
-        autoScanForChange(s.walletId, res.block_height)
+        //
+        // Not for a 'segwit' row: that spend touched no Silent Payments coin,
+        // so there is no SP output in that block for a scan to find, and
+        // asking for one spends scan budget on nothing.
+        if (kind !== 'segwit') autoScanForChange(s.walletId, res.block_height)
       }
     } catch { /* transient; retry next tick */ }
   }

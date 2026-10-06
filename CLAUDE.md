@@ -364,6 +364,21 @@ clients: the web's Coins page reported **7 coins where the phone reported 8**
 for the same wallet, because its stats counted only the Silent Payments side
 (2026-10-06).
 
+**Spendable means unfrozen**, and the label says so on both. A frozen coin is
+unspent and confirmed and still not money you can send — the send path
+excludes it, so a figure that counted it promised an amount the form would
+then refuse. The web said "Confirmed Balance" and counted everything; the
+phone's own two stats disagreed with *each other*, the sats excluding frozen
+and the coin count not. Both now exclude it, both are labelled **Spendable**,
+and both print what is held back beside the total rather than folding it in —
+frozen coins vanishing from every figure on the page is how somebody concludes
+their money is gone.
+
+Still shared between the clients and still arguably wrong: neither excludes a
+coin a live Tango holds (`tango_reserved`) from these stats, though the send
+path does. They agree with each other, so it has not bitten; it would overstate
+by the size of a round in flight.
+
 **Both clients**, which is the rule for anything like this. The web's
 `SegwitSendPanel.vue` sits on `SendView.vue` under the same picker,
 `PlainAddressPanel.vue` lost its send modal, `WalletsView.vue` adds the two

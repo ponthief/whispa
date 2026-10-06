@@ -134,15 +134,35 @@ const segwitSpendable = computed(() =>
 )
 const segwitCoinCount = computed(() => segwit.value.length)
 
-// Confirmed/spendable: unspent UTXOs, plus the SegWit chain.
-const spConfirmedBalance = computed(() =>
-  utxos.value.filter(u => u.utxo_state === 'unspent').reduce((s, u) => s + u.amount, 0)
+// SPENDABLE, which means unfrozen. A frozen coin is unspent and confirmed and
+// still not money you can send — the send path excludes it, so a figure that
+// counted it promised an amount the form would then refuse. The phone's Coins
+// screen has always excluded them; this side said "Confirmed Balance" and
+// counted everything, so the two disagreed about the same wallet (2026-10-06).
+//
+// Renamed with the change rather than quietly altered: a number that stops
+// meaning what its label says is worse than either reading of it.
+const spSpendableBalance = computed(() =>
+  utxos.value
+    .filter(u => u.utxo_state === 'unspent' && !u.frozen)
+    .reduce((s, u) => s + u.amount, 0)
 )
-const confirmedBalance = computed(
-  () => spConfirmedBalance.value + segwitSpendable.value
+const spendableBalance = computed(
+  () => spSpendableBalance.value + segwitSpendable.value
 )
 const spCoinCount = computed(
-  () => utxos.value.filter(u => u.utxo_state === 'unspent').length
+  () => utxos.value.filter(u => u.utxo_state === 'unspent' && !u.frozen).length
+)
+// What is held back, shown beside it rather than folded in. Frozen coins
+// vanishing from every figure on the page is how somebody concludes their
+// money is gone.
+const frozenBalance = computed(() =>
+  utxos.value
+    .filter(u => u.utxo_state === 'unspent' && u.frozen)
+    .reduce((s, u) => s + u.amount, 0)
+)
+const frozenCount = computed(
+  () => utxos.value.filter(u => u.utxo_state === 'unspent' && u.frozen).length
 )
 // Pending outgoing: inputs to a broadcast tx not yet confirmed
 const pendingOutBalance = computed(() =>
@@ -310,12 +330,15 @@ watch(selectedWallet, () => { loadSegwit() })
     <!-- Stats -->
     <div v-if="utxos.length" class="grid-3" style="margin-bottom:20px">
       <div class="stat-card">
-        <div class="stat-label">Confirmed Balance</div>
-        <div class="stat-value text-orange">{{ fmt(confirmedBalance) }}</div>
+        <div class="stat-label">Spendable Balance</div>
+        <div class="stat-value text-orange">{{ fmt(spendableBalance) }}</div>
         <!-- Named, not merged: the two cannot share a transaction, so a total
              that hid the division would promise a payment Send then refuses. -->
         <div v-if="segwitSpendable" class="text-dim text-xs mono" style="margin-top:4px">
-          {{ fmt(spConfirmedBalance) }} SP · {{ fmt(segwitSpendable) }} SegWit
+          {{ fmt(spSpendableBalance) }} SP · {{ fmt(segwitSpendable) }} SegWit
+        </div>
+        <div v-if="frozenBalance" class="text-dim text-xs mono" style="margin-top:4px">
+          + {{ fmt(frozenBalance) }} frozen
         </div>
       </div>
       <div class="stat-card">
@@ -331,6 +354,9 @@ watch(selectedWallet, () => { loadSegwit() })
         <div class="stat-value text-green">{{ spCoinCount + segwitCoinCount }}</div>
         <div v-if="segwitCoinCount" class="text-dim text-xs mono" style="margin-top:4px">
           {{ spCoinCount }} SP · {{ segwitCoinCount }} SegWit
+        </div>
+        <div v-if="frozenCount" class="text-dim text-xs mono" style="margin-top:4px">
+          + {{ frozenCount }} frozen
         </div>
       </div>
     </div>

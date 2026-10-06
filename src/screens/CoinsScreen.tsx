@@ -173,6 +173,20 @@ export default function CoinsScreen({ visible, onClose }: Props) {
     [segwit],
   );
   const spendable = spSpendable + segwitSpendable;
+  const spCoinCount = useMemo(
+    () => utxos.filter((u) => u.utxo_state === 'unspent' && !u.frozen).length,
+    [utxos],
+  );
+  // What is held back. Shown beside the totals rather than folded into them:
+  // frozen coins vanishing from every figure on the page is how somebody
+  // concludes their money is gone.
+  const frozenHeld = useMemo(
+    () =>
+      utxos
+        .filter((u) => u.utxo_state === 'unspent' && u.frozen)
+        .reduce((n, u) => n + u.amount, 0),
+    [utxos],
+  );
   // Actionable dust: unspent suspected-dust coins that aren't frozen yet.
   // Freezing a dust coin handles it (it's excluded from sends), so it drops out
   // of this list — the "dust" stat falls to 0 and the coin loses its dust badge.
@@ -337,11 +351,15 @@ export default function CoinsScreen({ visible, onClose }: Props) {
               <Text style={styles.statLabel}>spendable sats</Text>
             </View>
             <View style={styles.stat}>
+              {/* UNFROZEN, matching the sats beside it. This counted every
+                  unspent coin while the figure to its left excluded the
+                  frozen ones, so the two stats in one row disagreed about the
+                  same wallet — and the web, once fixed to exclude them, would
+                  have disagreed with this. */}
               <Text style={styles.statValue}>
-                {utxos.filter((u) => u.utxo_state === 'unspent').length +
-                  segwit.length}
+                {spCoinCount + segwit.length}
               </Text>
-              <Text style={styles.statLabel}>coins</Text>
+              <Text style={styles.statLabel}>spendable coins</Text>
             </View>
             <View style={styles.stat}>
               <Text style={[styles.statValue, dustCoins.length > 0 && styles.dustColor]}>
@@ -359,6 +377,13 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             <Text style={styles.splitLine}>
               {hidden ? MASK : groupThousands(spSpendable)} Silent Payments ·{' '}
               {hidden ? MASK : groupThousands(segwitSpendable)} SegWit
+            </Text>
+          ) : null}
+
+          {frozenHeld > 0 ? (
+            <Text style={styles.splitLine}>
+              + {hidden ? MASK : groupThousands(frozenHeld)} sats frozen, not
+              counted above
             </Text>
           ) : null}
 

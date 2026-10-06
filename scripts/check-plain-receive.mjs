@@ -519,6 +519,40 @@ console.log('\na SegWit spend is marked in flight');
      /balanceAtSpend: spendableTotal,/.test(SEND), SEND);
 }
 
+console.log('\nspendable means unfrozen, and says so, on both');
+{
+  const fs = await import('node:fs');
+  const read2 = (rel) =>
+    strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
+  const PHONE = read2('src/screens/CoinsScreen.tsx');
+  const WEB = read2('src/views/UtxosView.vue');
+
+  // A frozen coin is unspent and confirmed and still not money you can send:
+  // the send path excludes it, so a figure that counted it promised an amount
+  // the form would then refuse. The web said "Confirmed Balance" and counted
+  // everything; the phone's own two stats disagreed with each other, the sats
+  // excluding frozen and the count not.
+  ok('the web balance excludes frozen',
+     /u\.utxo_state === 'unspent' && !u\.frozen/.test(WEB), WEB);
+  ok('and so does its coin count',
+     /spCoinCount = computed\([\s\S]{0,160}!u\.frozen/.test(WEB), WEB);
+  ok('the phone balance excludes frozen',
+     /u\.utxo_state === 'unspent' && !u\.frozen/.test(PHONE), PHONE);
+  ok('and so does its coin count',
+     /spCoinCount = useMemo\([\s\S]{0,160}!u\.frozen/.test(PHONE), PHONE);
+
+  // RENAMED WITH THE CHANGE. A number that stops meaning what its label says
+  // is worse than either reading of it.
+  ok('the web label says spendable', /Spendable Balance/.test(WEB), WEB);
+  ok('and the phone label too', /spendable coins/.test(PHONE), PHONE);
+
+  // SHOWN, NOT HIDDEN. Frozen coins vanishing from every figure on the page is
+  // how somebody concludes their money is gone.
+  ok('the web says what is held back', /frozen<\/div>|frozen\n/.test(WEB) &&
+     /frozenBalance/.test(WEB), WEB);
+  ok('and the phone does', /frozenHeld > 0 \?/.test(PHONE), PHONE);
+}
+
 console.log('\nthe browser does all of it too');
 {
   const fs = await import('node:fs');
@@ -604,7 +638,7 @@ console.log('\nthe browser does all of it too');
   // Silent Payments side (2026-10-06).
   ok('the coins page counts both', /spCoinCount \+ segwitCoinCount/.test(COINS), COINS);
   ok('and totals both',
-     /spConfirmedBalance\.value \+ segwitSpendable\.value/.test(COINS), COINS);
+     /spSpendableBalance\.value \+ segwitSpendable\.value/.test(COINS), COINS);
   ok('with the split named there too',
      /\{\{ spCoinCount \}\} SP/.test(COINS), COINS);
   ok('and names the split', /SP · .*SegWit|SegWit<\/div>/.test(WALLETS), WALLETS);

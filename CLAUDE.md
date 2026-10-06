@@ -300,6 +300,50 @@ visibility catch-up sits behind the same five-minute floor, recorded in
 `refresh()` so every walk counts: without it, alt-tabbing is a Refresh button
 with no label on it.
 
+## Two pockets, one balance — and what that does NOT make them
+
+Reported 2026-10-06: spending the SegWit chain lived on the **Receive** tab,
+inside the card that hands out the address. Going to Receive in order to send.
+So the paying half moved to Send, under a chain picker beside the Silent
+Payments form (`components/SegwitSendPanel.tsx`), and the card keeps the half
+it is named for. The picker only appears when there is something on the SegWit
+side — a second option that is always empty is a question nobody needs asked.
+
+**Not one form with branches.** The two look similar and are not: the SegWit
+chain is walked on the device, picks coins **by address** rather than by
+outpoint, has its own fee arithmetic in `services/plainSign.ts`, and cannot
+share a transaction with an SP coin. One form doing both would branch at every
+field, and the branch nobody noticed would be the one that signs.
+
+**The balance is the sum, and the split is named directly under it.** "How
+much have I got" has one answer, and the SegWit coins used to sit below the
+balance in a banner reading "held separately from this balance" — true about
+how they *spend* and useless as an answer to what you own. But the division is
+not cosmetic: a total that hid it would promise a payment the Send screen then
+refuses. The banner now carries only **arriving** coins, which are in no total
+and whose card is on another tab.
+
+**Labels, not freezing**, and the distinction is the point. Freezing is a
+defence against coins you did not ask for: a dust attack arrives unannounced
+and refusing to spend it is the answer. A SegWit address is one you handed
+somebody on purpose, so there is nothing to defend against — what is hard is
+remembering *which* somebody, six payments later.
+
+`services/segwitLabels.ts` is **device-only**, for the reason
+`services/txLabels.ts` already gives: a server-side map of address to "who I
+gave it to" is exactly the deanonymisation risk this wallet exists to avoid,
+and worse than a txid because the counterparty holds the address too. The
+server is never even told these coins exist. Keyed on the **address string**,
+not the derivation index — the index is internal bookkeeping that moves if the
+chain is re-walked from a different account; the address is the thing that was
+given away. Wiped by the duress PIN with the keys.
+
+Freeze for SegWit coins was built and then removed the same day, before it
+shipped. The decision not to store these coins server-side was taken
+deliberately (2026-10-06) and is why there is nowhere to put a freeze flag:
+`silnt.utxos` holds the SP wallet's coins and `helpers/plain.py::scan_addresses`
+reads SegWit ones live from Fulcrum, keeping nothing.
+
 ## A wallet id does not survive a reinstall
 
 `wallet_id = urlsafe_short_hash()` at create time, so removing a wallet and

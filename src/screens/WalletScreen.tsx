@@ -290,9 +290,21 @@ export default function WalletScreen() {
   // Reload balances when a scan finishes so newly found funds show up.
   const scan = useCatchUpScan(inkey, spWallet, load);
 
-  const sats = spWallet?.balance ?? null;
+  const spSats = spWallet?.balance ?? null;
   const error = spError;
   const name = spWallet?.title || 'Silent Payments';
+
+  // ONE NUMBER, TWO POCKETS. "How much have I got" has a single answer and it
+  // was not being given: the SegWit coins sat under the balance in a banner
+  // saying "held separately", which is true about how they SPEND and useless
+  // as an answer to what you own. So the headline is the sum.
+  //
+  // The split is still named directly underneath, because it is not cosmetic:
+  // the two cannot go into one transaction. A Silent Payments send draws on SP
+  // coins and a SegWit send on the BIP-84 chain, so a total that hid the
+  // division would promise a payment the Send screen then refuses.
+  const sats = spSats != null ? spSats + plainSpendable : null;
+  const split = spSats != null && plainSpendable > 0;
 
   const btc = sats != null ? (sats / 1e8).toFixed(8) : null;
   const usd = sats != null && rate != null ? (sats / 1e8) * rate : null;
@@ -398,6 +410,13 @@ export default function WalletScreen() {
                   <Text style={styles.sub}>
                     {hidden ? MASK : groupThousands(sats)} sats
                   </Text>
+                  {split ? (
+                    <Text style={styles.splitLine}>
+                      {hidden ? MASK : groupThousands(spSats!)} Silent Payments
+                      {' · '}
+                      {hidden ? MASK : groupThousands(plainSpendable)} SegWit
+                    </Text>
+                  ) : null}
                   {usd != null ? (
                     <Text style={styles.sub}>
                       ≈ ${hidden ? MASK : usd.toFixed(2)} USD
@@ -469,17 +488,23 @@ export default function WalletScreen() {
               </View>
             ) : null}
 
-            {!keysMissing && (plainSpendable > 0 || plainIncoming > 0) ? (
+            {/* ARRIVING ONLY, now that the balance includes what has landed.
+                This banner used to carry the spendable figure too, under
+                "held separately from this balance" — which stopped being true
+                the moment the headline started adding them up, and the split
+                line under the balance says it better anyway.
+                An unconfirmed payment is the case nothing else announces: it
+                is not in any total, and the card that would show it is on
+                another tab. */}
+            {!keysMissing && plainIncoming > 0 ? (
               <View style={styles.plainBanner}>
                 <View style={styles.scanTextWrap}>
                   <Text style={styles.scanTitle}>
-                    {hidden ? MASK : groupThousands(plainSpendable || plainIncoming)}{' '}
-                    sats on a SegWit address
+                    {hidden ? MASK : groupThousands(plainIncoming)}{' '}
+                    sats arriving on a SegWit address
                   </Text>
                   <Text style={styles.scanSub}>
-                    {plainSpendable > 0
-                      ? 'Held separately from this balance, ready to send.'
-                      : 'Waiting to be mined — held separately from this balance.'}
+                    Waiting to be mined. It joins your balance once it confirms.
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.scanBtn} onPress={goToPlain}>
@@ -609,6 +634,7 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   balance: { fontSize: 30, fontWeight: 'bold', color: colors.primary },
   sub: { fontSize: 15, color: colors.muted, marginTop: 4 },
+  splitLine: { fontSize: 12, color: colors.faint, marginTop: 3 },
   error: { fontSize: 14, color: colors.danger, marginTop: 4 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 8 },
   emptyState: { fontSize: 14, color: colors.faint },

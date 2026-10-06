@@ -14,6 +14,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
+import { getWalletKeys } from '@services/secureKeys';
+import {
+  loadPlainChain,
+  plainAddressTotals,
+  PlainAddressTotal,
+} from '@services/plainChain';
+import { MAX_LABEL_LENGTH, labelFor } from '@services/segwitLabels';
+import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { colors } from '@/theme';
 import { MASK, useBalancesHidden } from '@stores/balancePrivacy';
 
@@ -63,6 +71,24 @@ export default function CoinsScreen({ visible, onClose }: Props) {
   const [draft, setDraft] = useState('');
   const [stateFilter, setStateFilter] = useState('unspent');
 
+  // The SegWit side. Two different things live in one screen here, and they are
+  // not the same shape: a Silent Payments coin is a UTXO the server holds and
+  // can freeze, a SegWit holding is an ADDRESS this device derives and the
+  // server never stores. Shown as separate sections rather than one merged
+  // list, because a single list would have to pretend they are the same kind
+  // of row and the freeze on one of them would not mean what it says.
+  const [segwit, setSegwit] = useState<PlainAddressTotal[]>([]);
+  const [segwitReady, setSegwitReady] = useState(false);
+  // NO FREEZE HERE, and that is the point of the split. Freezing is a defence
+  // against coins you did not ask for — a dust attack arrives unannounced and
+  // refusing to spend it is the answer. A SegWit address is one you handed
+  // somebody deliberately, so there is nothing to defend against; what is
+  // actually hard is remembering WHICH somebody. So these rows label.
+  const segwitLabelMap = useSegwitLabels((s) => s.byWallet);
+  const setSegwitLabel = useSegwitLabels((s) => s.setLabel);
+  const [editingAddress, setEditingAddress] = useState<string | null>(null);
+  const [segwitDraft, setSegwitDraft] = useState('');
+
   // Dust is the backend's change-aware flag: a small output is only dust if it
   // is NOT the wallet's own change (change is never flagged, regardless of size).
   const isDust = useCallback((u: api.Utxo) => !!u.suspected_dust, []);
@@ -84,6 +110,28 @@ export default function CoinsScreen({ visible, onClose }: Props) {
       }
       setWalletId(w.id);
       setUtxos(await api.getUtxos(inkey, w.id));
+
+      // The SegWit chain, walked on the device. Failing softly and on its own:
+      // a wallet created before the chain existed has no account key, and a
+      // chain index that will not answer must not take the Silent Payments
+      // coins down with it — they are the reason this screen exists.
+      try {
+        const keys = await getWalletKeys(w.id);
+        if (keys?.sweepAccount) {
+          const chain = await loadPlainChain(
+            (addresses) => api.getPlainPreview(inkey, w.id, addresses),
+            keys.sweepAccount,
+            w.network,
+          );
+          setSegwit(plainAddressTotals(chain));
+        } else {
+          setSegwit([]);
+        }
+      } catch {
+        setSegwit([]);
+      } finally {
+        setSegwitReady(true);
+      }
     } catch (e: any) {
       setError(e?.message || 'Failed to load coins.');
     } finally {
@@ -104,13 +152,23 @@ export default function CoinsScreen({ visible, onClose }: Props) {
     setRefreshing(false);
   }, [load]);
 
-  const spendable = useMemo(
+  const spSpendable = useMemo(
     () =>
       utxos
         .filter((u) => u.utxo_state === 'unspent' && !u.frozen)
         .reduce((s, u) => s + u.amount, 0),
     [utxos],
   );
+  // THE UNIFIED NUMBER, and the breakdown under it. One total is what somebody
+  // asking "how much have I got" wants; two sources is what they need to know
+  // before spending, because a SegWit coin cannot pay a Silent Payments
+  // recipient out of the SP balance and the two never mix in one transaction.
+  // So: added together on the headline, named separately below it.
+  const segwitSpendable = useMemo(
+    () => segwit.reduce((n, t) => n + t.sats, 0),
+    [segwit],
+  );
+  const spendable = spSpendable + segwitSpendable;
   // Actionable dust: unspent suspected-dust coins that aren't frozen yet.
   // Freezing a dust coin handles it (it's excluded from sends), so it drops out
   // of this list — the "dust" stat falls to 0 and the coin loses its dust badge.
@@ -249,7 +307,8 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             </View>
             <View style={styles.stat}>
               <Text style={styles.statValue}>
-                {utxos.filter((u) => u.utxo_state === 'unspent').length}
+                {utxos.filter((u) => u.utxo_state === 'unspent').length +
+                  segwit.length}
               </Text>
               <Text style={styles.statLabel}>coins</Text>
             </View>
@@ -260,6 +319,17 @@ export default function CoinsScreen({ visible, onClose }: Props) {
               <Text style={styles.statLabel}>dust</Text>
             </View>
           </View>
+
+          {/* What the headline is made of. Named rather than merged, because
+              the two cannot be spent in one transaction: a SegWit coin pays
+              out of the SegWit chain and a Silent Payments coin out of the SP
+              wallet, and a total that hid that would read as one pot. */}
+          {segwitReady && segwit.length > 0 ? (
+            <Text style={styles.splitLine}>
+              {hidden ? MASK : groupThousands(spSpendable)} Silent Payments ·{' '}
+              {hidden ? MASK : groupThousands(segwitSpendable)} SegWit
+            </Text>
+          ) : null}
 
           {dustCoins.length > 0 ? (
             <TouchableOpacity
@@ -424,10 +494,108 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             })
           )}
 
+          {/* BY ADDRESS, not by coin, and that is the same call the spend path
+              makes (plainChain.plainAddressTotals). One key is derived per
+              address and spends every UTXO under it, and two payments to one
+              address are already publicly linked to each other — so there is
+              no such thing as freezing one of them. Choosing between ADDRESSES
+              is the choice that means anything. */}
+          {segwitReady && segwit.length > 0 ? (
+            <>
+              <Text style={styles.sectionLabel}>SegWit addresses</Text>
+              {segwit.map((t) => {
+                const label = labelFor(segwitLabelMap, walletId, t.address);
+                const editing = editingAddress === t.address;
+                return (
+                  <View key={t.address} style={styles.coin}>
+                    <View style={styles.coinTop}>
+                      <Text style={styles.amount}>
+                        {hidden ? MASK : groupThousands(t.sats)} sats
+                      </Text>
+                      <View style={styles.badges}>
+                        <View style={[styles.badge, styles.badgeGray]}>
+                          <Text style={styles.badgeGrayText}>#{t.index}</Text>
+                        </View>
+                        {/* Several payments to one address are one balance and
+                            one key spends them together, so the count is worth
+                            saying and splitting them is not on offer. */}
+                        {t.utxoCount > 1 ? (
+                          <View style={[styles.badge, styles.badgeGray]}>
+                            <Text style={styles.badgeGrayText}>
+                              {t.utxoCount} payments
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <Text style={styles.outpoint} numberOfLines={1}>
+                      {t.address}
+                    </Text>
+
+                    {editing ? (
+                      <View style={styles.labelEditRow}>
+                        <TextInput
+                          style={styles.labelInput}
+                          value={segwitDraft}
+                          onChangeText={setSegwitDraft}
+                          placeholder="Who did you give this to?"
+                          placeholderTextColor={colors.faint}
+                          autoFocus
+                          maxLength={MAX_LABEL_LENGTH}
+                        />
+                        <TouchableOpacity
+                          style={styles.smallBtn}
+                          onPress={async () => {
+                            if (walletId) {
+                              await setSegwitLabel(walletId, t.address, segwitDraft);
+                            }
+                            setEditingAddress(null);
+                            setSegwitDraft('');
+                          }}>
+                          <Text style={styles.smallBtnText}>Save</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.smallGhost}
+                          onPress={() => {
+                            setEditingAddress(null);
+                            setSegwitDraft('');
+                          }}>
+                          <Text style={styles.smallGhostText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.coinBottom}>
+                        <TouchableOpacity
+                          style={styles.labelTap}
+                          onPress={() => {
+                            setEditingAddress(t.address);
+                            setSegwitDraft(label);
+                          }}>
+                          <Text
+                            style={label ? styles.label : styles.labelAdd}
+                            numberOfLines={1}>
+                            {label || '+ label'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </>
+          ) : null}
+
           <Text style={styles.hint}>
             Frozen coins are excluded when sending. Dust = small coins from
             others; your own change is never flagged. Set the threshold in Settings.
           </Text>
+          {segwitReady && segwit.length > 0 ? (
+            <Text style={styles.hint}>
+              SegWit labels stay on this device. The server is never told these
+              coins exist, so it is never told who paid them either.
+            </Text>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -503,6 +671,20 @@ const styles = StyleSheet.create({
   // stripe finds it while scrolling, and the dimmed amount says it is not part
   // of what this wallet can spend.
   coinFrozen: { borderLeftWidth: 3, borderLeftColor: colors.ice },
+  splitLine: {
+    fontSize: 12,
+    color: colors.faint,
+    marginTop: -8,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+    marginTop: 22,
+    marginBottom: 8,
+  },
   amount: { fontSize: 16, fontWeight: '700', color: colors.text },
   amountFrozen: { color: colors.faint },
   badges: { flexDirection: 'row', gap: 6 },

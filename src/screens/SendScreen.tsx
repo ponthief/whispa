@@ -29,6 +29,8 @@ import {
 import { getWalletKeys } from '@services/secureKeys';
 import { usePendingSends } from '@stores/pendingSends';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { usePlainStatus } from '@stores/plainStatus';
+import SegwitSendPanel from '../components/SegwitSendPanel';
 import { markScanStarted } from '@services/scanCooldown';
 import { parseScannedAddress } from '@services/addressUri';
 import { colors } from '@/theme';
@@ -143,6 +145,14 @@ export default function SendScreen() {
   // value from the number alone made "0." unrepresentable — it parses to 0,
   // renders as empty, and the decimal point you just typed vanishes.
   const [feeRateText, setFeeRateText] = useState<string>('1');
+
+  // Which chain pays. 'sp' is the Silent Payments wallet below; 'segwit' is
+  // the BIP-84 chain, which used to be spendable only from the card on the
+  // RECEIVE tab — going to Receive in order to send.
+  const [source, setSource] = useState<'sp' | 'segwit'>('sp');
+  const segwitSpendable = usePlainStatus((s) =>
+    wallet && s.walletId === wallet.id && !s.pendingSpend ? s.spendableSats : 0,
+  );
 
   const [step, setStep] = useState<Step>('form');
   const [built, setBuilt] = useState<SignedTx | null>(null);
@@ -976,6 +986,38 @@ export default function SendScreen() {
           keyboardShouldPersistTaps="handled">
           <Text style={styles.header}>Send</Text>
 
+          {/* WHICH POCKET. Both are spendable balances on this wallet and they
+              cannot share a transaction, so the choice has to be made before
+              anything else on the form means something — a recipient and an
+              amount read differently depending on which chain pays them.
+              Offered only when there is something on the SegWit side: a second
+              tab that is always empty is a question nobody needs asked. */}
+          {segwitSpendable > 0 || source === 'segwit' ? (
+            <View style={styles.sourceRow}>
+              {(['sp', 'segwit'] as const).map((s) => {
+                const on = source === s;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.sourceChip, on && styles.sourceChipOn]}
+                    onPress={() => setSource(s)}>
+                    <Text
+                      style={[styles.sourceText, on && styles.sourceTextOn]}>
+                      {s === 'sp' ? 'Silent Payments' : 'SegWit'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {source === 'segwit' ? (
+            wallet ? (
+              <SegwitSendPanel wallet={wallet} />
+            ) : null
+          ) : (
+          <>
+
           {noKeys ? (
             <Text style={styles.warn}>
               This wallet's keys aren't on this device, so it can't sign a
@@ -1357,6 +1399,8 @@ export default function SendScreen() {
               </Text>
             )}
           </TouchableOpacity>
+          </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1438,6 +1482,18 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   content: { padding: 16 },
+  sourceRow: { flexDirection: 'row', gap: 8, marginBottom: 18 },
+  sourceChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  sourceChipOn: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  sourceText: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  sourceTextOn: { color: colors.onPrimary },
   header: { fontSize: 24, fontWeight: 'bold', color: colors.text, marginBottom: 12 },
 
   label: {

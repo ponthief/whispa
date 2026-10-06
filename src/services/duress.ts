@@ -6,6 +6,7 @@ import { wipeTangoCommits } from '@services/tangoCommit';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { usePlainHistory } from '@stores/plainHistoryStore';
+import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { resetCatchUp } from '@/hooks/useCatchUpScan';
 
 // The duress response, shared by every place that accepts a PIN (the lock
@@ -45,6 +46,14 @@ export async function runDuress(
   }
   try {
     await usePlainHistory.getState().clearAll();
+  } catch {
+    /* best-effort */
+  }
+  // What each SegWit address was handed out for. The same class of thing as a
+  // transaction label, and worse: an address is held by the counterparty too,
+  // so "who I gave this to" is the map a coerced unlock must not read back.
+  try {
+    await useSegwitLabels.getState().clearAll();
   } catch {
     /* best-effort */
   }

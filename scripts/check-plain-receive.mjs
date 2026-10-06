@@ -323,6 +323,119 @@ console.log('\na payment still being mined does not read as done');
      !/pending: !t\.confirmed/.test(RNcode));
 }
 
+console.log('\nspending lives on the Send tab, receiving on Receive');
+{
+  const fs = await import('node:fs');
+  const CARD = strip(fs.readFileSync(
+    new URL('../src/components/PlainAddressCard.tsx', import.meta.url), 'utf8',
+  ));
+  const SEND = strip(fs.readFileSync(
+    new URL('../src/screens/SendScreen.tsx', import.meta.url), 'utf8',
+  ));
+  const PANEL = strip(fs.readFileSync(
+    new URL('../src/components/SegwitSendPanel.tsx', import.meta.url), 'utf8',
+  ));
+
+  // GOING TO RECEIVE IN ORDER TO SEND is what this was.
+  ok('the receive card no longer sends', !/PlainSendModal/.test(CARD), CARD);
+  ok('and carries no dead spend state', !/spendOpen/.test(CARD), CARD);
+  ok('the Send screen offers a chain to pay from',
+     /setSource\('segwit'\)|setSource\(s\)/.test(SEND), SEND);
+  ok('and renders the SegWit panel for it',
+     /<SegwitSendPanel wallet=\{wallet\} \/>/.test(SEND), SEND);
+  ok('the panel is what opens the send modal',
+     /PlainSendModal/.test(PANEL), PANEL);
+
+  // The picker is only worth showing when there is a second pocket to pick.
+  ok('the chain picker hides when SegWit is empty',
+     /segwitSpendable > 0 \|\| source === 'segwit'/.test(SEND), SEND);
+
+  // The two cannot share a transaction, so the SP form must not be reachable
+  // under a SegWit selection — one form branching at every field is how the
+  // branch nobody noticed ends up signing.
+  ok('the two forms are exclusive', /source === 'segwit'\s*\?/.test(SEND), SEND);
+
+  // Same in-flight guard as the card had: the index lags a mempool spend, and
+  // offering those coins again builds a conflicting transaction.
+  ok('the panel refuses coins already on their way',
+     /!inFlight && sats > 0/.test(PANEL), PANEL);
+  // And the same watcher-driven re-walk, since neither has a Refresh button.
+  ok('the panel re-walks off the watcher',
+     /observedAt/.test(PANEL), PANEL);
+}
+
+console.log('\none balance, two pockets, named');
+{
+  const fs = await import('node:fs');
+  const WALLET = strip(fs.readFileSync(
+    new URL('../src/screens/WalletScreen.tsx', import.meta.url), 'utf8',
+  ));
+  const COINS = strip(fs.readFileSync(
+    new URL('../src/screens/CoinsScreen.tsx', import.meta.url), 'utf8',
+  ));
+
+  ok('the headline adds them up',
+     /const sats = spSats != null \? spSats \+ plainSpendable : null;/.test(WALLET),
+     WALLET);
+  // NAMED, not merged. A Silent Payments send draws on SP coins and a SegWit
+  // send on the BIP-84 chain; a total that hid the division would promise a
+  // payment the Send screen then refuses.
+  ok('and the split is still shown', /styles\.splitLine/.test(WALLET), WALLET);
+  ok('the coins screen totals both',
+     /const spendable = spSpendable \+ segwitSpendable;/.test(COINS), COINS);
+  ok('and names them there too', /Silent Payments ·/.test(COINS), COINS);
+  // The banner said "held separately from this balance", which stopped being
+  // true the moment the headline started adding them up.
+  ok('nothing still calls them held separately',
+     !/held separately/i.test(WALLET), WALLET);
+  // An unconfirmed SegWit payment is in no total and its card is on another
+  // tab, so that is the one case the banner is still for.
+  ok('the banner is for arriving coins only',
+     /!keysMissing && plainIncoming > 0 \?/.test(WALLET), WALLET);
+}
+
+console.log('\nSegWit coins are labelled, not frozen');
+{
+  const fs = await import('node:fs');
+  const COINS = strip(fs.readFileSync(
+    new URL('../src/screens/CoinsScreen.tsx', import.meta.url), 'utf8',
+  ));
+  const SVC = strip(fs.readFileSync(
+    new URL('../src/services/segwitLabels.ts', import.meta.url), 'utf8',
+  ));
+
+  // FREEZING IS A DEFENCE AGAINST COINS YOU DID NOT ASK FOR. A dust attack
+  // arrives unannounced and refusing to spend it is the answer. A SegWit
+  // address is one you handed somebody on purpose, so there is nothing to
+  // defend against — what is hard is remembering which somebody.
+  ok('the SegWit rows label', /setSegwitLabel\(/.test(COINS), COINS);
+  ok('and do not freeze', !/toggleSegwit|segwitFrozen/.test(COINS), COINS);
+  ok('no freeze service survives',
+     !fs.existsSync(new URL('../src/services/segwitFreeze.ts', import.meta.url)));
+
+  // By address: one key is derived per address and spends every UTXO under it,
+  // and two payments to one address are already publicly linked — so there is
+  // no such thing as labelling one of them differently.
+  // The address string, not the derivation index: the index is internal
+  // bookkeeping that moves if the chain is re-walked from a different account,
+  // the address is the thing that was handed over.
+  ok('labels are keyed on the address',
+     /SegwitLabelMap = Record<string, Record<string, string>>/.test(SVC) &&
+     /inner\[address\] = trimmed/.test(SVC), SVC);
+  ok('an emptied label removes the entry', /else delete inner\[address\]/.test(SVC), SVC);
+
+  // Device-only, like the transaction labels: a server-side map of address to
+  // "who I gave it to" is the deanonymisation risk this wallet avoids, and
+  // worse than a txid because the counterparty holds the address too.
+  ok('stored in the keystore', /Keychain\.setGenericPassword/.test(SVC), SVC);
+  ok('never sent anywhere', !/fetch\(|api\./.test(SVC), SVC);
+  const DURESS = strip(fs.readFileSync(
+    new URL('../src/services/duress.ts', import.meta.url), 'utf8',
+  ));
+  ok('and wiped under duress',
+     /useSegwitLabels\.getState\(\)\.clearAll\(\)/.test(DURESS), DURESS);
+}
+
 console.log('');
 if (failed) {
   console.log(`${failed} check(s) failed`);

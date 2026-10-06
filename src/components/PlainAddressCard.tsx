@@ -20,7 +20,6 @@ import {
 import { usePlainStatus, plainSpendSettled } from '@stores/plainStatus';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import QRCode from './QRCode';
-import PlainSendModal from './PlainSendModal';
 import PlainSetupModal from './PlainSetupModal';
 import { colors } from '@/theme';
 import { MASK, useBalancesHidden } from '@stores/balancePrivacy';
@@ -98,7 +97,6 @@ export default function PlainAddressCard({ wallet }: Props) {
   // of coins leaving the plain chain (see services/plainHistory.ts).
   const history = usePlainHistory((s) => s.byWallet[wallet.id] || []);
   const [copiedTxid, setCopiedTxid] = useState<string | null>(null);
-  const [spendOpen, setSpendOpen] = useState(false);
   // How far past the first unused address the user has stepped. A fresh
   // address on demand: handing the same one to two payers links them, and
   // "wait for the last one to be paid" is not an answer when both payments
@@ -183,7 +181,6 @@ export default function PlainAddressCard({ wallet }: Props) {
   const sats = chain?.confirmedSats ?? 0;
   const inFlight = !!pendingSpend;
   const hasCoins = sats > 0 && !!accountXprv && !!chain?.fundedIndices.length;
-  const canSend = !inFlight && hasCoins;
 
   return (
     <View style={styles.card}>
@@ -306,17 +303,14 @@ export default function PlainAddressCard({ wallet }: Props) {
             </View>
           ) : null}
 
-          <TouchableOpacity
-            style={[styles.primaryBtn, !canSend && styles.btnDisabled]}
-            onPress={() => setSpendOpen(true)}
-            disabled={!canSend}>
-            <Text style={styles.primaryBtnText}>Send these coins</Text>
-          </TouchableOpacity>
+          {/* NO SEND BUTTON. Spending these coins lived here, on the RECEIVE
+              tab, which meant going to Receive in order to send — reported as
+              exactly that on 2026-10-06. It is on Send now, beside the Silent
+              Payments form, under a chain picker. This card keeps the half it
+              is named for. */}
           {hasCoins && !inFlight ? (
             <Text style={styles.hint}>
-              Paid straight from here, these reach the recipient without being
-              linked to the rest of your balance — or send them to your own Silent
-              Payments address to hold them in the wallet.
+              Spend these from the Send tab.
             </Text>
           ) : null}
           {!hasCoins && !inFlight ? (
@@ -372,30 +366,6 @@ export default function PlainAddressCard({ wallet }: Props) {
           </TouchableOpacity>
         </>
       )}
-
-      {spendOpen && accountXprv && chain ? (
-        <PlainSendModal
-          visible
-          wallet={wallet}
-          accountXprv={accountXprv}
-          chain={chain}
-          // Re-check on the way out, not the moment it is broadcast: refreshing
-          // under an open modal churns the props it was opened with, and the
-          // chain index has not seen the spend that soon anyway. Until then the
-          // in-flight marker above is what the card goes on.
-          onClose={() => {
-            setSpendOpen(false);
-            refresh();
-          }}
-          onSpent={(txid) =>
-            usePlainStatus.getState().markSpent({
-              txid,
-              balanceAtSpend: chain.confirmedSats,
-              at: Date.now(),
-            })
-          }
-        />
-      ) : null}
 
       {setupOpen ? (
         <PlainSetupModal

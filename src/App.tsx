@@ -43,6 +43,7 @@ import { usePlainWatch } from './hooks/usePlainWatch';
 import { useTangoWatch } from './hooks/useTangoWatch';
 import { useNavStore, TabKey as NavTabKey } from '@stores/navStore';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import { colors, fonts, DEVICE_TRUST_ENABLED } from '@/theme';
 
@@ -148,10 +149,14 @@ function Shell() {
   const loadTxLabels = useTxLabelStore((s) => s.load);
   // Same for the plain chain's own send history, which no server holds.
   const loadPlainHistory = usePlainHistory((s) => s.load);
+  // And what each SegWit address was handed out for, so a coin row can say
+  // who paid it without waiting on a keystore read.
+  const loadSegwitLabels = useSegwitLabels((s) => s.load);
   useEffect(() => {
     loadTxLabels();
     loadPlainHistory();
-  }, [loadTxLabels, loadPlainHistory]);
+    loadSegwitLabels();
+  }, [loadTxLabels, loadPlainHistory, loadSegwitLabels]);
   const ActiveScreen =
     TABS.find((t) => t.key === active)?.Screen ?? WalletScreen;
 

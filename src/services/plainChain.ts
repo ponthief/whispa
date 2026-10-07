@@ -208,14 +208,42 @@ export function nextReceiveAddress(
   chain: PlainChainState,
   ahead: number,
 ): { address: string; index: number } {
-  const n = Math.min(Math.max(0, Math.floor(Number(ahead) || 0)), GAP_LIMIT - 1);
-  const index = chain.receiveIndex + n;
+  const offerable = offerableIndices(chain);
+  const n = Math.min(
+    Math.max(0, Math.floor(Number(ahead) || 0)),
+    Math.max(0, offerable.length - 1),
+  );
+  const index = offerable.length ? offerable[n] : chain.receiveIndex;
   return { address: plainAddressAt(accountXprv, network, index), index };
 }
 
-/** How far past the first unused address a caller may go. */
-export function maxAhead(): number {
-  return GAP_LIMIT - 1;
+/**
+ * The indices this wallet may still hand out, nearest first.
+ *
+ * `receiveIndex` is the FIRST unused index, not the last — a later one can be
+ * used, and that is not a strange state to be in: step ahead twice, give out
+ * index r+1, get paid there, and r is still the first unused while r+1 has
+ * history. Counting from receiveIndex without looking would then hand r+1 back
+ * out as "a new address", which is the exact reuse this chain exists to avoid.
+ * Found when the card started SAYING the address had never been used.
+ *
+ * The window stays measured from receiveIndex, which is conservative: a used
+ * index inside it shortens the run of offers rather than pushing the last one
+ * further out. See nextReceiveAddress for why going past the gap loses a
+ * payment outright.
+ */
+export function offerableIndices(chain: PlainChainState): number[] {
+  const used = new Set(chain.usedIndices || []);
+  const out: number[] = [];
+  for (let i = chain.receiveIndex; i <= chain.receiveIndex + GAP_LIMIT - 1; i++) {
+    if (!used.has(i)) out.push(i);
+  }
+  return out;
+}
+
+/** How many times a caller may still ask for another address. */
+export function maxAhead(chain: PlainChainState): number {
+  return Math.max(0, offerableIndices(chain).length - 1);
 }
 
 /**

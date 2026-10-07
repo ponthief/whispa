@@ -206,10 +206,16 @@ export default function PlainAddressCard({ wallet }: Props) {
           </Text>
           {/* The warning, and not the reasoning behind it. "so nothing links
               them" is an explanation of privacy in front of an instruction,
-              and the instruction is the part that has to land. */}
+              and the instruction is the part that has to land.
+
+              THAT THIS ONE HAS NEVER BEEN USED IS SAID FIRST, because the
+              instruction not to reuse one means nothing to a reader who cannot
+              tell whether the address in front of them is fresh. The wallet
+              walks its own chain to the first address with no history; a string
+              of characters does not show that. */}
           <Text style={styles.caption}>
-            For senders that can't pay a Silent Payments address. Use each
-            address once.
+            This address has never been used. Do not reuse an address. For
+            senders that can't pay a Silent Payments address.
           </Text>
 
           {/* TWO buttons. There were three — Copy, Refresh, New address — and
@@ -232,9 +238,12 @@ export default function PlainAddressCard({ wallet }: Props) {
                 further would hide a payment from this wallet AND from any
                 other restored from the same seed. */}
             <TouchableOpacity
-              style={[styles.secondaryBtn, ahead >= maxAhead() && styles.btnDisabled]}
-              onPress={() => setAhead((a) => Math.min(a + 1, maxAhead()))}
-              disabled={ahead >= maxAhead()}>
+              style={[
+                styles.secondaryBtn,
+                ahead >= maxAhead(chain) && styles.btnDisabled,
+              ]}
+              onPress={() => setAhead((a) => Math.min(a + 1, maxAhead(chain)))}
+              disabled={ahead >= maxAhead(chain)}>
               <Text style={styles.secondaryBtnText}>New address</Text>
             </TouchableOpacity>
           </View>
@@ -242,9 +251,12 @@ export default function PlainAddressCard({ wallet }: Props) {
           {ahead > 0 ? (
             <View style={styles.aheadRow}>
               <Text style={styles.hint}>
-                {ahead >= maxAhead()
+                {/* The real distance, not the number of taps: a step over an
+                    index that has since been paid moves two. */}
+                {ahead >= maxAhead(chain)
                   ? 'As far ahead as this wallet can still find a payment.'
-                  : `${ahead} ahead of your first unused address.`}
+                  : `${(shown?.index ?? chain.receiveIndex) - chain.receiveIndex} ` +
+                    'ahead of your first unused address.'}
               </Text>
               <TouchableOpacity onPress={() => setAhead(0)}>
                 <Text style={styles.aheadBack}>Back to first</Text>

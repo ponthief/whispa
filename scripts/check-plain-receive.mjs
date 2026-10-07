@@ -50,21 +50,21 @@ const ACCOUNT = HDKey.fromMasterSeed(
 
 console.log('a fresh address never falls outside the gap limit');
 {
-  const chain = { receiveIndex: 7 };
+  const chain = { receiveIndex: 7, usedIndices: [0, 1, 2, 3, 4, 5, 6] };
   // WHAT GOES WRONG WITHOUT THE CLAMP. loadPlainChain stops after GAP_LIMIT
   // unused addresses in a row, as every BIP-84 wallet does. An address handed
   // out beyond that gap is invisible to this wallet AND to any other wallet
   // restored from the same seed — the payment is not lost on chain, but
   // nothing will ever show it.
-  ok('the cap is one inside the gap', maxAhead() === GAP_LIMIT - 1,
-     `maxAhead ${maxAhead()}, gap ${GAP_LIMIT}`);
+  ok('the cap is one inside the gap', maxAhead(chain) === GAP_LIMIT - 1,
+     `maxAhead ${maxAhead(chain)}, gap ${GAP_LIMIT}`);
   ok('and the gap is the usual 20', GAP_LIMIT === 20, String(GAP_LIMIT));
 
   const at = (ahead) => nextReceiveAddress(ACCOUNT, 'signet', chain, ahead).index;
   ok('zero ahead is the first unused', at(0) === 7);
   ok('one ahead is the next one', at(1) === 8);
-  ok('the cap holds', at(999) === 7 + maxAhead(), String(at(999)));
-  ok('exactly at the cap is allowed', at(maxAhead()) === 7 + GAP_LIMIT - 1);
+  ok('the cap holds', at(999) === 7 + maxAhead(chain), String(at(999)));
+  ok('exactly at the cap is allowed', at(maxAhead(chain)) === 7 + GAP_LIMIT - 1);
   // Negatives and nonsense must not walk BACKWARDS onto a used address: that
   // is the reuse the fresh-address button exists to avoid.
   for (const bad of [-1, -99, NaN, undefined, null, 'x']) {
@@ -72,6 +72,23 @@ console.log('a fresh address never falls outside the gap limit');
        String(at(bad)));
   }
   ok('a fractional step is a whole index', at(1.9) === 8, String(at(1.9)));
+
+  // IT STEPS OVER AN ADDRESS THAT HAS HISTORY. receiveIndex is the FIRST
+  // unused index, not the last: step ahead twice, hand out r+1, get paid
+  // there, and r is still first-unused while r+1 is used. Counting blindly
+  // from receiveIndex would hand r+1 straight back out as "a new address" —
+  // the exact reuse this button exists to avoid. Found when the card started
+  // SAYING the address had never been used.
+  const gappy = { receiveIndex: 7, usedIndices: [0, 1, 2, 3, 4, 5, 6, 8, 9] };
+  const atGap = (a) => nextReceiveAddress(ACCOUNT, 'signet', gappy, a).index;
+  ok('a used index inside the window is skipped', atGap(1) === 10,
+     String(atGap(1)));
+  ok('and the one after it follows on', atGap(2) === 11, String(atGap(2)));
+  // Shortens the run of offers rather than pushing the last one past the gap.
+  ok('two used indices cost two offers',
+     maxAhead(gappy) === GAP_LIMIT - 3, String(maxAhead(gappy)));
+  ok('the last offer is still inside the gap',
+     atGap(999) <= 7 + GAP_LIMIT - 1, String(atGap(999)));
 }
 
 console.log('\ncoins are grouped by the address holding them');
@@ -124,8 +141,12 @@ console.log('\nthe card uses them');
     new URL('../src/components/PlainAddressCard.tsx', import.meta.url), 'utf8',
   );
   ok('there is a way to ask for another', /New address/.test(CARD));
-  ok('it is capped, not unbounded', /Math\.min\(a \+ 1, maxAhead\(\)\)/.test(CARD));
-  ok('and disabled at the cap', /ahead >= maxAhead\(\)/.test(CARD));
+  ok('it is capped, not unbounded',
+     /Math\.min\(a \+ 1, maxAhead\(chain\)\)/.test(CARD));
+  ok('and disabled at the cap', /ahead >= maxAhead\(chain\)/.test(CARD));
+  // THE CAP IS THIS CHAIN'S, not a constant. maxAhead() took no argument and
+  // so could not know that an index inside the window had been paid.
+  ok('the cap is read off the chain', !/maxAhead\(\)/.test(CARD), 'card');
   // THE RESET MATTERS. `ahead` is relative to the first unused index, and a
   // re-walk moves that index — keeping the old offset would silently skip
   // addresses on every refresh.
@@ -257,7 +278,14 @@ console.log('\nthe copy says what to do, not why');
   );
   for (const [name, src] of [['the card', CARD], ['the panel', PANEL]]) {
     const text = strip(src);
-    ok(`${name} warns about reuse`, /Use each\s+address once\./.test(text), name);
+    // SAY IT IS FRESH FIRST. "Do not reuse an address" means nothing to a
+    // reader who cannot tell whether the one in front of them has been used:
+    // the wallet walks its own chain to the first index with no history, and
+    // a string of characters does not show that.
+    ok(`${name} says the address is unused`,
+       /This address has never been used\./.test(text), name);
+    ok(`${name} warns about reuse`,
+       /Do not reuse an\s+address\./.test(text), name);
     // The reasoning behind it was in front of the instruction, which is the
     // part that has to land.
     ok(`${name} does not explain linking`, !/nothing links them/.test(text), name);
@@ -605,6 +633,20 @@ console.log('\nthe browser does all of it too');
   // phone. A rule enforced in one client belongs in the other.
   ok('the web receive panel no longer sends',
      !/PlainSendModal/.test(PANEL) && !/sendOpen/.test(PANEL), PANEL);
+  // BUT IT DOES HAND OUT ANOTHER ADDRESS. The phone's card has had this since
+  // it was built and the web never did (reported 2026-10-07), so a second
+  // payer got the same address — or was waited on until the first one paid,
+  // which is no answer when both payments are owed to you now.
+  ok('the web can ask for another address', /New address/.test(PANEL), PANEL);
+  ok('capped by the same chain-aware limit',
+     /maxAhead\(chain\)/.test(PANEL), PANEL);
+  // `ahead` is relative to the first unused index, and a re-walk moves it.
+  ok('and reset on every walk', /ahead\.value = 0/.test(PANEL), PANEL);
+  // The QR and the clipboard must follow the address on screen, or stepping
+  // ahead shows one address and hands over another.
+  ok('copy follows the shown address',
+     /writeText\(shownAddress\.value\)/.test(PANEL), PANEL);
+  ok('and so does the QR', /:address="shownAddress"/.test(PANEL), PANEL);
   ok('the web Send page has a chain picker',
      /source = 'segwit'/.test(SEND), SEND);
   // ONE FORM THERE TOO. The recipient, amount, slider, fee tiers, summary,

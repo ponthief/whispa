@@ -20,7 +20,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
-import { loadPlainChain } from '@/services/plainChain'
+import { loadPlainChain, maxAhead, nextReceiveAddress } from '@/services/plainChain'
 import { listPlainSends } from '@/stores/plainhistory'
 import { deriveSilentPayment, isValidMnemonic } from '@/services/spKeys'
 import QrModal from './QrModal.vue'
@@ -45,6 +45,25 @@ const loading     = ref(false)
 const error       = ref(null)
 const copied      = ref(false)
 const qrOpen      = ref(false)
+
+// How far past the first unused address the user has stepped. The phone has had
+// this since the card was built and the web never did, so a second payer had to
+// be given the same address — or waited on until the first one paid, which is
+// no answer when both payments are owed to you now.
+//
+// Reset on every walk, because the first unused index has moved and `ahead` was
+// relative to the old one. Capped by the gap limit inside nextReceiveAddress:
+// an address handed out past it holds a payment this wallet, and any wallet
+// restored from the same seed, would never find.
+const ahead = ref(0)
+const shown = computed(() =>
+  chain.value && accountXprv.value
+    ? nextReceiveAddress(accountXprv.value, props.wallet.network, chain.value, ahead.value)
+    : null,
+)
+const shownAddress = computed(
+  () => shown.value?.address || chain.value?.receiveAddress || '',
+)
 
 // A payment broadcast from here that the chain index hasn't caught up with. Its
 // inputs are spent, but a mempool spend takes a moment to reach Fulcrum, and
@@ -121,6 +140,7 @@ async function refresh() {
       props.wallet.network,
     )
     chain.value = next
+    ahead.value = 0
     emit('balance', {
       walletId: props.wallet.id,
       spendable: next.confirmedSats,
@@ -220,8 +240,8 @@ onUnmounted(() => {
 watch(() => auth.keysVersion, refresh)
 
 function copyAddress() {
-  if (!chain.value) return
-  navigator.clipboard?.writeText(chain.value.receiveAddress)
+  if (!shownAddress.value) return
+  navigator.clipboard?.writeText(shownAddress.value)
   copied.value = true
   setTimeout(() => { copied.value = false }, 1500)
 }
@@ -320,16 +340,36 @@ async function runSetup() {
 
       <template v-else-if="chain">
         <div class="addr-row">
-          <span class="mono addr">{{ chain.receiveAddress }}</span>
+          <span class="mono addr">{{ shownAddress }}</span>
           <button class="btn btn-ghost btn-sm btn-icon" @click="copyAddress"
                   :title="copied ? 'Copied' : 'Copy address'">{{ copied ? '✓' : '⎘' }}</button>
           <button class="btn btn-ghost btn-sm btn-icon" @click="qrOpen = true"
                   title="Show QR code">▦</button>
+          <!-- Disabled at the gap limit rather than hidden: a control that
+               vanishes reads as a bug, and the line below says why it stopped.
+               Same button the phone's card has had all along. -->
+          <button class="btn btn-ghost btn-sm" :disabled="ahead >= maxAhead(chain)"
+                  @click="ahead = Math.min(ahead + 1, maxAhead(chain))">New address</button>
         </div>
+        <!-- THAT IT HAS NEVER BEEN USED IS THE POINT, and nothing said it. The
+             instruction not to reuse one only means something to a reader who
+             knows this one is fresh — the wallet walks its own chain to the
+             first address with no history, and that is not visible from a
+             string of characters. -->
         <p class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
-          For senders that can't pay a Silent Payments address. Use each
-          address once.
-</p>
+          This address has never been used. Do not reuse an address. For senders
+          that can't pay a Silent Payments address.
+        </p>
+        <div v-if="ahead > 0" class="ahead-row">
+          <span class="text-dim text-xs">
+            <!-- The real distance, not the number of clicks: a step over an
+                 index that has since been paid moves two. -->
+            {{ ahead >= maxAhead(chain)
+               ? 'As far ahead as this wallet can still find a payment.'
+               : `${(shown?.index ?? chain.receiveIndex) - chain.receiveIndex} ahead of your first unused address.` }}
+          </span>
+          <button class="btn btn-ghost btn-sm" @click="ahead = 0">Back to first</button>
+        </div>
 
         <div v-if="error" class="alert alert-error" style="margin-top:10px">⚠ {{ error }}</div>
 
@@ -378,13 +418,10 @@ async function runSetup() {
             </span>
             <span class="hist-copy">{{ copiedTxid === h.txid ? '✓' : '⎘' }}</span>
           </button>
-          <!-- The instruction without the reasoning, same as the card's "Use
-               each address once". Where the record is kept is this wallet's
-               design, and it was in front of somebody reading a list of their
-               own payments. -->
-          <p class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
-            Click a row to copy its transaction ID.
-          </p>
+          <!-- No caption at all. The rows copy a txid when clicked, which is
+               worth one line of explanation only if the line is not competing
+               with the list it describes; the title attribute on each row says
+               the same thing to anyone who hovers one. -->
         </template>
       </template>
 
@@ -398,7 +435,7 @@ async function runSetup() {
          needs a QR as much as the Silent Payments one above does. -->
     <QrModal
       :show="qrOpen"
-      :address="chain?.receiveAddress || ''"
+      :address="shownAddress"
       title="SegWit address"
       @close="qrOpen = false"
     />
@@ -428,7 +465,15 @@ async function runSetup() {
   border-radius: var(--radius);
   padding: 14px;
 }
-.addr-row { display: flex; align-items: center; gap: 6px; }
+.addr-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ahead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
 .addr {
   flex: 1;
   font-size: 11px;

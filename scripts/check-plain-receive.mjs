@@ -594,6 +594,15 @@ console.log('\nthe browser does all of it too');
   ok('the coin list is the branch', /v-else-if="isSegwit" class="utxo-list"/.test(SEND), SEND);
   ok('and the builder is the other one',
      /return buildSegwitTransaction\(\)/.test(SEND), SEND);
+  // ONE SHAPE INTO THE REVIEW STEP, and the whole of it. The confirm modal
+  // reads `txResult.recipient` and `txResult.fee_rate_used`, and the card above
+  // it reads `vsize` too; plainSign names the first `destination` and a
+  // hand-written list of four fields dropped the other three, so the
+  // **Recipient** line was blank directly above a Confirm button (2026-10-07).
+  // Spreading is what keeps the next row the review step grows from going the
+  // same way.
+  ok('the review step gets every field the builder produced',
+     /txResult\.value = \{ \.\.\.res, recipient: res\.destination \}/.test(SEND), SEND);
   ok('flipping clears the selection',
      /selectedSegwit\.value = \[\]/.test(SEND), SEND);
   ok('the fee prices inputs', /nIn \* INPUT_VBYTES/.test(SEND), SEND);

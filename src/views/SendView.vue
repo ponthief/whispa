@@ -475,8 +475,22 @@ async function buildSegwitTransaction() {
       )
     }
     segwitBuilt.value = res
-    // The review step reads one shape whichever side built it.
-    txResult.value = { tx_hex: res.tx_hex, fee: res.fee, change: res.change, amount: res.amount }
+    // The review step reads one shape whichever side built it, and the two
+    // builders already produce the same one except for a single name:
+    // plainSign calls it `destination`, spSign calls it `recipient`.
+    //
+    // SPREAD, DO NOT ENUMERATE. Listing four fields by hand is what left the
+    // confirm modal's **Recipient** blank and its fee row reading
+    // "(​ sat/vB)", with Fee rate and Size blank on the built-transaction card
+    // above it — every field the SP side has and this list forgot (reported
+    // 2026-10-07). A row the review step grows next would go blank the same
+    // way.
+    //
+    // The destination comes off the BUILT transaction rather than out of the
+    // input field, for the same reason the Silent Payments side takes
+    // `plan.recipient`: what is on screen above a Confirm button has to be
+    // what the signature commits to, not what is still being typed.
+    txResult.value = { ...res, recipient: res.destination }
   } catch (e) {
     buildError.value = e.detail || e.message || 'Could not build the transaction.'
   } finally {

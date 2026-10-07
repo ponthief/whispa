@@ -456,25 +456,17 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div v-if="expandedDetail.own_outputs && expandedDetail.own_outputs.length" class="tx-detail-section">
-                <div class="tx-detail-section-title">Outputs to this wallet</div>
-                <div v-for="o in expandedDetail.own_outputs" :key="o.vout" class="tx-detail-output">
-                  <span class="mono text-xs">vout {{ o.vout }}</span>
-                  <span class="mono text-orange">{{ fmt(o.amount) }}</span>
-                  <span v-if="o.label" class="tx-label-badge">🏷 {{ o.label }}</span>
-                  <span v-if="o.label_index === 1" class="badge badge-blue" title="Change returned to your own wallet">↩ Change</span>
-                  <span v-else-if="o.label_index" class="badge badge-dim">m={{ o.label_index }}</span>
-                </div>
-              </div>
+              <!-- Two sections listing this wallet's own vouts and outpoints
+                   were here. Removed at the user's request (2026-10-07): a
+                   coin list is the Coins page's job, and here they mostly
+                   raised a question rather than answering one — a Tango showed
+                   both of them on the side that had change and only one on the
+                   side that did not, which reads as something missing.
 
-              <div v-if="expandedDetail.spent_inputs && expandedDetail.spent_inputs.length" class="tx-detail-section">
-                <div class="tx-detail-section-title">Inputs spent from this wallet</div>
-                <div v-for="i in expandedDetail.spent_inputs" :key="i.txid + ':' + i.vout" class="tx-detail-output">
-                  <span class="mono text-xs">{{ i.txid.slice(0, 10) }}…:{{ i.vout }}</span>
-                  <span class="mono text-orange">{{ fmt(i.amount) }}</span>
-                  <span v-if="i.label" class="tx-label-badge">🏷 {{ i.label }}</span>
-                </div>
-              </div>
+                   The DATA is still fetched and still used: TxDetailModal
+                   decides from `own_outputs` whether a label can be attached
+                   to a coin server-side or has to stay on the device.
+                   check:tango-display pins both halves. -->
             </div>
           </div>
         </div>

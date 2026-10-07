@@ -237,28 +237,28 @@ export function turnLine(
   }
 }
 
-/** Who had change, from one side's point of view. Both amounts are recorded,
- *  so the hedge "change on one or both sides" was never necessary — and on a
- *  round with change on one side only it reads as a claim about both. */
+/**
+ * Whether THIS side had change, as a sentence. Empty when it did not and the
+ * other side did, which the caller renders as nothing at all.
+ *
+ * It used to name the partner: "Change on both sides", "Change on alice's
+ * side". Both amounts are recorded, so the old hedge "change on one or both
+ * sides" was never necessary — but naming the other side is a fact about their
+ * coins that this user cannot act on, and they already saw the same warning
+ * about their own side when they joined. The same line came off the match
+ * panel for the same reason.
+ *
+ * `theirs` still decides between saying nothing and saying the round was
+ * clean, so a caller that has not already checked `clean` gets a true answer.
+ */
 export function changeLine(
   mine: number | null | undefined,
   theirs: number | null | undefined,
-  partner?: string | null,
 ): string {
-  const them = partner || 'their side';
-  const m = (mine || 0) > 0;
-  const t = (theirs || 0) > 0;
-  if (m && t) {
-    return 'Change on both sides. An observer can often work out which output '
-      + 'is whose from the amounts.';
-  }
-  if (m) {
+  if ((mine || 0) > 0) {
     return 'Your side had change. An observer can often work out which output '
       + 'is whose from the amounts.';
   }
-  if (t) {
-    return `Change on ${them}'s side. An observer can often work out which `
-      + 'output is whose from the amounts.';
-  }
+  if ((theirs || 0) > 0) return '';
   return 'No change either side — nothing to work out from the amounts.';
 }

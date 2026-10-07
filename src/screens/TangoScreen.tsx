@@ -859,6 +859,15 @@ export default function TangoScreen() {
     const mine = tango.isMyTurn(r.status, side);
     const other = side === 'a' ? r.b_username : r.a_username;
     const myChange = side === 'a' ? r.a_change_sats : r.b_change_sats;
+    // Empty when only the OTHER side had change, and then there is no line:
+    // see tangoTurns.changeLine.
+    const changeNote =
+      r.clean === false
+        ? tango.changeLine(
+            myChange,
+            side === 'a' ? r.b_change_sats : r.a_change_sats,
+          )
+        : '';
     return (
       <View key={r.id} style={styles.row}>
         <View style={styles.rowHead}>
@@ -897,16 +906,11 @@ export default function TangoScreen() {
             {changeDestination(myChange, side === 'a' ? r.a_payout : r.b_payout)}
           </Text>
         ) : null}
-        {/* Which side, not "one or both": both amounts are recorded, and the
-            hedge read as a claim about both on a round that had change on one. */}
-        {compact ? null : r.clean === false ? (
-          <Text style={styles.warn}>
-            {tango.changeLine(
-              side === 'a' ? r.a_change_sats : r.b_change_sats,
-              side === 'a' ? r.b_change_sats : r.a_change_sats,
-              other,
-            )}
-          </Text>
+        {/* THIS side, not both: the partner's change is a fact about their
+            coins that this user cannot act on, and they were warned about
+            their own when they joined. */}
+        {compact ? null : changeNote ? (
+          <Text style={styles.warn}>{changeNote}</Text>
         ) : r.clean === true ? (
           <Text style={styles.good}>
             No change either side — nothing to work out from the amounts.

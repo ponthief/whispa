@@ -63,6 +63,48 @@ console.log('a round does not report on the partner');
   }
 }
 
+console.log('\nthe change note is about THIS side only');
+{
+  // The partner's change is a fact about their coins that this user cannot act
+  // on, and they were warned about their own when they joined. So the line
+  // names this side or says nothing — the same call that took "Their side
+  // needs change" off the match panel.
+  const WARNS = 'An observer can often work out which output is whose';
+  ok('this side had change', changeLine(716, 0).startsWith('Your side had change'));
+  ok('and says why it matters', changeLine(716, 0).includes(WARNS));
+  // Both sides had change: still this side's sentence, not "both sides".
+  eq('both sides reads as this side', changeLine(716, 412), changeLine(716, 0));
+  // Only theirs: nothing at all. The callers render no row for an empty line.
+  eq('only their side is silent', changeLine(0, 412), '');
+  eq('and a null is not change', changeLine(null, 412), '');
+  // Neither: the clean round still gets said.
+  ok('a clean round still says so',
+     changeLine(0, 0).startsWith('No change either side'));
+  // It cannot name the partner any more, in any case.
+  for (const [m, t] of [[716, 0], [716, 412], [0, 412], [0, 0]]) {
+    ok(`no partner named for (${m}, ${t})`,
+       !/alice|their side|Their side/.test(changeLine(m, t)), changeLine(m, t));
+  }
+  // The web's Activity detail no longer lists this wallet's own coins. A Tango
+  // showed both sections on the side with change and inputs alone on the side
+  // without, which reads as one of them missing something; a coin list is the
+  // Coins page's job. Removed on request.
+  const ACTIVITY = readFileSync(
+    new URL('../src/views/TransactionsView.vue', import.meta.url), 'utf8',
+  );
+  ok('Activity does not list outputs to this wallet',
+     !ACTIVITY.includes('Outputs to this wallet'));
+  ok('nor inputs spent from it',
+     !ACTIVITY.includes('Inputs spent from this wallet'));
+  // The DATA stays: the phone decides from own_outputs whether a label can go
+  // on a coin server-side or has to stay on the device.
+  const MODAL = readFileSync(
+    new URL('../src/components/TxDetailModal.tsx', import.meta.url), 'utf8',
+  );
+  ok('but own_outputs still decides where a label goes',
+     MODAL.includes('!!detail?.own_outputs?.length'));
+}
+
 console.log('\nwhat each side is waiting for');
 {
   // Side A, after approving: the round is on B, and what B does next puts it

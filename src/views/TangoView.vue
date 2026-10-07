@@ -1066,8 +1066,11 @@ function expiresIn(r) {
                 <div v-if="myChangeDest(r)" class="text-xs text-dim">
                   {{ myChangeDest(r) }}
                 </div>
-                <div v-if="r.clean === false" class="text-xs text-amber">
-                  {{ changeLine(myChangeOf(r), theirChangeOf(r), partnerOf(r)) }}
+                <!-- Empty when only the OTHER side had change, and then there
+                     is no row: see tangoTurns.changeLine. -->
+                <div v-if="r.clean === false && changeLine(myChangeOf(r), theirChangeOf(r))"
+                     class="text-xs text-amber">
+                  {{ changeLine(myChangeOf(r), theirChangeOf(r)) }}
                 </div>
                 <div v-else-if="r.clean === true" class="text-xs text-green">
                   No change either side — nothing to work out from the amounts.

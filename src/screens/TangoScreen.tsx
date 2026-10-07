@@ -960,15 +960,18 @@ export default function TangoScreen() {
             ) : null}
             {matchPreview?.error ? (
               <Note kind="error">{matchPreview.error}</Note>
-            ) : matchPreview && !matchPreview.clean ? (
+            ) : matchPreview && !matchPreview.clean && matchPreview.change ? (
+              /* ONLY THIS SIDE'S CHANGE. It also said "Their side needs
+                 change" when the selection left none here, which is a fact
+                 about the proposer's coins and nothing this user can act on —
+                 they already saw the same warning about their own side when
+                 they proposed. Nothing is shown for that case now. */
               <Text style={styles.warn}>
-                {matchPreview.change
-                  ? `Your change would be ${sats(matchPreview.change)}. `
-                  : 'Their side needs change. '}
+                {`Your change would be ${sats(matchPreview.change)}. `}
                 Change plus a share adds up to what that side put in, which is
                 often enough to tell the two outputs apart.
               </Text>
-            ) : matchPreview ? (
+            ) : matchPreview?.clean ? (
               <Text style={styles.good}>
                 Neither side needs change — a clean round.
               </Text>

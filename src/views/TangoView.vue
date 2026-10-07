@@ -1116,17 +1116,18 @@ function expiresIn(r) {
               <div v-if="matchPreview && matchPreview.error" class="alert alert-warn tg-note">
                 {{ matchPreview.error }}
               </div>
-              <p v-else-if="matchPreview && !matchPreview.clean" class="text-xs text-amber" style="margin-top:0.4rem;">
-                <template v-if="matchPreview.change">
-                  Your change would be {{ fmtSats(matchPreview.change) }}.
-                </template>
-                <template v-else>
-                  Their side needs change.
-                </template>
-                Change plus a share adds up to what that side put in, which is
-                often enough for someone to tell the two outputs apart.
+              <!-- ONLY THIS SIDE'S CHANGE. It also said "Their side needs
+                   change" when the selection left none here, which is a fact
+                   about the proposer's coins and nothing this user can act on
+                   — they already saw the same warning about their own side
+                   when they proposed. Nothing is shown for that case now. -->
+              <p v-else-if="matchPreview && !matchPreview.clean && matchPreview.change"
+                 class="text-xs text-amber" style="margin-top:0.4rem;">
+                Your change would be {{ fmtSats(matchPreview.change) }}. Change
+                plus a share adds up to what that side put in, which is often
+                enough for someone to tell the two outputs apart.
               </p>
-              <p v-else-if="matchPreview" class="text-xs text-green" style="margin-top:0.4rem;">
+              <p v-else-if="matchPreview && matchPreview.clean" class="text-xs text-green" style="margin-top:0.4rem;">
                 Neither side needs change — a clean round.
               </p>
               <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">

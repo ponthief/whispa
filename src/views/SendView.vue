@@ -1291,28 +1291,45 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
     </template>
 
     <!-- Manage saved contacts -->
+    <!-- card-header and card-body, like every other modal on this page. It was
+         bare children of .card, which carries no padding of its own — so the
+         heading and every row sat against the border. And the row centred its
+         two columns, which put Use and Remove at a different height in each
+         one, because the left column grows by a line for a verification notice
+         and another for the editor. Top-aligned, they line up down the list. -->
     <div v-if="showContacts" class="modal-overlay" @click.self="showContacts = false">
       <div class="card modal" style="max-width:440px">
-        <div class="flex items-center justify-between" style="margin-bottom:14px">
+        <div class="card-header">
           <h2 style="font-size:18px">Saved contacts</h2>
-          <button class="btn btn-ghost btn-sm" @click="showContacts = false">✕</button>
+          <button class="btn btn-ghost btn-sm btn-icon" title="Close"
+                  @click="showContacts = false">✕</button>
         </div>
-        <div v-if="!contacts.length" class="text-dim text-sm">No saved contacts yet. Enter a recipient and tap “Save contact”.</div>
-        <div v-for="c in contacts" :key="c.id" class="sc-row">
-          <div style="min-width:0">
-            <div class="text-sm"><b>{{ c.label }}</b> <span class="text-dim text-xs">{{ c.kind === 'bitmail' ? '✉ BitMail' : 'SP' }}</span></div>
-            <div class="mono text-xs text-dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.value }}</div>
-            <!-- What the server can honestly say. It cannot tell a wallet that
-                 is gone from a recipient who never used WhiSPa, so neither
-                 does this. -->
-            <div v-if="c.kind === 'sp' && c.whispa === true" class="text-xs text-green" style="margin-top:2px">
-              {{ CONTACT_VERIFIED }}
+        <div class="card-body">
+          <div v-if="!contacts.length" class="text-dim text-sm">No saved contacts yet. Enter a recipient and tap “Save contact”.</div>
+          <div v-for="c in contacts" :key="c.id" class="sc-item">
+            <div class="sc-row">
+              <div class="sc-main">
+                <div class="text-sm"><b>{{ c.label }}</b> <span class="text-dim text-xs">{{ c.kind === 'bitmail' ? '✉ BitMail' : 'SP' }}</span></div>
+                <div class="mono text-xs text-dim sc-value">{{ c.value }}</div>
+                <!-- What the server can honestly say. It cannot tell a wallet
+                     that is gone from a recipient who never used WhiSPa, so
+                     neither does this. -->
+                <div v-if="c.kind === 'sp' && c.whispa === true" class="text-xs text-green" style="margin-top:2px">
+                  {{ CONTACT_VERIFIED }}
+                </div>
+                <div v-else-if="c.kind === 'sp' && c.whispa === false" class="text-xs text-amber" style="margin-top:2px">
+                  {{ CONTACT_UNVERIFIED }}
+                </div>
+              </div>
+              <div class="sc-actions">
+                <button class="btn btn-ghost btn-sm" @click="recipient = c.value; showContacts = false">Use</button>
+                <button class="btn btn-ghost btn-sm" @click="deleteContact(c)">Remove</button>
+              </div>
             </div>
-            <div v-else-if="c.kind === 'sp' && c.whispa === false" class="text-xs text-amber" style="margin-top:2px">
-              {{ CONTACT_UNVERIFIED }}
-            </div>
-            <div v-if="editingContact === c.id" class="flex gap-2" style="margin-top:6px">
-              <input class="input mono" style="font-size:12px" v-model="contactDraft"
+            <!-- Full width, under both columns. Inside the left one the address
+                 field had whatever was left beside two buttons. -->
+            <div v-if="editingContact === c.id" class="sc-edit">
+              <input class="input mono" v-model="contactDraft"
                      placeholder="sp1… or name@domain" autocapitalize="off" autocomplete="off" />
               <button class="btn btn-primary btn-sm" :disabled="savingContactValue || !contactDraft.trim()"
                       @click="saveContactValue(c)">
@@ -1320,14 +1337,10 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
               </button>
               <button class="btn btn-ghost btn-sm" @click="editingContact = null">Cancel</button>
             </div>
-            <button v-else class="btn btn-ghost btn-sm" style="margin-top:4px;padding-left:0"
+            <button v-else class="btn btn-ghost btn-sm sc-change"
                     @click="editingContact = c.id; contactDraft = c.value">
               Change address
             </button>
-          </div>
-          <div class="flex gap-2" style="flex-shrink:0">
-            <button class="btn btn-ghost btn-sm" @click="recipient = c.value; showContacts = false">Use</button>
-            <button class="btn btn-ghost btn-sm" @click="deleteContact(c)">Remove</button>
           </div>
         </div>
       </div>
@@ -1369,8 +1382,18 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
 .recipient-row .scan-btn { flex: 0 0 auto; white-space: nowrap; }
 .sc-pick { max-width: 220px; }
 .sc-label { max-width: 200px; }
-.sc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-.sc-row:last-child { border-bottom: none; }
+.sc-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.sc-item:first-child { padding-top: 0; }
+.sc-item:last-child { border-bottom: none; padding-bottom: 0; }
+.sc-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sc-main { flex: 1 1 auto; min-width: 0; }
+.sc-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-actions { flex: 0 0 auto; display: flex; gap: 6px; }
+/* Reads as a link under the address rather than as a third button beside the
+   other two, which at this width would wrap. */
+.sc-change { margin-top: 6px; padding-left: 0; padding-right: 0; }
+.sc-edit { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sc-edit .input { flex: 1 1 200px; min-width: 0; font-size: 12px; }
 .fee-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px,1fr)); gap: 8px; }
 .fee-tier {
   display: flex; flex-direction: column; gap: 2px; align-items: flex-start;

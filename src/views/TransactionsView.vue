@@ -7,6 +7,7 @@ import { useAmount } from '@/composables/useAmount'
 import { useCsvExport } from '@/composables/useCsvExport'
 import { getTxRecipientLabel, getSwapTxLabel } from '@/stores/txlabels'
 import { pendingSends, sendKind } from '@/stores/pendingsends'
+import { listPlainSends } from '@/stores/plainhistory'
 import { mixFeeNote } from '@/services/tangoTurns'
 
 const auth   = useAuthStore()
@@ -35,6 +36,27 @@ function recipientLabel() {
 }
 const loadingDetail  = ref(false)
 
+// THE DEVICE'S OWN RECORD of payments made out of the SegWit chain
+// (stores/plainhistory.js — never sent to the server). Two things in the detail
+// panel need it and nothing else can supply them:
+//
+//  - WHERE THE MONEY WENT, for a row that has no server detail yet. A SegWit
+//    send is in the list as a local pending row, and clicking it did nothing at
+//    all: the row was not even tappable, on the reasoning that a local row has
+//    no server detail to expand into. It has no SERVER detail; it has the one
+//    record that matters, which is the address the user confirmed.
+//
+//  - WHOSE OUTPUT IS WHOSE. `get_wallet_transaction_detail` lists every output
+//    whose x-only key is not one of this wallet's SP coins, and a SegWit spend
+//    has no taproot output at all — so BOTH its outputs, the payment and this
+//    wallet's own change, come back under "Recipients". The server is not
+//    wrong to say so: it was never told these addresses exist. The device knows,
+//    so where it knows, its record is what the panel shows.
+const localSends = ref([])
+function localRecord(txid) {
+  return localSends.value.find((r) => r.txid === txid) || null
+}
+
 async function loadWallets() {
   try {
     const list = await api.getSilntWallets(auth.inkey, NETWORK_LOCK || 'mainnet')
@@ -53,6 +75,7 @@ async function loadTxs() {
   if (!selectedWallet.value) return
   loading.value = true; error.value = null
   expandedTxid.value = null; expandedDetail.value = null
+  localSends.value = listPlainSends(selectedWallet.value)
   try {
     // Fetch one extra row to know whether a next page exists, without needing a
     // total-count endpoint. Show PAGE_SIZE; the (PAGE_SIZE+1)th only signals more.
@@ -277,7 +300,10 @@ onMounted(() => {
 
       <div v-else class="tx-list">
         <div v-for="tx in rowsWithPending" :key="tx.txid" class="tx-row" :class="{ expanded: expandedTxid === tx.txid }">
-          <div class="tx-row-main" @click="!tx._local && toggleExpand(tx)">
+          <!-- A local row opens too. It has no SERVER detail, which is not the
+               same as no detail: the chain answers the fee and the confirmation
+               for any txid, and this browser knows where the money went. -->
+          <div class="tx-row-main" @click="toggleExpand(tx)">
             <span class="tx-dir" :class="directionColor(tx.kind)">{{ directionIcon(tx.kind) }}</span>
             <div class="tx-meta">
               <div class="tx-line1">
@@ -293,10 +319,34 @@ onMounted(() => {
                 <span v-for="(lbl, i) in tx.labels" :key="i" class="tx-label-badge">🏷 {{ lbl }}</span>
               </div>
             </div>
-            <span v-if="!tx._local" class="tx-chevron">{{ expandedTxid === tx.txid ? '▾' : '▸' }}</span>
+            <span class="tx-chevron">{{ expandedTxid === tx.txid ? '▾' : '▸' }}</span>
           </div>
 
           <div v-if="expandedTxid === tx.txid" class="tx-detail">
+            <!-- Shown FIRST and without waiting on the network: it is already
+                 in hand, and it is the half the server cannot answer. Left
+                 inside the chain detail it would have gone missing exactly when
+                 it is most wanted — a tx the explorer has not seen yet. -->
+            <div v-if="localRecord(tx.txid)" class="tx-detail-content">
+              <div class="tx-detail-row">
+                <span class="tx-detail-label">{{ localRecord(tx.txid).toSelf ? 'Into your wallet:' : 'Sent to:' }}</span>
+                <span class="mono text-xs tx-detail-value">{{ localRecord(tx.txid).destination }}</span>
+                <button class="btn btn-ghost btn-sm btn-icon" @click="copyText(localRecord(tx.txid).destination)" title="Copy">⎘</button>
+              </div>
+              <div class="tx-detail-row">
+                <span class="tx-detail-label">Amount:</span>
+                <span class="mono text-orange">{{ fmt(localRecord(tx.txid).amount) }}</span>
+              </div>
+              <div class="tx-detail-row">
+                <span class="tx-detail-label">Fee:</span>
+                <span class="mono">{{ fmt(localRecord(tx.txid).fee) }}</span>
+              </div>
+              <div class="text-dim text-xs" style="margin-top:2px">
+                From your SegWit addresses. Recorded in this browser only — the
+                server is never told these coins are yours, so a send made
+                elsewhere will not show its destination here.
+              </div>
+            </div>
             <div v-if="loadingDetail" class="text-dim text-sm" style="padding:12px">
               <span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>
               Loading details…
@@ -348,7 +398,13 @@ onMounted(() => {
                    their change — which is on chain either way and is none of
                    this wallet's business. A round shows what it did to THIS
                    wallet; it does not report on the partner. -->
-              <div v-if="expandedDetail.recipients && expandedDetail.recipients.length && !mixOf(tx)"
+              <!-- AND NOT WHEN THIS DEVICE SPENT THE SEGWIT CHAIN. The server
+                   picks recipients by excluding this wallet's own SP coins, and
+                   a SegWit spend has none in it — so its own change address
+                   comes back listed as somebody it paid. The local record above
+                   is the answer instead; it names the one output that was a
+                   payment. -->
+              <div v-if="expandedDetail.recipients && expandedDetail.recipients.length && !mixOf(tx) && !localRecord(tx.txid)"
                    class="tx-detail-section">
                 <div class="tx-detail-section-title">Recipients</div>
                 <div v-for="(r, i) in expandedDetail.recipients" :key="i" class="tx-detail-recipient">

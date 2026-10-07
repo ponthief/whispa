@@ -26,6 +26,7 @@ import TxDetailModal from '../components/TxDetailModal';
 import BitcoinSign from '../components/BitcoinSign';
 import { usePendingSends } from '@stores/pendingSends';
 import { usePlainStatus } from '@stores/plainStatus';
+import { usePlainHistory } from '@stores/plainHistoryStore';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { MASK, useBalancePrivacy } from '@stores/balancePrivacy';
@@ -134,6 +135,12 @@ export default function WalletScreen() {
   const [spRawTxs, setSpRawTxs] = useState<api.SpTransaction[]>([]);
   const txLabelMap = useTxLabelStore((s) => s.labels);
   const pendingLocal = usePendingSends((s) => s.sends);
+  // The device's own record of what left the SegWit chain (never sent to the
+  // server). The detail sheet needs it for the same reason the web's does:
+  // `get_wallet_transaction_detail` picks recipients by excluding this wallet's
+  // SP coins, and a SegWit spend has none — so its own change address comes
+  // back listed as somebody it paid, and nothing says where the payment went.
+  const plainHistory = usePlainHistory((s) => s.byWallet);
   // Coins sitting on the plain bech32 chain, found by the background watcher
   // (hooks/usePlainWatch). They are NOT part of the balance above and are not
   // meant to be — they are spent from their own card on the Receive tab, which
@@ -339,6 +346,13 @@ export default function WalletScreen() {
     detailTx && !detailMix && !['Sent', 'Received'].includes(detailTx.label)
       ? detailTx.label
       : '';
+  // Present only for a send this DEVICE made out of the SegWit chain. Kept for
+  // 25 sends a wallet, so an older one degrades to the chain detail alone — the
+  // same posture as a label.
+  const detailLocal =
+    (detailTxid && spWallet
+      ? (plainHistory[spWallet.id] || []).find((r) => r.txid === detailTxid)
+      : null) || null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -592,6 +606,7 @@ export default function WalletScreen() {
         txid={detailTxid}
         initialLabel={detailLabel}
         mix={detailMix}
+        localSend={detailLocal}
         onClose={() => setDetailTxid(null)}
         onLabelSaved={load}
       />

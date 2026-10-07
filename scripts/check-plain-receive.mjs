@@ -628,8 +628,25 @@ console.log('\nthe browser does all of it too');
   ok('and signs the amount the same way',
      /amount_sats: incoming \? \(p\.amount \|\| 0\) : -\(p\.amount \|\| 0\)/.test(ACTIVITY),
      ACTIVITY);
-  // A local row has no server detail to expand into.
-  ok('a local row is not expandable', /!tx\._local && toggleExpand/.test(ACTIVITY), ACTIVITY);
+  // AND IT OPENS. This pinned the opposite — a local row was not tappable at
+  // all, on the reasoning that it has no server detail to expand into. It has
+  // no SERVER detail; the chain answers the fee and the confirmation for any
+  // txid, and this browser holds the destination the user confirmed. Clicking
+  // a pending SegWit send did nothing (reported 2026-10-07).
+  ok('a local row opens like any other', /@click="toggleExpand\(tx\)"/.test(ACTIVITY), ACTIVITY);
+  ok('and the panel shows the device\'s own record',
+     /localRecord\(tx\.txid\)\.destination/.test(ACTIVITY), ACTIVITY);
+  // THE SERVER CANNOT TELL CHANGE FROM A PAYMENT HERE. It picks recipients by
+  // excluding this wallet's SP coins, and a SegWit spend has none — so both its
+  // outputs, the payment and this wallet's OWN change address, come back under
+  // "Recipients". Suppressed wherever the device knows better, on both clients.
+  ok('and suppresses the server\'s recipient guess',
+     /!mixOf\(tx\) && !localRecord\(tx\.txid\)/.test(ACTIVITY), ACTIVITY);
+  const DETAIL = read2('src/components/TxDetailModal.tsx');
+  ok('the phone suppresses it too',
+     /!mix && !localSend \?/.test(DETAIL), DETAIL);
+  ok('and names the destination from its own record',
+     /localSend\.destination/.test(DETAIL), DETAIL);
 
   // The confirming block is worth scanning only when an SP output landed in
   // it. A SegWit send touched no SP coin, so asking spends scan budget on

@@ -16,6 +16,7 @@ import { useAuthStore } from '@stores/authStore';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import * as api from '@services/api';
 import { MixRow } from '@services/tangoTurns';
+import { PlainSendRecord } from '@services/plainHistory';
 import { colors } from '@/theme';
 
 const PRIMARY = colors.primary;
@@ -39,6 +40,15 @@ interface Props {
   initialLabel?: string;
   /** Set when this transaction was a Tango, from this wallet's side. */
   mix?: MixRow | null;
+  /**
+   * This device's own record of a send out of the SegWit chain, when it has
+   * one. It answers the one question the server cannot: WHICH output was the
+   * payment. `get_wallet_transaction_detail` reports every output that is not
+   * one of this wallet's Silent Payments coins, and a SegWit spend has none in
+   * it — so without this the wallet's own change address is listed under
+   * Recipients as somebody it paid.
+   */
+  localSend?: PlainSendRecord | null;
   onClose: () => void;
   onLabelSaved?: () => void;
 }
@@ -49,6 +59,7 @@ export default function TxDetailModal({
   txid,
   initialLabel = '',
   mix = null,
+  localSend = null,
   onClose,
   onLabelSaved,
 }: Props) {
@@ -143,6 +154,35 @@ export default function TxDetailModal({
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
+          {/* Outside the `detail` gate on purpose: it is already in hand, it is
+              the half the server cannot answer, and a send still in the mempool
+              is exactly when the explorer lookup is likeliest to come back with
+              nothing. */}
+          {localSend ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>
+                {localSend.toSelf ? 'Into your wallet' : 'Sent to'}
+              </Text>
+              <Text style={styles.recipientAddr} numberOfLines={2} selectable>
+                {localSend.destination}
+              </Text>
+              <Row label="Amount">
+                <Text style={styles.value}>
+                  {groupThousands(localSend.amount)} sats
+                </Text>
+              </Row>
+              <Row label="Fee">
+                <Text style={styles.value}>
+                  {groupThousands(localSend.fee)} sats
+                </Text>
+              </Row>
+              <Text style={styles.note}>
+                From your SegWit addresses. Kept on this device only — the server
+                is never told these coins are yours, so a send made elsewhere
+                will not show its destination here.
+              </Text>
+            </View>
+          ) : null}
           {loading ? (
             <ActivityIndicator style={{ marginTop: 24 }} color={PRIMARY} />
           ) : error ? (
@@ -272,8 +312,14 @@ export default function TxDetailModal({
                   side's own coins coming back to them — their share and their
                   change — which is on chain either way and is none of this
                   wallet's business. A round shows what it did to THIS wallet;
-                  it does not report on the partner. */}
-              {detail.recipients?.length && !mix ? (
+                  it does not report on the partner.
+
+                  AND NOT WHEN THIS DEVICE SPENT THE SEGWIT CHAIN. The server
+                  picks these by excluding this wallet's own SP coins, and a
+                  SegWit spend has none in it — so its own change address comes
+                  back listed as somebody it paid. The record above names the
+                  one output that was a payment. */}
+              {detail.recipients?.length && !mix && !localSend ? (
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Recipients</Text>
                   {detail.recipients.map((r, i) => (

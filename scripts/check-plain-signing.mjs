@@ -111,6 +111,13 @@ for (const c of data.cases) {
   ok('built fee matches', built.fee === e.fee);
   ok('built change matches', built.change === e.change);
   ok('built vsize matches', built.vsize === e.vsize);
+  // The field the review step renames to `recipient` and prints above a Confirm
+  // button. Blank there is how coins go out with nothing on screen saying where
+  // (2026-10-07), and it has to come off the BUILT transaction rather than the
+  // input field — a Silent Payments destination has no plan script to fall back
+  // on, so this is the only copy that was checked before anything was signed.
+  ok('destination comes back for the review step',
+     built.destination === c.destination, `js ${built.destination}`);
 }
 
 // A wrong key must be refused rather than used. The check exists because a

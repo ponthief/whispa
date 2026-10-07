@@ -381,7 +381,6 @@ console.log('\na SegWit send shows as pending');
     strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
   const STORE = read2('src/stores/pendingSends.ts');
   const SEND = read2('src/screens/SendScreen.tsx');
-  const MODAL = read2('src/components/PlainSendModal.tsx');
   const WALLET = read2('src/screens/WalletScreen.tsx');
 
   // THE MONEY JUST LEFT. The server never lists these as pending — it does not
@@ -390,7 +389,14 @@ console.log('\na SegWit send shows as pending');
   ok('there is a kind for an outgoing SegWit send',
      /'send' \| 'plain' \| 'segwit'/.test(STORE), STORE);
   ok('the Send screen registers one', /kind: self \? 'plain' : 'segwit'/.test(SEND), SEND);
-  ok('and so does the modal', /kind: 'segwit'/.test(MODAL), MODAL);
+  // This asserted the same of PlainSendModal, which was the OTHER way to make
+  // a SegWit send — off the Receive card, before the paying half moved to Send.
+  // Both copies of it, .tsx and .vue, were unreferenced from that day and are
+  // deleted now; the assertion becomes "there is only one sender", because a
+  // second one coming back is how the two drift apart again.
+  ok('and it is the only place that can',
+     !fs.existsSync(new URL('../src/components/PlainSendModal.tsx', import.meta.url)) &&
+     !fs.existsSync(new URL('../src/components/PlainSendModal.vue', import.meta.url)));
   // The server's list is what evicts a stale entry, and it will never contain
   // this one — so a list that lacks it is not evidence that it confirmed.
   ok('the server sync cannot evict it',

@@ -365,7 +365,7 @@ async function runSetup() {
         </p>
 
         <template v-if="history.length">
-          <div class="hist-label">Sent from here</div>
+          <div class="hist-label">Sent</div>
           <button v-for="h in history" :key="h.txid" type="button" class="hist-row"
                   :title="h.txid" @click="copyTxid(h.txid)">
             <span class="hist-meta">
@@ -378,10 +378,12 @@ async function runSetup() {
             </span>
             <span class="hist-copy">{{ copiedTxid === h.txid ? '✓' : '⎘' }}</span>
           </button>
+          <!-- The instruction without the reasoning, same as the card's "Use
+               each address once". Where the record is kept is this wallet's
+               design, and it was in front of somebody reading a list of their
+               own payments. -->
           <p class="text-dim text-xs" style="margin:8px 0 0;line-height:1.6">
-            Kept in this browser only — no server holds a record of coins leaving
-            these addresses, so a payment made on another device won't be listed
-            here. Click a row to copy its transaction ID.
+            Click a row to copy its transaction ID.
           </p>
         </template>
       </template>

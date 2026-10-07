@@ -401,9 +401,23 @@ console.log('\na SegWit send shows as pending');
   // this one — so a list that lacks it is not evidence that it confirmed.
   ok('the server sync cannot evict it',
      /x\.kind === 'segwit' \|\|/.test(STORE), STORE);
-  ok('the wallet list renders it as outgoing',
-     /x\.kind === 'segwit' && x\.walletId/.test(WALLET), WALLET);
-  ok('as a pending row', /direction: 'out',[\s\S]{0,200}pending: true/.test(WALLET), WALLET);
+  // AND IT IS STILL THERE ONCE IT CONFIRMS. Built from the watch list alone,
+  // the row vanished the moment the send was mined — out of the watch list,
+  // and never in the server's, because the server does not hold these coins
+  // (reported 2026-10-07). The permanent device-side record is what the rows
+  // are built from; the watch list only decides which of them say "pending".
+  ok('the wallet list builds its rows from the permanent record',
+     /for \(const r of spWalletId \? plainHistory\[spWalletId\] \|\| \[\] : \[\]\)/
+       .test(WALLET), WALLET);
+  ok('with the watch list deciding only the badge',
+     /pending: watching\.has\(r\.txid\)/.test(WALLET), WALLET);
+  ok('and the direction off the record',
+     /direction: r\.toSelf \? 'in' : 'out'/.test(WALLET), WALLET);
+  // A server row wins on the same txid: a payment into this wallet's own SP
+  // address does get one once it is scanned in, and that one is better.
+  ok('a server row still takes over',
+     /if \(known\.has\(r\.txid\) \|\| seen\.has\(r\.txid\)\) continue;/.test(WALLET),
+     WALLET);
 }
 
 console.log('\none balance, two pockets, named');
@@ -632,8 +646,19 @@ console.log('\nthe browser does all of it too');
   // amount for a net outflow), or the label and the number disagree: "Sent
   // +5,000".
   ok('and signs the amount the same way',
-     /amount_sats: incoming \? \(p\.amount \|\| 0\) : -\(p\.amount \|\| 0\)/.test(ACTIVITY),
+     /amount_sats: incoming \? \(amount \|\| 0\) : -\(amount \|\| 0\)/.test(ACTIVITY),
      ACTIVITY);
+  // THE WEB KEEPS THE ROW TOO, from the same permanent record and with the
+  // same watch list deciding only the badge.
+  ok('the web builds its rows from the permanent record',
+     /for \(const r of localSends\.value\)/.test(ACTIVITY), ACTIVITY);
+  ok('and claims no verdict it did not get',
+     /confirmed: watching\.has\(txid\) \? false : null/.test(ACTIVITY), ACTIVITY);
+  // Sorted in by date rather than pinned on top. They were always the newest
+  // thing while they only existed before confirmation; a kept one is not.
+  ok('local rows are sorted in, not stacked on top',
+     /\.sort\(\(a, b\) => \(b\.timestamp \|\| 0\) - \(a\.timestamp \|\| 0\)\)/
+       .test(ACTIVITY), ACTIVITY);
   // AND IT OPENS. This pinned the opposite — a local row was not tappable at
   // all, on the reasoning that it has no server detail to expand into. It has
   // no SERVER detail; the chain answers the fee and the confirmation for any

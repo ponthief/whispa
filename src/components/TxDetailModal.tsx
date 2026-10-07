@@ -154,10 +154,14 @@ export default function TxDetailModal({
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Outside the `detail` gate on purpose: it is already in hand, it is
-              the half the server cannot answer, and a send still in the mempool
-              is exactly when the explorer lookup is likeliest to come back with
-              nothing. */}
+          {/* THE DESTINATION AND NOTHING ELSE, because it is the only thing
+              here that is not already on screen. The amount is on the row that
+              was tapped and the fee is in the chain card below, where this one
+              printed it a second time.
+
+              Outside the `detail` gate on purpose: it is already in hand, and a
+              send still in the mempool is exactly when the explorer lookup is
+              likeliest to come back with nothing. */}
           {localSend ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
@@ -165,21 +169,6 @@ export default function TxDetailModal({
               </Text>
               <Text style={styles.recipientAddr} numberOfLines={2} selectable>
                 {localSend.destination}
-              </Text>
-              <Row label="Amount">
-                <Text style={styles.value}>
-                  {groupThousands(localSend.amount)} sats
-                </Text>
-              </Row>
-              <Row label="Fee">
-                <Text style={styles.value}>
-                  {groupThousands(localSend.fee)} sats
-                </Text>
-              </Row>
-              <Text style={styles.note}>
-                From your SegWit addresses. Kept on this device only — the server
-                is never told these coins are yours, so a send made elsewhere
-                will not show its destination here.
               </Text>
             </View>
           ) : null}

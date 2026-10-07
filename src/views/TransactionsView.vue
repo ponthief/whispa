@@ -56,6 +56,12 @@ const localSends = ref([])
 function localRecord(txid) {
   return localSends.value.find((r) => r.txid === txid) || null
 }
+// A send made while this page is open writes the record and the watch entry
+// together, and only the watch entry is reactive. Re-read the record so the new
+// row can name its destination without a reload.
+watch(pendingSends, () => {
+  if (selectedWallet.value) localSends.value = listPlainSends(selectedWallet.value)
+})
 
 async function loadWallets() {
   try {
@@ -91,39 +97,78 @@ async function loadTxs() {
   }
 }
 
-// A payment from the plain BIP-84 chain into this wallet's own SP address is
-// invisible to the server until it confirms AND its output is scanned in: the
-// wallet spent no coins it owned, so there is no send to report and no receive
-// yet either. Show the local record meanwhile, on the first page only — it is
-// always the newest thing — and drop it once the real row arrives.
+// Rows the server does not have, merged into the ones it does.
+//
+// TWO SOURCES, AND THE DIFFERENCE IS HOW LONG THEY LIVE. `pendingSends` is a
+// watch list: an entry is dropped the moment the send confirms. `plainhistory`
+// is the permanent device-side record of what left the SegWit chain.
+//
+// It used to read only the watch list, which meant a SegWit send VANISHED FROM
+// ACTIVITY the moment it was mined (reported 2026-10-07) — out of the watch
+// list, and never in the server's, because the server does not hold those
+// coins. Confirming is the point at which a payment becomes a permanent part of
+// the history, and it was the point at which this lost it. The permanent record
+// is what the rows are built from now; the watch list only decides which of them
+// still says "pending".
+//
+// A server row always wins on the same txid. A SegWit payment into this wallet's
+// own SP address does eventually get one — once it confirms AND its output is
+// scanned in — and that row is the better one.
+//
+// First page only, and sorted in by date rather than pinned on top: the server
+// paginates and cannot know about these, so there is nowhere else to put them,
+// and one that is months old has no business above this morning's.
 const rowsWithPending = computed(() => {
   const rows = transactions.value
   if (page.value !== 0 || !selectedWallet.value) return rows
   const known = new Set(rows.map((t) => t.txid))
-  const local = (pendingSends.value || [])
-    .filter((p) => p.walletId === selectedWallet.value && !known.has(p.txid))
-    .map((p) => {
-      // WHICH WAY THE MONEY WENT. Every local row was hardcoded 'receive',
-      // which is right only for a SegWit payment into this wallet's own SP
-      // address. An outgoing SegWit send rendered under it as money ARRIVING,
-      // which is worse than not showing it at all.
-      const k = sendKind(p)
-      const incoming = k === 'plain'
-      return {
-        txid: p.txid,
-        kind: incoming ? 'receive' : 'send',
-        // SIGNED, like every row the server sends: helpers/transactions.py
-        // returns a negative amount for a net outflow, and rowAmount prints
-        // it with its sign. Left positive, an outgoing send read "Sent
-        // +5,000" — the label and the number disagreeing on the same row.
-        amount_sats: incoming ? (p.amount || 0) : -(p.amount || 0),
-        timestamp: Math.floor(p.since / 1000),
-        labels: [],
-        confirmed: false,
-        _local: true,
-      }
-    })
-  return [...local, ...rows]
+  const watching = new Set(
+    (pendingSends.value || [])
+      .filter((p) => p.walletId === selectedWallet.value)
+      .map((p) => p.txid),
+  )
+
+  // WHICH WAY THE MONEY WENT. Every local row was hardcoded 'receive', which is
+  // right only for a SegWit payment into this wallet's own SP address. An
+  // outgoing SegWit send rendered under it as money ARRIVING, which is worse
+  // than not showing it at all.
+  //
+  // `confirmed` is false only while the watcher still holds it. Not `true`
+  // otherwise: nothing here saw a block, and the row's own detail panel reads
+  // the chain for that. Neither badge beats a wrong one.
+  const row = (txid, incoming, amount, atMs) => ({
+    txid,
+    kind: incoming ? 'receive' : 'send',
+    // SIGNED, like every row the server sends: helpers/transactions.py returns
+    // a negative amount for a net outflow, and rowAmount prints it with its
+    // sign. Left positive, an outgoing send read "Sent +5,000" — the label and
+    // the number disagreeing on the same row.
+    amount_sats: incoming ? (amount || 0) : -(amount || 0),
+    timestamp: Math.floor(atMs / 1000),
+    labels: [],
+    confirmed: watching.has(txid) ? false : null,
+    _local: true,
+  })
+
+  const local = []
+  const seen = new Set()
+  for (const r of localSends.value) {
+    if (known.has(r.txid) || seen.has(r.txid)) continue
+    seen.add(r.txid)
+    local.push(row(r.txid, !!r.toSelf, r.amount, r.at))
+  }
+  // An ordinary Silent Payments send is in the watch list and nowhere else —
+  // the server lists it within moments, so this is only a stopgap. A SegWit one
+  // broadcast from another browser is here for the same reason, without a
+  // destination to show.
+  for (const p of pendingSends.value || []) {
+    if (p.walletId !== selectedWallet.value) continue
+    if (known.has(p.txid) || seen.has(p.txid)) continue
+    seen.add(p.txid)
+    local.push(row(p.txid, sendKind(p) === 'plain', p.amount, p.since))
+  }
+
+  return [...local, ...rows].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
 })
 
 function nextPage() {
@@ -323,28 +368,22 @@ onMounted(() => {
           </div>
 
           <div v-if="expandedTxid === tx.txid" class="tx-detail">
-            <!-- Shown FIRST and without waiting on the network: it is already
-                 in hand, and it is the half the server cannot answer. Left
-                 inside the chain detail it would have gone missing exactly when
-                 it is most wanted — a tx the explorer has not seen yet. -->
+            <!-- ONE ROW, because the destination is the only thing here that is
+                 not already on screen. It carried the amount and the fee too,
+                 which put a second Fee under the chain's own and said the same
+                 number twice; and a paragraph about where the record is kept,
+                 which is an explanation of this wallet's design in the middle of
+                 somebody checking where their money went.
+
+                 Shown FIRST and without waiting on the network: it is already in
+                 hand, and inside the chain detail it would have gone missing
+                 exactly when it is most wanted — a tx the explorer has not seen
+                 yet. -->
             <div v-if="localRecord(tx.txid)" class="tx-detail-content">
               <div class="tx-detail-row">
                 <span class="tx-detail-label">{{ localRecord(tx.txid).toSelf ? 'Into your wallet:' : 'Sent to:' }}</span>
                 <span class="mono text-xs tx-detail-value">{{ localRecord(tx.txid).destination }}</span>
                 <button class="btn btn-ghost btn-sm btn-icon" @click="copyText(localRecord(tx.txid).destination)" title="Copy">⎘</button>
-              </div>
-              <div class="tx-detail-row">
-                <span class="tx-detail-label">Amount:</span>
-                <span class="mono text-orange">{{ fmt(localRecord(tx.txid).amount) }}</span>
-              </div>
-              <div class="tx-detail-row">
-                <span class="tx-detail-label">Fee:</span>
-                <span class="mono">{{ fmt(localRecord(tx.txid).fee) }}</span>
-              </div>
-              <div class="text-dim text-xs" style="margin-top:2px">
-                From your SegWit addresses. Recorded in this browser only — the
-                server is never told these coins are yours, so a send made
-                elsewhere will not show its destination here.
               </div>
             </div>
             <div v-if="loadingDetail" class="text-dim text-sm" style="padding:12px">

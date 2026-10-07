@@ -156,48 +156,71 @@ export default function WalletScreen() {
   // Nothing else says a payment is on its way to the plain chain while it is
   // unconfirmed — the card is on another tab and collapsed.
   const plainIncoming = plainOwn ? plainArriving : 0;
+  // The id, not the wallet: an effect or memo that wants `wallet.id` depends on
+  // an id binding, so a refetch of the same wallet does not re-run it.
+  const spWalletId = spWallet?.id;
   const spTxs = useMemo(() => {
     const rows = spRawTxs.map((t) => spTxToItem(t, txLabelMap));
-    // A payment from the plain chain into this wallet's own SP address is
-    // invisible to the server until it confirms AND its output is scanned in:
-    // the wallet spent no coins it owned, so there is no send to report and no
-    // receive yet either. Show the local record until the server row takes over.
     const known = new Set(spRawTxs.map((t) => t.txid));
-    const incoming = pendingLocal
-      .filter(
-        (x) =>
-          x.kind === 'plain' && x.walletId === spWallet?.id && !known.has(x.txid),
-      )
-      .map<TxItem>((x) => ({
+    // TWO SOURCES, AND THE DIFFERENCE IS HOW LONG THEY LIVE. `pendingLocal` is
+    // a watch list: an entry is dropped the moment the send confirms.
+    // `plainHistory` is the permanent device-side record of what left the
+    // SegWit chain.
+    //
+    // Built from the watch list alone, a SegWit send VANISHED FROM ACTIVITY the
+    // moment it was mined (reported 2026-10-07) — out of the watch list, and
+    // never in the server's, because the server does not hold those coins.
+    // Confirming is where a payment becomes permanent history, and it was where
+    // this lost it. The rows come off the permanent record now; the watch list
+    // only decides which of them still say "pending".
+    //
+    // A server row always wins on the same txid: a SegWit payment into this
+    // wallet's own SP address does get one eventually, once it confirms AND its
+    // output is scanned in, and that row is the better one.
+    const watching = new Set(
+      pendingLocal.filter((x) => x.walletId === spWalletId).map((x) => x.txid),
+    );
+    const seen = new Set<string>();
+    const local: TxItem[] = [];
+    for (const r of spWalletId ? plainHistory[spWalletId] || [] : []) {
+      if (known.has(r.txid) || seen.has(r.txid)) continue;
+      seen.add(r.txid);
+      local.push({
+        id: r.txid,
+        direction: r.toSelf ? 'in' : 'out',
+        amountSats: r.amount || 0,
+        label: txLabelMap[r.txid] || (r.toSelf ? 'From SegWit address' : 'Sent'),
+        timestamp: Math.floor(r.at / 1000),
+        pending: watching.has(r.txid),
+      });
+    }
+    // An ordinary Silent Payments send is in the watch list and nowhere else —
+    // the server lists it within moments, so this is only a stopgap. A SegWit
+    // one broadcast from another device is here for the same reason, without a
+    // destination to show.
+    for (const x of pendingLocal) {
+      if (x.walletId !== spWalletId) continue;
+      if (known.has(x.txid) || seen.has(x.txid)) continue;
+      seen.add(x.txid);
+      local.push({
         id: x.txid,
-        direction: 'in',
+        direction: x.kind === 'plain' ? 'in' : 'out',
         amountSats: x.amountSats ?? 0,
-        label: txLabelMap[x.txid] || 'From SegWit address',
+        label:
+          txLabelMap[x.txid] ||
+          (x.kind === 'plain' ? 'From SegWit address' : 'Sent'),
         timestamp: Math.floor(x.addedAt / 1000),
         pending: true,
-      }));
-    // And a payment OUT of the SegWit chain, which the server knows even less
-    // about: it never holds those coins, so there is no row of any kind coming
-    // later. Without this the money left the balance with nothing to say where
-    // it went until the next chain walk. The local record IS the row until it
-    // confirms, which is why it carries the destination as its label.
-    const outgoing = pendingLocal
-      .filter(
-        (x) =>
-          x.kind === 'segwit' && x.walletId === spWallet?.id && !known.has(x.txid),
-      )
-      .map<TxItem>((x) => ({
-        id: x.txid,
-        direction: 'out',
-        amountSats: x.amountSats ?? 0,
-        label: txLabelMap[x.txid] || 'Sent',
-        timestamp: Math.floor(x.addedAt / 1000),
-        pending: true,
-      }));
-    // Newest first, matching the server's ordering — one of these is always the
-    // most recent thing that happened.
-    return [...incoming, ...outgoing, ...rows];
-  }, [spRawTxs, txLabelMap, pendingLocal, spWallet?.id]);
+      });
+    }
+    // Newest first, matching the server's ordering. Sorted in by date rather
+    // than pinned on top: one of these was always the most recent thing when
+    // they only existed while pending, and a confirmed one from last month has
+    // no business above this morning's.
+    return [...local, ...rows].sort(
+      (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
+    );
+  }, [spRawTxs, txLabelMap, pendingLocal, plainHistory, spWalletId]);
 
   const load = useCallback(async () => {
     if (!inkey) {
@@ -350,8 +373,8 @@ export default function WalletScreen() {
   // 25 sends a wallet, so an older one degrades to the chain detail alone — the
   // same posture as a label.
   const detailLocal =
-    (detailTxid && spWallet
-      ? (plainHistory[spWallet.id] || []).find((r) => r.txid === detailTxid)
+    (detailTxid && spWalletId
+      ? (plainHistory[spWalletId] || []).find((r) => r.txid === detailTxid)
       : null) || null;
 
   return (

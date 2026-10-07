@@ -321,7 +321,7 @@ export default function PlainAddressCard({ wallet }: Props) {
 
           {history.length ? (
             <>
-              <Text style={styles.sectionLabel}>Sent from here</Text>
+              <Text style={styles.sectionLabel}>Sent</Text>
               {history.map((h) => (
                 <TouchableOpacity
                   key={h.txid}

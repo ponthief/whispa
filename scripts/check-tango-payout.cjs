@@ -20,10 +20,14 @@
  *     client at all. A number typed into a client is one the backend can
  *     change underneath it, and the user reading the stale one is the one it
  *     applies to.
- *  3. Mainnet only. A Lightning address is a mainnet endpoint and signet
- *     change is worthless, so the server reports offered:false and the
- *     clients must render nothing — a field that silently cannot work is
- *     worse than no field.
+ *  3. Whether the chain can pay out at all is the SERVER's answer, never a
+ *     network check here. It reports offered:false and the clients render
+ *     nothing — a field that silently cannot work is worse than no field.
+ *     This was "mainnet only" for as long as the only payout wallet was an
+ *     LNbits wallet on the server, which cannot be asked which chain it runs
+ *     on. An NWC wallet reports its own, so a signet instance connected to a
+ *     signet wallet is offered too (2026-10-09). A client that had hardcoded
+ *     the chain would now be wrong, which is why it never did.
  *
  * Run: node scripts/check-tango-payout.cjs
  */
@@ -209,10 +213,12 @@ console.log('\nthe switch lives on the Tango screen, and only there');
   }
 }
 
-console.log('\nmainnet only, decided by the server');
+console.log('\nwhich chains can pay out is the server\'s answer, not ours');
 {
-  // Not a client-side network check: one authority, and it is the one that
-  // would be paying out.
+  // ONE AUTHORITY, and it is the one that would be doing the paying. The
+  // answer moved under these clients when NWC made a signet wallet reachable,
+  // and neither of them needed a line changed — which is the whole case for
+  // not putting the chain in a client.
   for (const [label, src] of [['phone', CARD], ['browser', WEB]]) {
     ok(`the ${label} renders nothing unless offered`, /\.offered/.test(src));
     ok(`the ${label} distinguishes offered from ready`, /\.ready/.test(src),

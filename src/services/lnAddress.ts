@@ -109,7 +109,7 @@ export const PAYOUT_TITLE = 'Send my change over Lightning';
  * decides, and this is what a client records as its own intent at the moment
  * it proposes or accepts. All four have to hold —
  *
- *   offered  the chain allows it at all (mainnet)
+ *   offered  the instance has a payout wallet on this chain at all
  *   ready    this instance is configured for it AND can cover a payout
  *   address  something is saved
  *   enabled  and it is switched on

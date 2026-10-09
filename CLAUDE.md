@@ -114,10 +114,28 @@ input, not after it. The
 one the backend can change underneath it, and the user reading the stale one
 is the one it applies to; no fee figure appears in either client at all (the
 fee paragraph was dropped on 2026-10-01 — it was arithmetic in front of a
-one-line decision). It is **mainnet only, by the server's say-so**
-(`offered`), not a client-side network check: a Lightning address is a mainnet
-endpoint and signet change is worthless, so routing it would have the instance
-paying real sats for faucet coins.
+one-line decision). **Which chains can pay out is the server's say-so**
+(`offered`), never a client-side network check — and that is what saved the
+clients when the answer moved.
+
+It read "mainnet only" until 2026-10-09, and the reason was always about the
+WALLET rather than the chain: pay a signet round's change out of a mainnet
+wallet and the instance buys faucet coins with real sats, on repeat, for
+anyone. An LNbits payout wallet on the server runs on whatever funding source
+LNbits was given and cannot be asked which chain that is, so mainnet had to be
+assumed and everything else refused. An **NWC** payout wallet
+(`tango_change_payout_nwc`, siLNt `helpers/nwc.py`) is somebody else's wallet
+and NIP-47's `get_info` reports its chain, so the rule is enforced against the
+wallet: same chain or no payout, **and a wallet that will not say is refused**
+— silence is the case a default would have paid for. Checked in the liquidity
+read, which decides whether a round routes, and again immediately before
+spending, because a connection string can be re-pointed in between. That is
+what lets a Coinos signet wallet pay signet change. Neither client needed a
+line changed, which is the whole case for not putting a chain in a client.
+
+The connection string is a **spending credential** — redacted from
+`GET /backend/config` beside the scan key, never logged whole, never in the
+payout health endpoint.
 
 The last two are the same bug from both ends. **Turning it off keeps the
 address** — it used to `DELETE` the row, which made the setting a one-way

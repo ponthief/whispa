@@ -19,6 +19,7 @@ const config  = ref({ blindbit_url: '', mempool_url: 'https://mempool.space', ex
   // percentage is stored as a fraction and shown as one.
   tango_change_payout_enabled: false, tango_change_sp_address: '',
   tango_change_scan_secret: '', tango_change_payout_wallet_id: '',
+  tango_change_payout_nwc: '',
   tango_change_fee_pct: 0.005, tango_change_fee_floor_sats: 100,
   tango_change_min_confirmations: 3,
   tango_change_min_wallet_balance_sats: 10000 })
@@ -673,6 +674,30 @@ onBeforeUnmount(() => {
                 The LNbits wallet each payout is sent from. It needs real
                 outbound Lightning liquidity — the money goes to somebody
                 else's node. Only the wallet ID is stored.
+                <strong>Mainnet only:</strong> a wallet on this server runs on
+                whatever funding source LNbits was given and cannot be asked
+                which chain that is, so it is assumed to be mainnet.
+              </span>
+            </div>
+            <!-- THE SECOND KIND OF PAYOUT WALLET, and the only one that can
+                 pay a chain other than mainnet. A connection string carries a
+                 SPENDING key, so it is a password field, it is never returned
+                 to a non-admin, and nothing logs it whole. -->
+            <div class="field">
+              <label>…or an NWC connection (Nostr Wallet Connect)</label>
+              <input class="input mono" type="password" autocomplete="off"
+                     v-model="config.tango_change_payout_nwc"
+                     placeholder="nostr+walletconnect://…?relay=wss://…&amp;secret=…" />
+              <span class="text-dim text-xs">
+                A wallet somewhere else — a Coinos account, for instance. Set
+                this and it is the payout wallet; leave it blank and the LNbits
+                wallet above is. It is the only way to pay out on
+                <strong>signet</strong>, because an NWC wallet reports which
+                chain it is on and that is checked against the round's before
+                anything routes and again before anything is sent. A wallet
+                that will not say is refused.
+                <strong>This string can spend that wallet.</strong> Treat it
+                like a key: it is stored like one and shown to nobody.
               </span>
             </div>
             <div class="field" style="display:flex;gap:16px;flex-wrap:wrap">

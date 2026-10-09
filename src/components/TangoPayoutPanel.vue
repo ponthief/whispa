@@ -12,9 +12,11 @@
 // anything had ever been saved. Off now keeps the address, shows it dimmed,
 // and offers a way back on; forgetting it is a separate button that says so.
 //
-// Renders nothing off mainnet. A Lightning address is a mainnet endpoint and
-// signet change is worthless, so the server reports offered:false rather than
-// this showing a field that cannot work.
+// Renders nothing unless the server says it can be paid. `offered` is its
+// answer, and asking the chain here instead would be wrong twice over: the
+// question is whether the INSTANCE has a payout wallet on this chain, and the
+// answer moved when NWC made a signet wallet reachable. See siLNt
+// helpers/nwc.py.
 
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'

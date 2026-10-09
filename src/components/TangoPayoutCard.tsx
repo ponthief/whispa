@@ -26,9 +26,13 @@
 // was remembering what had been typed. Off now keeps the address and shows it,
 // greyed, with a way back on; forgetting it is a separate button that says so.
 //
-// Not shown off mainnet. A Lightning address is a mainnet endpoint and signet
-// change is worthless, so the server reports `offered: false` and this renders
-// nothing rather than a field that cannot work.
+// Shown where the server says it can be paid, and nowhere else. `offered` is
+// its answer and this renders nothing without it — never a network check of
+// this client's own, because the question is not which chain the user is on
+// but whether the instance has a payout wallet ON that chain. Mainnet with an
+// LNbits wallet was the only yes for a long time; an NWC wallet reports its
+// own chain, so a signet instance connected to a signet wallet is another.
+// See siLNt helpers/nwc.py.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {

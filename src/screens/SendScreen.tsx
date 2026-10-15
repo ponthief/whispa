@@ -55,6 +55,7 @@ import QRScanner from '../components/QRScanner';
 import AmountSlider from '../components/AmountSlider';
 import { useDrafts } from '@stores/draftStore';
 import { sliderTop } from '@services/sendAmount';
+import { useScanProgress } from '@stores/scanProgress';
 import ContactsModal from '../components/ContactsModal';
 import ConfirmLockModal from '../components/ConfirmLockModal';
 import {
@@ -1049,6 +1050,7 @@ export default function SendScreen() {
         return;
       }
       await api.startScan(inkey, wallet.id, keys.scanSecret, walletHeight, null);
+      useScanProgress.getState().kick(inkey, wallet.id);
       markScanStarted(wallet.id);
       // Show the paused banner immediately rather than after the next poll, and
       // make sure the poller's active → done transition reloads the coin list.
@@ -1343,7 +1345,7 @@ export default function SendScreen() {
                 {catchUpBusy ? (
                   <ActivityIndicator color={PRIMARY} />
                 ) : (
-                  <Text style={styles.behindBtnText}>Catch up now</Text>
+                  <Text style={styles.behindBtnText}>Scan now</Text>
                 )}
               </TouchableOpacity>
               {catchUpMsg ? (

@@ -6,6 +6,7 @@ import { usePushBanner } from '@stores/pushBanner';
 import { useBalancePrivacy } from '@stores/balancePrivacy';
 import { alertsOn } from '@stores/notifyStore';
 import { getCatchUpBlocks, effectiveThreshold } from '@services/catchUpPref';
+import { useScanProgress } from '@stores/scanProgress';
 
 // Wallets already evaluated this app session, so returning to the Wallet tab
 // doesn't re-trigger a scan/prompt. Cleared on create/import (id may be reused)
@@ -100,6 +101,8 @@ export function useCatchUpScan(
       setProgress({ active: true, current: 0, total: 0, found: 0 });
       try {
         await api.startScan(inkey, walletId, scanSecret, from, null);
+        // So the Wallet screen's bar knows, whichever screen is showing.
+        useScanProgress.getState().kick(inkey, walletId);
         markScanStarted(walletId);
         poll(walletId);
       } catch (e: any) {

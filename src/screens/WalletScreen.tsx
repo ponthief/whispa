@@ -27,6 +27,8 @@ import BitcoinSign from '../components/BitcoinSign';
 import { usePendingSends } from '@stores/pendingSends';
 import { usePlainStatus } from '@stores/plainStatus';
 import { usePlainHistory } from '@stores/plainHistoryStore';
+import { useScanProgress } from '@stores/scanProgress';
+import ScanProgressBar from '../components/ScanProgressBar';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { MASK, useBalancePrivacy } from '@stores/balancePrivacy';
@@ -323,6 +325,15 @@ export default function WalletScreen() {
     load();
   }, [load]);
 
+  // ONE READ PER WALLET, and it is what catches a scan this app did not just
+  // start — one left running when the app was closed, or begun on another
+  // screen before this one mounted. Everything that starts a scan kicks the
+  // store itself, so there is no timer here: see stores/scanProgress.ts.
+  const kickScan = useScanProgress((s) => s.kick);
+  useEffect(() => {
+    kickScan(inkey, spWalletId ?? null);
+  }, [kickScan, inkey, spWalletId]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     // The plain chain is walked on its own schedule, so without this a pull
@@ -479,6 +490,21 @@ export default function WalletScreen() {
               )}
             </TouchableOpacity>
 
+            {/* A scan is running — on the screen people sit on, rather than
+                only on the one that started it. Catching up can take minutes
+                during which the balance above is not yet the whole truth, and
+                until this existed nothing here said so unless the catch-up
+                prompt had been accepted in this same app session.
+
+                Not gated on the banner below: the banner is the DETAILED
+                report of a scan this screen asked for, and only ever appears
+                for one. This is every scan, including the ones started from
+                Scan, from a send, or before the app was opened. When both are
+                up they are the same scan said twice at two volumes, which on
+                a two-pixel bar is not the kind of repetition worth a branch
+                to avoid. */}
+            <ScanProgressBar />
+
             {keysMissing && !loading ? (
               <View style={styles.scanBanner}>
                 <View style={styles.scanTextWrap}>
@@ -531,7 +557,7 @@ export default function WalletScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity style={styles.scanBtn} onPress={scan.accept}>
-                  <Text style={styles.scanBtnText}>Catch up</Text>
+                  <Text style={styles.scanBtnText}>Scan now</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.scanDismiss}

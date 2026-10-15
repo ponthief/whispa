@@ -83,6 +83,7 @@ npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
 npm run check:plain         # a fresh plain address stays inside the gap limit
 npm run check:scan          # a rescan reaches back at least as far as it says
+npm run check:colors        # the two colours written in both theme.ts and colors.xml
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -116,26 +117,35 @@ is the one it applies to; no fee figure appears in either client at all (the
 fee paragraph was dropped on 2026-10-01 — it was arithmetic in front of a
 one-line decision). **Which chains can pay out is the server's say-so**
 (`offered`), never a client-side network check — and that is what saved the
-clients when the answer moved.
+clients when the answer moved, twice, without either of them changing a line.
 
-It read "mainnet only" until 2026-10-09, and the reason was always about the
-WALLET rather than the chain: pay a signet round's change out of a mainnet
-wallet and the instance buys faucet coins with real sats, on repeat, for
-anyone. An LNbits payout wallet on the server runs on whatever funding source
-LNbits was given and cannot be asked which chain that is, so mainnet had to be
-assumed and everything else refused. An **NWC** payout wallet
-(`tango_change_payout_nwc`, siLNt `helpers/nwc.py`) is somebody else's wallet
-and NIP-47's `get_info` reports its chain, so the rule is enforced against the
-wallet: same chain or no payout, **and a wallet that will not say is refused**
-— silence is the case a default would have paid for. Checked in the liquidity
-read, which decides whether a round routes, and again immediately before
-spending, because a connection string can be re-pointed in between. That is
-what lets a Coinos signet wallet pay signet change. Neither client needed a
-line changed, which is the whole case for not putting a chain in a client.
+The rule underneath has always been one rule: **a test chain's change must
+never leave as real sats.** Route a signet round's worthless change to a
+mainnet Lightning address and the instance buys faucet coins with real money,
+on repeat, for anyone. It read as "mainnet only" (`PAYOUT_NETWORKS`) because
+the payout wallet is an LNbits wallet on this server running on a local
+Lightning node, and nothing in an extension can ask that node which chain it
+is on — so refusing every other chain was the only honest move available. It
+also refused the operator running a signet node.
 
-The connection string is a **spending credential** — redacted from
-`GET /backend/config` beside the scan key, never logged whole, never in the
-payout health endpoint.
+The **invoice** can be asked. BOLT 11 names its chain in the first few
+characters, so `helpers/bolt11net.py` reads it and the payment is refused
+unless it matches the round's chain — when the address is **saved** (one extra
+LNURL call, for the same reason the provider's minimum is checked there: by
+payout the coin has left their wallet and become ours) and **again before
+paying**, because a provider can be re-pointed in between and that is the call
+that spends. An invoice it cannot identify is refused too: "we could not tell"
+is not an argument for spending. `lnbcrt` starts with `lnbc` and `lntbs`
+starts with `lntb`, so the prefixes are matched longest-first — shortest-first
+reads every regtest invoice as mainnet, which is the direction that costs
+money.
+
+An **NWC** payout source reached a wallet somebody else runs (Coinos) and was
+added on 2026-10-09 for signet, then removed on 2026-10-15 at the user's
+instruction: this instance pays from a **local Lightning node through LNbits**
+and from nowhere else. Nothing stores a spending credential in a config blob.
+A node on the wrong chain simply cannot pay another chain's invoice — that
+fails, retries and is reported, and no money moves.
 
 The last two are the same bug from both ends. **Turning it off keeps the
 address** — it used to `DELETE` the row, which made the setting a one-way

@@ -8,6 +8,7 @@ import { usePendingSends, getPendingSends } from '@stores/pendingSends';
 import { usePushBanner } from '@stores/pushBanner';
 import { useBalancePrivacy } from '@stores/balancePrivacy';
 import { alertsOn } from '@stores/notifyStore';
+import { useScanProgress } from '@stores/scanProgress';
 
 // Watches broadcast-but-unmined sends and announces the first confirmation.
 //
@@ -64,6 +65,7 @@ async function scanForChange(
       return false; // can't tell — safer not to start one
     }
     await api.startScan(inkey, walletId, keys.scanSecret, blockHeight, blockHeight);
+    useScanProgress.getState().kick(inkey, walletId);
     // Respect the shared cooldown, so the UI does not immediately offer another
     // scan on top of this one.
     markScanStarted(walletId);

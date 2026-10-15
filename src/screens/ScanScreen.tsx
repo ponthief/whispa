@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
 import { getWalletKeys, hasWalletKeys } from '@services/secureKeys';
+import { useScanProgress } from '@stores/scanProgress';
 import {
   cooldownRemaining,
   markScanStarted,
@@ -421,6 +422,8 @@ export default function ScanPanel() {
     setProgress({ active: true, current: 0, total: 0, found: 0 });
     try {
       await api.startScan(inkey, wallet.id, keys.scanSecret, from, to);
+      // The Wallet screen has no other way to learn about a scan started here.
+      useScanProgress.getState().kick(inkey, wallet.id);
       // Disarm: the next press is the ordinary catch-up again.
       setLookback(null);
       setDateOpen(false);

@@ -6,4 +6,24 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
+    <!--
+      What MainActivity launches with, and what it stops using in onCreate.
+
+      The theme on the <activity> decides what the window looks like before any
+      of this app's code runs, which on a cold start is the second or two the
+      bundle takes to load. It was AppTheme, whose background is AppCompat's
+      default — white under a light system theme — so the wallet opened with a
+      white flash and then cut to its own dark splash.
+
+      THE SWAP BACK IS NOT OPTIONAL. MainActivity calls setTheme(AppTheme)
+      before super.onCreate, and without it this drawable stays as the window
+      background for the life of the process: it is what shows through
+      anywhere the app does not paint, which is most visible behind a keyboard
+      and during activity transitions. It would look like a rendering bug and
+      read like one too.
+    -->
+    <style name="SplashTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+    </style>
+
 </resources>

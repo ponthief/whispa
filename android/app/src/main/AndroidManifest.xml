@@ -33,12 +33,18 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme">
+      <!-- SplashTheme, not AppTheme: this is the window Android draws from the
+           tap on the launcher until React Native has a frame, and AppTheme's
+           background is AppCompat's default — white under a light system
+           theme. MainActivity swaps to AppTheme in onCreate; see the note
+           there for why that line is not optional. -->
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
         android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
+        android:theme="@style/SplashTheme"
         android:exported="true">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />

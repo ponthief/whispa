@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window Android draws from the moment the launcher icon is tapped, until
+  React Native renders its first frame. Before this existed that window was
+  AppCompat's default background, so launching the wallet flashed white and
+  then cut to App.tsx's dark splash — on a cold start, long enough to read as a
+  different app opening.
+
+  This is the API 23–30 path. On 31+ the system draws its own splash from the
+  windowSplashScreen* attributes in values-v31/styles.xml and ignores this
+  drawable; both are set so the two look the same, and both match SplashGate in
+  src/App.tsx, which takes over once the bundle is up.
+
+  THE FOREGROUND LAYER, not @mipmap/ic_launcher. The launcher icon is masked to
+  whatever shape the device's launcher uses and carries its own background
+  colour inside that mask, which here is a near-black circle on a near-black
+  screen. ic_launcher_foreground is the mark itself, drawn with the padding an
+  adaptive icon expects, so it centres cleanly on a flat field.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:drawable="@mipmap/ic_launcher_foreground"
+        android:gravity="center"
+        android:width="192dp"
+        android:height="192dp" />
+</layer-list>

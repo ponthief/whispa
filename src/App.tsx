@@ -4,8 +4,8 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {
-  ActivityIndicator,
   AppState,
+  Image,
   StatusBar,
   StyleSheet,
   Text,
@@ -174,11 +174,31 @@ function Shell() {
 // Held while the keystore is asked whether there is a session. One keystore
 // read, so this is a frame or two — but rendering the login screen and then
 // yanking it away looks like a bug, and rendering nothing looks like a crash.
+//
+// THE SECOND HALF OF A SPLASH THAT STARTS BEFORE JAVASCRIPT DOES. Android
+// draws MainActivity's window background from the moment the launcher is
+// tapped, which is well before the bundle has loaded — that window used to be
+// the AppCompat default, so launching the app flashed a white screen and then
+// cut to a dark one with a spinner on it. `SplashTheme` makes that first
+// window the same mark on the same background as this (android/.../styles.xml,
+// and MainActivity swaps the theme back before the first frame), so the two
+// are one screen and the handover is invisible.
+//
+// The icon carries it and the line underneath says what is happening. The bare
+// ActivityIndicator that was here said neither: a spinner on a black field is
+// indistinguishable from a hung app, which is exactly the reading to avoid
+// while a wallet is deciding whether it has a session.
 function SplashGate() {
   return (
     <View style={styles.splash}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-      <ActivityIndicator color={PRIMARY} />
+      <Image
+        source={require('./assets/icon.png')}
+        style={styles.splashMark}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+      />
+      <Text style={styles.splashText}>Starting…</Text>
     </View>
   );
 }
@@ -392,6 +412,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // The same corner radius the Wallet screen's brand mark uses, scaled: the
+  // asset is square with no rounding of its own, so without it the icon reads
+  // as a sticker rather than as the app's own mark.
+  splashMark: { width: 96, height: 96, borderRadius: 22 },
+  splashText: {
+    marginTop: 18,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    color: colors.muted,
   },
   root: {
     flex: 1,

@@ -42,6 +42,22 @@ class MainActivity : ReactActivity() {
       WindowManager.LayoutParams.FLAG_SECURE,
       WindowManager.LayoutParams.FLAG_SECURE,
     )
+    // BACK TO THE ORDINARY THEME, and this line is load-bearing.
+    //
+    // The manifest launches this activity with SplashTheme so the window
+    // Android paints before any of our code runs is the app's own mark on its
+    // own background, rather than AppCompat's default — which is white under a
+    // light system theme, and was a white flash on every cold start.
+    //
+    // That theme's windowBackground is a drawable with the icon in the middle
+    // of it. Left in place it stays the window background for the life of the
+    // process, showing through anywhere the app does not paint: behind the
+    // keyboard, during activity transitions, under a translucent dialog. It
+    // looks like a rendering bug, and nothing about it points back here.
+    //
+    // BEFORE super.onCreate, which is where the window gets its decor: after
+    // it, the swap applies to a window that has already been laid out.
+    setTheme(R.style.AppTheme)
     super.onCreate(savedInstanceState)
   }
 

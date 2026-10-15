@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 took the launch window away and gave back a splash it draws
+  itself. From API 31 the system shows the launcher icon on a colour of its
+  choosing and IGNORES android:windowBackground while it does, so the
+  layer-list in drawable/splash_screen.xml stops being what anyone sees — on
+  most phones in circulation.
+
+  Left unset, the colour it picks comes from the theme's background, which is
+  the whole problem being fixed. So both attributes are set explicitly, to the
+  same mark and the same field as the pre-31 drawable and as SplashGate in
+  src/App.tsx. Three places, one screen, and a build is the only way to see
+  that they agree — see the note in android/app/src/main/java/…/MainActivity.kt.
+
+  No androidx.core:core-splashscreen here. It is the compatibility shim for
+  getting this behaviour on OLDER releases, and the drawable already covers
+  those; adding a dependency to re-describe what two attributes say is a
+  library to keep up to date for nothing.
+-->
+<resources>
+
+    <!-- SplashTheme only. AppTheme is NOT redefined here: a values-v31 copy of
+         it would be a second place to change every time the real one moves,
+         and `parent="AppTheme"` already resolves to the one in values/. -->
+    <style name="SplashTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <!-- The mark without the launcher's mask or its own background disc:
+             the system applies its own circular mask and draws it on the
+             colour above. @mipmap/ic_launcher here would put a near-black
+             disc on a near-black field. -->
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+    </style>
+
+</resources>

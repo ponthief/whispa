@@ -8,4 +8,12 @@
          across a React Native theme and an Android resource, so if one moves
          the other has to move with it. -->
     <color name="notification_accent">#F97316</color>
+    <!-- The launch window's background, behind the mark, until React Native
+         has a frame to show. Same value as colors.bg in src/theme.ts and so
+         the same literal in two places for the same reason as the accent
+         above: a React Native theme and an Android resource cannot share one.
+         If this and SplashGate's background drift, the handover from the
+         system splash to the app's own stops being invisible and becomes a
+         flicker nobody can account for. -->
+    <color name="splash_background">#080B0F</color>
 </resources>

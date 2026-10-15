@@ -13,10 +13,10 @@
 // and offers a way back on; forgetting it is a separate button that says so.
 //
 // Renders nothing unless the server says it can be paid. `offered` is its
-// answer, and asking the chain here instead would be wrong twice over: the
-// question is whether the INSTANCE has a payout wallet on this chain, and the
-// answer moved when NWC made a signet wallet reachable. See siLNt
-// helpers/nwc.py.
+// answer and asking the chain here instead would have been wrong twice over:
+// it moved once and moved back inside a week, and this file did not change
+// either time. Today it is mainnet; off it, the change stays on chain. See
+// siLNt helpers/tangopayout.py.
 
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'

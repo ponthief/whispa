@@ -28,11 +28,13 @@
 //
 // Shown where the server says it can be paid, and nowhere else. `offered` is
 // its answer and this renders nothing without it — never a network check of
-// this client's own, because the question is not which chain the user is on
-// but whether the instance has a payout wallet ON that chain. Mainnet with an
-// LNbits wallet was the only yes for a long time; an NWC wallet reports its
-// own chain, so a signet instance connected to a signet wallet is another.
-// See siLNt helpers/nwc.py.
+// this client's own. Today that answer is mainnet: a Lightning address is a
+// mainnet endpoint and signet change is worthless, so off mainnet the change
+// stays on chain in the wallet it was always going to land in.
+//
+// The answer was widened and put back within a week (siLNt
+// helpers/tangopayout.py has both attempts) and this file did not change
+// either time. That is the whole reason the chain is not in it.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {

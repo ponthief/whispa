@@ -115,37 +115,29 @@ input, not after it. The
 one the backend can change underneath it, and the user reading the stale one
 is the one it applies to; no fee figure appears in either client at all (the
 fee paragraph was dropped on 2026-10-01 — it was arithmetic in front of a
-one-line decision). **Which chains can pay out is the server's say-so**
-(`offered`), never a client-side network check — and that is what saved the
-clients when the answer moved, twice, without either of them changing a line.
+one-line decision). It is **mainnet only, by the server's say-so**
+(`offered`), never a client-side network check: a Lightning address is a
+mainnet endpoint and signet change is worthless, so routing it would have the
+instance paying real sats for faucet coins.
 
-The rule underneath has always been one rule: **a test chain's change must
-never leave as real sats.** Route a signet round's worthless change to a
-mainnet Lightning address and the instance buys faucet coins with real money,
-on repeat, for anyone. It read as "mainnet only" (`PAYOUT_NETWORKS`) because
-the payout wallet is an LNbits wallet on this server running on a local
-Lightning node, and nothing in an extension can ask that node which chain it
-is on — so refusing every other chain was the only honest move available. It
-also refused the operator running a signet node.
+**Off mainnet the change stays on chain**, in its owner's own wallet, and that
+needs no code of its own — `payout_offered` false makes `tango_payout_ready`
+false, makes `_tango_routes_change` false, and the client derives its own
+change script and keeps the coin. It is what every round did before this
+feature existed.
 
-The **invoice** can be asked. BOLT 11 names its chain in the first few
-characters, so `helpers/bolt11net.py` reads it and the payment is refused
-unless it matches the round's chain — when the address is **saved** (one extra
-LNURL call, for the same reason the provider's minimum is checked there: by
-payout the coin has left their wallet and become ours) and **again before
-paying**, because a provider can be re-pointed in between and that is the call
-that spends. An invoice it cannot identify is refused too: "we could not tell"
-is not an argument for spending. `lnbcrt` starts with `lnbc` and `lntbs`
-starts with `lntb`, so the prefixes are matched longest-first — shortest-first
-reads every regtest invoice as mainnet, which is the direction that costs
-money.
-
-An **NWC** payout source reached a wallet somebody else runs (Coinos) and was
-added on 2026-10-09 for signet, then removed on 2026-10-15 at the user's
-instruction: this instance pays from a **local Lightning node through LNbits**
-and from nowhere else. Nothing stores a spending credential in a config blob.
-A node on the wrong chain simply cannot pay another chain's invoice — that
-fails, retries and is reported, and no money moves.
+**It stays mainnet-only** (2026-10-15, on the user's instruction). Two
+attempts to widen it are recorded in siLNt `helpers/tangopayout.py` because
+both looked reasonable and both are refused. An **NWC** connection to a wallet
+somebody else runs (Coinos) could be asked which chain it is on — removed,
+because this instance pays from a local Lightning node through LNbits and from
+nowhere else. Reading the chain **off the invoice** — BOLT 11 names it — kept
+its check (`helpers/bolt11net.py`, immediately before the payment, prefixes
+matched longest-first because `lnbcrt` starts with `lnbc`), but as a last line
+in front of the money rather than a licence to offer the setting off mainnet:
+it should never fire, and it is what makes the rule a property of the code
+rather than of one constant. A third attempt needs an answer to "what pays the
+invoice", not a narrower refusal.
 
 The last two are the same bug from both ends. **Turning it off keeps the
 address** — it used to `DELETE` the row, which made the setting a one-way

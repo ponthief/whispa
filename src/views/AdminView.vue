@@ -673,10 +673,10 @@ onBeforeUnmount(() => {
                 The LNbits wallet each payout is sent from. It needs real
                 outbound Lightning liquidity — the money goes to somebody
                 else's node. Only the wallet ID is stored.
-                Its Lightning node has to be on the same chain as the rounds
-                it pays for: an invoice for another chain is refused before it
-                is paid, which is what stops a signet round's change going out
-                as real sats.
+                <strong>Mainnet only.</strong> A Lightning address is a
+                mainnet endpoint and signet change is worthless, so the setting
+                is not offered off mainnet and that change stays on chain in
+                the user's own wallet.
               </span>
             </div>
             <div class="field" style="display:flex;gap:16px;flex-wrap:wrap">

@@ -194,19 +194,14 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           value: Auto-lock · 1 minute. It was titled "Ask again after", which
           is a sentence fragment the chips have to finish.
 
-          ONE LINE OF FOOTER, on the one choice that surprises people:
-          "Immediately" means a glance at another app costs an unlock. The
-          others needed no explaining, and the paragraph that used to sit under
-          every chip — about background time counting towards the timer — was a
-          paragraph nobody read twice. */}
+          NO FOOTER AT ALL. Two paragraphs lived under these chips. One
+          explained that background time counts towards the timer, which is a
+          timer nobody was wondering about; the other said "Immediately" means
+          a glance at another app costs an unlock, which the word immediately
+          already says. Both are gone — the chips are the control and they are
+          legible without a note under them. */}
       {lockAnyEnabled ? (
-        <Group
-          title="Auto-lock"
-          footer={
-            autoLockMs === 0
-              ? 'Switching away to check something means unlocking on the way back.'
-              : undefined
-          }>
+        <Group title="Auto-lock">
           <Block first>
             <Chips
               options={appLock.AUTO_LOCK_CHOICES.map((o) => ({

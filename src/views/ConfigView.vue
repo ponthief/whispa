@@ -38,6 +38,42 @@ function doForgetKeys() {
   error.value = null
 }
 
+// INVITE A FRIEND. The phone has had this on Settings → Account since the
+// feature existed and the browser never did, so the same account offered it on
+// one device and not the other. Same endpoint, same validation, same wording —
+// see screens/settings/AccountPage.tsx, which is the original.
+const inviteEmail = ref('')
+const inviting = ref(false)
+const inviteMsg = ref(null)
+const inviteErr = ref(null)
+
+// Checked here only so a typo is refused without a round trip; the server
+// validates it again, and its refusal is the one that counts.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+async function sendInvite() {
+  const address = inviteEmail.value.trim().toLowerCase()
+  if (!EMAIL_RE.test(address)) {
+    inviteErr.value = 'Enter a valid email address.'
+    inviteMsg.value = null
+    return
+  }
+  inviting.value = true
+  inviteErr.value = null
+  inviteMsg.value = null
+  try {
+    const res = await api.sendInvite(auth.inkey, address)
+    // Cleared on success only: a failed send should leave what was typed, or
+    // the retry means typing the address again.
+    inviteEmail.value = ''
+    inviteMsg.value = res?.message || `Invitation sent to ${address}.`
+  } catch (e) {
+    inviteErr.value = e.detail || e.message || 'Could not send the invitation.'
+  } finally {
+    inviting.value = false
+  }
+}
+
 const router = useRouter()
 const showCloseAccount = ref(false)
 const closeConfirmText = ref('')
@@ -285,6 +321,38 @@ onMounted(async () => {
           Manage which devices can access this account.
         </p>
         <router-link to="/devices" class="btn btn-primary">⚙ Manage devices</router-link>
+      </div>
+    </div>
+
+    <!-- Invite a friend. The phone's Settings → Account has had this all
+         along; the browser not having it meant one account offering the
+         feature on one device and not the other. -->
+    <div class="card" style="margin-top:20px">
+      <div class="card-header"><h2>Invite a friend</h2></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <p class="text-dim text-sm" style="margin:0">
+          We email them a sign-up link. Their address is used for the invite and
+          not stored.
+        </p>
+        <div class="flex gap-2" style="flex-wrap:wrap">
+          <input
+            class="input"
+            style="flex:1 1 220px;min-width:0"
+            v-model="inviteEmail"
+            type="email"
+            autocomplete="off"
+            autocapitalize="off"
+            placeholder="friend@email.com"
+            @keyup.enter="sendInvite"
+            @input="inviteErr = null; inviteMsg = null" />
+          <button class="btn btn-primary" :disabled="inviting || !inviteEmail.trim()"
+                  @click="sendInvite">
+            <span v-if="inviting" class="spinner" style="border-top-color:#000"></span>
+            {{ inviting ? 'Sending…' : 'Send' }}
+          </button>
+        </div>
+        <div v-if="inviteErr" class="alert alert-error">⚠ {{ inviteErr }}</div>
+        <div v-if="inviteMsg" class="alert alert-success">✓ {{ inviteMsg }}</div>
       </div>
     </div>
 

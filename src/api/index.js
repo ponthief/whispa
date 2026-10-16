@@ -437,6 +437,18 @@ export async function deleteBip353(inkey, walletId, addressId = null) {
   })
 }
 
+// Invite a friend by email. The backend sends one fixed template naming the
+// inviter, with a link to the sign-up page, and does NOT store the address —
+// see siLNt views_api.api_send_invite. Mirrors services/api.ts::sendInvite, so
+// the two clients ask the same endpoint the same way.
+export async function sendInvite(inkey, email) {
+  return req(`${SILNT}/api/v1/invite`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+    body: JSON.stringify({ email }),
+  })
+}
+
 export async function closeAccount(inkey) {
   return req(`${SILNT}/api/v1/account/close`, {
     method: 'POST',

@@ -150,10 +150,7 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
   }, [setPinSet]);
 
   return (
-    <Page
-      title="Security"
-      subtitle="What it takes to open this app, and what it will show you."
-      onBack={onBack}>
+    <Page title="Security" onBack={onBack}>
       <Group title="Unlocking">
         <SwitchRow
           first
@@ -190,14 +187,25 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           only the duplicate went. */}
 
       {/* Only meaningful once something locks — with no lock configured this is
-          a choice about nothing, so it is not offered. */}
+          a choice about nothing, so it is not offered.
+
+          "Auto-lock" is the name the rest of the code has always used for this
+          (services/appLock.ts, hooks/useIdleLock.ts) and the chips read as its
+          value: Auto-lock · 1 minute. It was titled "Ask again after", which
+          is a sentence fragment the chips have to finish.
+
+          ONE LINE OF FOOTER, on the one choice that surprises people:
+          "Immediately" means a glance at another app costs an unlock. The
+          others needed no explaining, and the paragraph that used to sit under
+          every chip — about background time counting towards the timer — was a
+          paragraph nobody read twice. */}
       {lockAnyEnabled ? (
         <Group
-          title="Ask again after"
+          title="Auto-lock"
           footer={
             autoLockMs === 0
               ? 'Switching away to check something means unlocking on the way back.'
-              : 'Time spent in another app counts towards this, so a quick glance elsewhere and back does not ask again.'
+              : undefined
           }>
           <Block first>
             <Chips

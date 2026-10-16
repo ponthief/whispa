@@ -9,8 +9,12 @@
 # verifiable against something an attacker who owns whispawallet.com cannot forge.
 #
 # Usage:
-#   scripts/cut-release.sh v0.1.1                       # fetch the CI builds
-#   scripts/cut-release.sh v0.1.1 main.apk signet.apk   # use local files
+#   scripts/cut-release.sh v0.4.0                       # fetch the CI builds
+#   scripts/cut-release.sh v0.4.0 main.apk signet.apk   # use local files
+#
+# The tag is not yours to choose: it must be v<APP_VERSION> from src/version.ts,
+# because that is the string the in-app update check compares. The release's
+# NAME comes from PRERELEASE_LABEL in the same file. See the check below.
 #
 # Env:
 #   THRILLA_GPG_KEY               passed through to sign-release.sh
@@ -39,10 +43,55 @@ note() { printf '  %s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
 
 [ -n "$tag" ] || die "usage: scripts/cut-release.sh <tag> [mainnet.apk signet.apk]"
-case "$tag" in
-  v*) ;;
-  *) die "tag should look like v0.1.1 (got '$tag'). The page links to /releases/latest, so the tag is only for humans — but keep it sortable." ;;
-esac
+
+# ------------------------------------------------------- the tag the tree says
+# THE TAG IS NOT A FREE PARAMETER, and treating it as one published a release
+# nobody could be offered (v0.2.0-beta, 2026-10-16). It was typed on the command
+# line, nothing compared it to the tree it was cut from, and two things went
+# wrong at once:
+#
+#   * src/services/updateCheck.ts::parseRelease reads the version it compares
+#     straight off `tag_name` — `tag.replace(/^v/, '')`. A tag of v0.2.0-beta
+#     parses to 0.2.0, the installed build reports APP_VERSION 0.4.0, and
+#     compareVersions says the release is OLDER. Every phone is told it is up
+#     to date, for that release and every later one tagged the same way.
+#   * the title comes from PRERELEASE_LABEL, which nobody had bumped, so the
+#     release page named the PREVIOUS release.
+#
+# Neither is visible from the release page, and the second one is what gets
+# noticed — which is how the first one ships behind it.
+#
+# So the tag is checked against src/version.ts, which is what `check:update`
+# already holds to a bare vX.Y.Z that parses back to APP_VERSION. One source,
+# and the script refuses to publish past it.
+app_version="$(sed -n "s/^export const APP_VERSION = '\\([^']*\\)';/\\1/p" \
+               "$repo_root/src/version.ts")"
+label="$(sed -n "s/^export const PRERELEASE_LABEL = '\\([^']*\\)';/\\1/p" \
+         "$repo_root/src/version.ts")"
+[ -n "$app_version" ] || die "could not read APP_VERSION out of src/version.ts. That file is where the tag and the title come from; this script will not guess them."
+
+expected_tag="v$app_version"
+if [ "$tag" != "$expected_tag" ]; then
+  die "$(cat <<EOM
+this tree builds $app_version, so the tag is $expected_tag — not '$tag'.
+
+The tag is MACHINE-READ. updateCheck.ts takes the version off tag_name, so
+'$tag' would be read as '${tag#v}' and compared against the $app_version the
+installed app reports. Get that wrong and every phone is told it is up to
+date, for this release and every later one.
+
+The NAME of the release is PRERELEASE_LABEL${label:+ (currently '$label')}, which is
+what goes on the release page. To cut a release called 0.2.0-beta, edit
+src/version.ts and package.json:
+
+  APP_VERSION      -> the next number ABOVE $app_version      (e.g. $(printf '%s' "$app_version" | awk -F. '{print $1"."$2+1".0"}'))
+  PRERELEASE_LABEL -> '0.2.0-beta'
+
+then run: scripts/cut-release.sh v<that number>
+EOM
+)"
+fi
+note "tag $tag, building $app_version${label:+, released as $label}"
 
 command -v gpg >/dev/null 2>&1 || die "gpg not found; this script exists to GPG-sign, so there is nothing to do without it."
 
@@ -191,6 +240,21 @@ else
   note "no '## $tag' section in CHANGELOG.md; publishing without a what's-new."
 fi
 
+# THE TAG IS NUMBERED AND THE TITLE IS NAMED, and they are allowed to differ.
+# The tag was checked against APP_VERSION at the top, for the reason written
+# there; this is the other half. The title is read by people only, so that is
+# where the release's NAME goes, and it comes out of src/version.ts rather than
+# being rebuilt here so the About page and the release page cannot drift.
+#
+# Worked out HERE rather than beside `gh release create`, so a dry run prints
+# it. A dry run that showed everything except the one field that was wrong is
+# how the wrong one got published.
+if [ -n "$label" ]; then
+  title="WhiSPa $label"
+else
+  title="WhiSPa $tag"
+fi
+
 notes="$(cat <<EOF
 ${changelog:+$changelog
 
@@ -219,27 +283,21 @@ EOF
 if [ "${THRILLA_DRY_RUN:-}" = "1" ]; then
   step "Dry run — not creating the release"
   note "files ready in $work"
+  note "release title: $title (tag $tag)"
   printf '%s\n' "$notes" | sed 's/^/  | /'
   exit 0
 fi
 
 step "Creating release $tag"
 need_gh "needed to create the release"
-# THE TAG IS NUMBERED AND THE TITLE IS NAMED, and they are allowed to differ.
-# src/services/updateCheck.ts reads the version it compares straight off
-# `tag_name`, so the tag has to carry a number that sorts above what is
-# installed — a tag of v0.1.0-beta is read as 0.1.0 and the update check goes
-# silent for everyone. The title is read by people only, so that is where the
-# release's NAME goes. src/version.ts holds both; RELEASE_TITLE is taken from
-# there rather than rebuilt here, so the About page and the release page
-# cannot drift.
-title="$(sed -n "s/^export const PRERELEASE_LABEL = '\\([^']*\\)';/\\1/p" \
-         "$repo_root/src/version.ts")"
-if [ -n "$title" ]; then
-  title="WhiSPa $title"
-  note "release title: $title (tag $tag)"
-else
-  title="WhiSPa $tag"
+# AND THE NAME HAS TO BE A NEW ONE. Bumping APP_VERSION and forgetting
+# PRERELEASE_LABEL passes every check above — the tag is right, the build is
+# right — and publishes a release page carrying the PREVIOUS release's name.
+# That is the half that was noticed on 2026-10-16, and the only place it can
+# be caught is here, against the releases that already exist.
+if [ -n "$label" ] && gh release list --limit 100 --json name --jq '.[].name' \
+     2>/dev/null | grep -Fxq "$title"; then
+  die "a release is already called '$title'. PRERELEASE_LABEL in src/version.ts is still '$label' — bump it to the name this release should carry, or pass a tag for a build that has one."
 fi
 gh release create "$tag" \
   "$work/whispa-mainnet.apk" \

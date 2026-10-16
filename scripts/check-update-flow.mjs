@@ -306,6 +306,25 @@ console.log('\nrefusals from a malformed answer');
        V.RELEASE_TAG);
   }
 
+  // AND THE THING THAT CUTS THE RELEASE HAS TO READ THEM. Everything above
+  // checks version.ts against itself, which it passed on 2026-10-16 while a
+  // release went out tagged v0.2.0-beta: cut-release.sh took the tag off the
+  // command line and never compared it to the tree it was cutting. The tag
+  // parsed to 0.2.0, below the 0.4.0 the installed app reports, so the update
+  // check answered "up to date" to everyone — and the title, read from a
+  // PRERELEASE_LABEL nobody had bumped, named the previous release.
+  const cut = fs.readFileSync(path.join(root, 'scripts/cut-release.sh'), 'utf8');
+  ok('cut-release.sh reads APP_VERSION', /APP_VERSION = /.test(cut));
+  ok('and refuses a tag the tree does not build',
+     /expected_tag="v\$app_version"/.test(cut) &&
+       /\[ "\$tag" != "\$expected_tag" \]/.test(cut),
+     'the tag is machine-read; it is not a free parameter');
+  ok('it takes the title from PRERELEASE_LABEL',
+     /PRERELEASE_LABEL = /.test(cut) && /title="WhiSPa \$label"/.test(cut));
+  ok('and refuses a name an existing release already has',
+     /gh release list/.test(cut) && /grep -Fxq "\$title"/.test(cut),
+     'bumping the number and forgetting the name passes every other check');
+
   // THE COMPARISON IS AGAINST APP_VERSION, NOT THE LABEL, and that is the
   // whole reason the number was allowed to keep climbing. If the label ever
   // reached compareVersions the update check would read 0.1.0-beta as older

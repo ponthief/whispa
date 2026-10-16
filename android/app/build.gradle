@@ -268,13 +268,35 @@ android {
         // Release signing. The keystore and passwords are NEVER committed — they
         // are read from Gradle properties (put them in ~/.gradle/gradle.properties,
         // outside this repo):
-        //   THRILLA_STORE_FILE=/absolute/path/to/thrilla-release.keystore
-        //   THRILLA_KEY_ALIAS=thrilla
-        //   THRILLA_STORE_PASSWORD=…
-        //   THRILLA_KEY_PASSWORD=…
+        //   WHISPA_STORE_FILE=/absolute/path/to/whispa-release.jks
+        //   WHISPA_KEY_ALIAS=whispa
+        //   WHISPA_STORE_PASSWORD=…
+        //   WHISPA_KEY_PASSWORD=…
+        //
+        // THRILLA_* IS STILL READ, as a fallback, and that is not tidiness —
+        // these names live in people's ~/.gradle/gradle.properties and in the
+        // CI secrets, so renaming them without a fallback breaks the build on
+        // every machine that has not been edited yet. Set either; WHISPA_*
+        // wins when both are present.
+        //
+        // -storetype JKS IS NOT OPTIONAL if you want zapstore's `zsp` to read
+        // this keystore. keytool on JDK 9+ writes PKCS12 by default, and a
+        // PKCS12 file handed to a JKS reader fails on its magic bytes —
+        // "invalid magic", whatever the password is, because the format is
+        // wrong before the password is ever tried. JKS begins feedfeed;
+        // PKCS12 begins 3082. Check an existing one with:
+        //   head -c 4 <keystore> | od -An -tx1
+        //
         // Generate the keystore once with:
-        //   keytool -genkeypair -v -keystore thrilla-release.keystore \
-        //           -alias thrilla -keyalg RSA -keysize 4096 -validity 10000
+        //   keytool -genkeypair -v -keystore whispa-release.jks -storetype JKS \
+        //           -alias whispa -keyalg RSA -keysize 4096 -validity 10000
+        //
+        // CHANGING THE KEY IS NOT A RENAME. Android refuses an APK signed by a
+        // different certificate than the installed one, so a new KEY orphans
+        // every install — they have to uninstall, which for a wallet is the
+        // app's data gone. Converting an existing keystore keeps the key:
+        //   keytool -importkeystore -srckeystore old.keystore \
+        //           -destkeystore whispa-release.jks -deststoretype JKS
         // hasProperty() is not a sufficient guard, and CI proved it: an empty
         // ORG_GRADLE_PROJECT_THRILLA_STORE_FILE= (which is what an unset GitHub
         // secret interpolates to) DEFINES the property with an empty value, so
@@ -284,10 +306,14 @@ android {
         // failing the build.
         release {
             def prop = { n -> (project.findProperty(n) ?: '').toString().trim() }
-            def ksPath    = prop('THRILLA_STORE_FILE')
-            def ksPass    = prop('THRILLA_STORE_PASSWORD')
-            def ksAlias   = prop('THRILLA_KEY_ALIAS')
-            def ksKeyPass = prop('THRILLA_KEY_PASSWORD')
+            // WHISPA_* first, THRILLA_* behind it. Both are checked for
+            // non-blank rather than defined: an unset GitHub secret
+            // interpolates to an empty value, which DEFINES the property.
+            def pick = { n -> prop("WHISPA_$n") ?: prop("THRILLA_$n") }
+            def ksPath    = pick('STORE_FILE')
+            def ksPass    = pick('STORE_PASSWORD')
+            def ksAlias   = pick('KEY_ALIAS')
+            def ksKeyPass = pick('KEY_PASSWORD')
             if (ksPath && ksPass && ksAlias && ksKeyPass) {
                 storeFile     file(ksPath)
                 storePassword ksPass

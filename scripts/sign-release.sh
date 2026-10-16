@@ -19,16 +19,17 @@
 #
 # Usage:
 #   scripts/sign-release.sh path/to/*.apk         # the APKs are required
-#   THRILLA_GPG_KEY=ABCD1234 scripts/sign-release.sh
+#   WHISPA_GPG_KEY=ABCD1234 scripts/sign-release.sh
 #
 # Env:
-#   THRILLA_GPG_KEY   key id / fingerprint / email to sign with. Optional;
+#   WHISPA_GPG_KEY    key id / fingerprint / email to sign with. Optional;
+#                     (THRILLA_GPG_KEY is still read, as a fallback)
 #                     without it gpg picks its default signing key.
 
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-gpg_key="${THRILLA_GPG_KEY:-}"
+gpg_key="${WHISPA_GPG_KEY:-${THRILLA_GPG_KEY:-}}"
 
 die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 note() { printf '  %s\n' "$*"; }
@@ -83,9 +84,9 @@ echo
 if [ -z "$gpg_key" ]; then
   secret_count="$(gpg --with-colons --list-secret-keys 2>/dev/null | grep -c '^sec:' || true)"
   if [ "${secret_count:-0}" -gt 1 ]; then
-    echo "Note: $secret_count secret keys in this keyring and no THRILLA_GPG_KEY set —"
+    echo "Note: $secret_count secret keys in this keyring and no WHISPA_GPG_KEY set —"
     echo "gpg will use its default. Check the fingerprint printed below is the one"
-    echo "published on whispawallet.com, or re-run with THRILLA_GPG_KEY=<key-id>."
+    echo "published on whispawallet.com, or re-run with WHISPA_GPG_KEY=<key-id>."
     echo
   fi
 fi

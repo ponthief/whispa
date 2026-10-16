@@ -106,27 +106,49 @@ npm run apk:signet    # → android/app/build/outputs/apk/signet/release/
 credentials are present as Gradle properties (kept **outside** the repo, in
 `~/.gradle/gradle.properties`).
 
-> The `THRILLA_*` names below — and `THRILLA_DRY_RUN`, `THRILLA_GPG_KEY` and
-> `THRILLA_RELEASE_CERT_SHA256` further down — are not leftover copy. They are
-> the literal property and environment-variable names that `build.gradle` and
-> the scripts read, they are what the GitHub Actions secrets are called, and
-> they are in every contributor's `~/.gradle/gradle.properties`. Renaming them
-> here without renaming them everywhere would document a setup that does not
-> work. The app's id DID move, to `com.whispawallet.app`, while the only
+> These were `THRILLA_*` until 2026-10-16 and **both spellings still work** —
+> `WHISPA_*` wins when both are set. That is not tidiness: the old names are in
+> people's `~/.gradle/gradle.properties` and in the GitHub Actions secrets, so
+> a rename without a fallback breaks the build on every machine nobody has
+> edited yet. The app's id DID move, to `com.whispawallet.app`, while the only
 > install was the author's — Android treats a changed id as a different app, so
 > doing that once there are users orphans them.
 
 ```properties
-THRILLA_STORE_FILE=/absolute/path/to/thrilla-release.keystore
-THRILLA_KEY_ALIAS=thrilla
-THRILLA_STORE_PASSWORD=…
-THRILLA_KEY_PASSWORD=…
+WHISPA_STORE_FILE=/absolute/path/to/whispa-release.jks
+WHISPA_KEY_ALIAS=whispa
+WHISPA_STORE_PASSWORD=…
+WHISPA_KEY_PASSWORD=…
 ```
 
 Generate the keystore once with:
 ```bash
-keytool -genkeypair -v -keystore thrilla-release.keystore \
-        -alias thrilla -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore whispa-release.jks -storetype JKS \
+        -alias whispa -keyalg RSA -keysize 4096 -validity 10000
+```
+
+**`-storetype JKS` is not optional** if zapstore's `zsp` has to read this
+keystore. `keytool` on JDK 9+ writes **PKCS12** unless told otherwise, and a
+PKCS12 file handed to a JKS reader fails on its magic bytes — *invalid magic*,
+whatever the password is, because the format is wrong before the password is
+ever tried. Tell them apart without decrypting anything:
+
+```bash
+head -c 4 <keystore> | od -An -tx1
+#  feedfeed  -> JKS
+#  3082….    -> PKCS12
+```
+
+**A new keystore is not a new key, and the difference is permanent.** Android
+refuses an APK whose signing certificate differs from the installed one, so
+generating a fresh key orphans every install — uninstall and reinstall, which
+for a wallet is the app's data gone. To put the name on the key you already
+have, convert it and keep the certificate:
+
+```bash
+keytool -importkeystore -srckeystore thrilla-release.keystore \
+        -destkeystore whispa-release.jks -deststoretype JKS
+keytool -list -v -keystore whispa-release.jks | grep -i 'SHA256:'   # must not change
 ```
 Without those properties, release builds fall back to the debug key (fine for
 local testing, never for distribution). **Back up the keystore + passwords** —
@@ -160,13 +182,13 @@ the machine that holds the key:
 ```bash
 scripts/cut-release.sh v0.1.1              # fetch the CI builds, sign, publish
 scripts/cut-release.sh v0.1.1 main.apk signet.apk   # or sign local builds
-THRILLA_DRY_RUN=1 scripts/cut-release.sh v0.1.1     # stop before publishing
+WHISPA_DRY_RUN=1 scripts/cut-release.sh v0.5.0      # stop before publishing
 ```
 
 It refuses to publish APKs signed by two different keys, or by the debug key —
 Gradle falls back to the debug keystore silently, and a debug-signed build
 installs and runs, which is what makes it dangerous: nothing properly signed
-can ever replace it. Set `THRILLA_RELEASE_CERT_SHA256` and it also refuses
+can ever replace it. Set `WHISPA_RELEASE_CERT_SHA256` and it also refuses
 anything not signed by the key you expect.
 
 The assets get **stable names** — `whispa-mainnet.apk`, `whispa-signet.apk`,
@@ -181,7 +203,7 @@ user.
 
 ```bash
 scripts/sign-release.sh path/to/*.apk      # → SHA256SUMS + SHA256SUMS.asc
-THRILLA_GPG_KEY=<key-id> scripts/sign-release.sh    # pick a specific key
+WHISPA_GPG_KEY=<key-id> scripts/sign-release.sh     # pick a specific key
 ```
 
 The script checksums the APKs, signs the sums, **verifies the signature it

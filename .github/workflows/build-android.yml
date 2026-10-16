@@ -226,7 +226,7 @@ jobs:
       #
       # Without the keystore, the build falls back to the committed debug one
       # exactly as before (app/build.gradle only uses the release config when
-      # THRILLA_STORE_FILE is set).
+      # WHISPA_STORE_FILE is set).
       #
       # UNDERSTAND THE EXPOSURE. This key can ship an update to every phone with
       # Thrilla installed, and for a wallet that means an update that can move
@@ -279,10 +279,10 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 1 \
               -dname "CN=Thrilla CI self-test, OU=throwaway" >/dev/null 2>&1 \
               || { echo "::error::could not generate the throwaway keystore"; exit 1; }
-            put ORG_GRADLE_PROJECT_THRILLA_STORE_FILE     release.keystore
-            put ORG_GRADLE_PROJECT_THRILLA_STORE_PASSWORD selftest
-            put ORG_GRADLE_PROJECT_THRILLA_KEY_ALIAS      selftest
-            put ORG_GRADLE_PROJECT_THRILLA_KEY_PASSWORD   selftest
+            put ORG_GRADLE_PROJECT_WHISPA_STORE_FILE     release.keystore
+            put ORG_GRADLE_PROJECT_WHISPA_STORE_PASSWORD selftest
+            put ORG_GRADLE_PROJECT_WHISPA_KEY_ALIAS      selftest
+            put ORG_GRADLE_PROJECT_WHISPA_KEY_PASSWORD   selftest
             echo "mode=selftest" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -357,10 +357,10 @@ jobs:
           #
           # The delimiter form, so a password containing anything exotic still
           # arrives intact. GitHub masks these values in logs.
-          put ORG_GRADLE_PROJECT_THRILLA_STORE_FILE     release.keystore
-          put ORG_GRADLE_PROJECT_THRILLA_STORE_PASSWORD "$STORE_PASSWORD"
-          put ORG_GRADLE_PROJECT_THRILLA_KEY_ALIAS      "$KEY_ALIAS"
-          put ORG_GRADLE_PROJECT_THRILLA_KEY_PASSWORD   "$KEY_PASSWORD"
+          put ORG_GRADLE_PROJECT_WHISPA_STORE_FILE     release.keystore
+          put ORG_GRADLE_PROJECT_WHISPA_STORE_PASSWORD "$STORE_PASSWORD"
+          put ORG_GRADLE_PROJECT_WHISPA_KEY_ALIAS      "$KEY_ALIAS"
+          put ORG_GRADLE_PROJECT_WHISPA_KEY_PASSWORD   "$KEY_PASSWORD"
           echo "mode=release" >> "$GITHUB_OUTPUT"
 
       - name: Resolve build parameters

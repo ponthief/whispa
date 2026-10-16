@@ -17,11 +17,15 @@
 # NAME comes from PRERELEASE_LABEL in the same file. See the check below.
 #
 # Env:
-#   THRILLA_GPG_KEY               passed through to sign-release.sh
-#   THRILLA_RELEASE_CERT_SHA256   expected APK signing certificate; when set,
+#   WHISPA_GPG_KEY                passed through to sign-release.sh
+#   WHISPA_RELEASE_CERT_SHA256    expected APK signing certificate; when set,
 #                                 a mismatch aborts. Same value as the
 #                                 RELEASE_CERT_SHA256 repository variable.
-#   THRILLA_DRY_RUN=1             do everything except create the release
+#   WHISPA_DRY_RUN=1              do everything except create the release
+#
+# The THRILLA_* spelling of each still works. These names are in people's
+# shells and in CI secrets, so the rename carries a fallback rather than a
+# flag day.
 #
 # What it publishes, under stable asset names so the download page never needs
 # editing again:
@@ -99,7 +103,7 @@ command -v gpg >/dev/null 2>&1 || die "gpg not found; this script exists to GPG-
 # — the way you would test this script, or sign builds made on this machine —
 # works without the GitHub CLI installed at all.
 need_gh() {
-  command -v gh >/dev/null 2>&1 || die "gh not found ($1). Install the GitHub CLI, or use THRILLA_DRY_RUN=1 with two local APK paths and attach the files from $repo_root/release/ by hand."
+  command -v gh >/dev/null 2>&1 || die "gh not found ($1). Install the GitHub CLI, or use WHISPA_DRY_RUN=1 with two local APK paths and attach the files from $repo_root/release/ by hand."
   # Authentication is checked separately, because an unauthenticated gh fails
   # every command with "could not find any host configurations" — which, caught
   # by a download, reads as "the asset is missing" and sends you to rebuild
@@ -188,14 +192,14 @@ if [ -n "$debug_cert" ] && [ "$main_cert" = "$debug_cert" ]; then
   die "these APKs are signed with the DEBUG key. They would install and run, and then no properly signed build could ever replace them. Set the release secrets and rebuild."
 fi
 
-want="${THRILLA_RELEASE_CERT_SHA256:-}"
+want="${WHISPA_RELEASE_CERT_SHA256:-${THRILLA_RELEASE_CERT_SHA256:-}}"
 if [ -n "$want" ]; then
   want="$(printf '%s' "$want" | tr -d ':' | tr 'A-F' 'a-f')"
   [ "$main_cert" = "$want" ] \
-    || die "signed with $main_cert but THRILLA_RELEASE_CERT_SHA256 expects $want. Wrong keystore or wrong alias."
-  note "matches THRILLA_RELEASE_CERT_SHA256 ✓"
+    || die "signed with $main_cert but WHISPA_RELEASE_CERT_SHA256 expects $want. Wrong keystore or wrong alias."
+  note "matches WHISPA_RELEASE_CERT_SHA256 ✓"
 else
-  note "no THRILLA_RELEASE_CERT_SHA256 set — not checked against an expected value."
+  note "no WHISPA_RELEASE_CERT_SHA256 set — not checked against an expected value."
   note "This must equal the fingerprint published on whispawallet.com, or users who"
   note "verify will be told your own release is not yours."
 fi
@@ -302,7 +306,7 @@ $(cat "$work/SHA256SUMS")
 EOF
 )"
 
-if [ "${THRILLA_DRY_RUN:-}" = "1" ]; then
+if [ "${WHISPA_DRY_RUN:-${THRILLA_DRY_RUN:-}}" = "1" ]; then
   step "Dry run — not creating the release"
   note "files ready in $work"
   note "release title: $title (tag $tag)"

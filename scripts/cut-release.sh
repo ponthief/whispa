@@ -220,12 +220,34 @@ step "Verifying the way a user would"
 # What changed goes at the top, read out of CHANGELOG.md by tag. Kept in the
 # repo rather than typed into the web UI: the notes are then reviewable before
 # the release exists, and a release cut twice says the same thing both times.
+#
+# BY VERSION, NOT BY THE LITERAL HEADING. This looked for a line reading
+# exactly "## $tag", and CHANGELOG.md has written "## [0.4.0] - 2026-10-04"
+# since it was created — Keep a Changelog format, which the file's own header
+# explains is required because zapstore reads the same sections. So the lookup
+# never matched, every release went out with no what's-new, and the only sign
+# was a `note` nobody was reading at the end of a successful publish.
+#
+# The heading carries the BUILD number for the reason that header gives, so the
+# tag's number is what to match: brackets, a trailing " - date" and a leading
+# "v" are all stripped before comparing. A hyphen is only treated as a date
+# separator when it has spaces around it, so a heading like "[0.5.0-rc1]"
+# survives.
 step "Reading the changelog"
 changelog=""
 if [ -f "$repo_root/CHANGELOG.md" ]; then
-  changelog="$(awk -v tag="## $tag" '
-    $0 == tag { found = 1; next }
-    found && /^## / { exit }
+  changelog="$(awk -v want="${tag#v}" '
+    /^## / {
+      if (found) exit
+      line = $0
+      sub(/^## +/, "", line)
+      gsub(/[][]/, "", line)
+      sub(/ +- +.*$/, "", line)
+      sub(/^v/, "", line)
+      sub(/[ \t]+$/, "", line)
+      found = (line == want)
+      next
+    }
     found { print }
   ' "$repo_root/CHANGELOG.md")"
 fi
@@ -237,7 +259,7 @@ if [ -n "$changelog" ]; then
 else
   # Not fatal — a hotfix with nothing worth saying is a real case — but it is
   # the kind of omission nobody notices until the release is published.
-  note "no '## $tag' section in CHANGELOG.md; publishing without a what's-new."
+  note "no section for ${tag#v} in CHANGELOG.md; publishing without a what's-new."
 fi
 
 # THE TAG IS NUMBERED AND THE TITLE IS NAMED, and they are allowed to differ.

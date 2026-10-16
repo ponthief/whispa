@@ -11,6 +11,71 @@ version from the APK, which reports `0.4.0`, so that is what the heading has to
 say or the section will not be found. The name it is released under goes in the
 first line of the body, where a reader looks anyway.
 
+## [0.5.0] - 2026-10-16
+
+Released as **WhiSPa 0.2.0-beta**.
+
+### Added
+
+- **Spending your SegWit coins moved to Send.** It used to live on the Receive
+  tab, inside the card that hands out the address — going to Receive in order
+  to send. There is a chain picker beside the Silent Payments form, and it only
+  appears when there is something on the SegWit side.
+- **One balance.** The headline adds both pockets up and names the split
+  directly under it, instead of leaving the SegWit coins in a banner that said
+  they were held separately.
+- **Labels for SegWit addresses**, kept on this device only. A SegWit address
+  is one you handed somebody on purpose; what is hard is remembering *which*
+  somebody, six payments later.
+- **A rescan by day or by date.** 1, 3, 5 or 7 days back, or a specific day
+  from a calendar — rather than a number of blocks with "about a day" printed
+  beside it. How far back you may start is the indexer's own floor, and any
+  one scan covers at most a week.
+- **A scanning bar on the Wallet screen.** Catching up can take minutes during
+  which the balance is not yet the whole truth, and nothing on that screen said
+  so unless you had started the scan from it.
+- **A splash screen**, from the moment the launcher is tapped rather than from
+  when the app has loaded.
+- **Invite a friend** in the browser's Settings, which only the phone had.
+- A **frozen filter** on the browser's Coins page, and **New address** on its
+  SegWit panel.
+
+### Changed
+
+- **"Plain" is now "SegWit".** It named the chain by what it is *not*, which is
+  no help to anyone trying to reach those coins in another wallet. It is a
+  standard BIP-84 chain and the screens say so. The card now also says the
+  address in front of you has never been used — the instruction not to reuse
+  one means nothing without it.
+- **Spendable means unfrozen**, on both apps, and the label says so. A frozen
+  coin is unspent, confirmed, and still not money you can send; what is held
+  back is printed beside the total rather than folded into it.
+- **Catch up** is **Scan now**, and Security's **Ask again after** is
+  **Auto-lock**. Both were longer ways of saying what the screen already said.
+- A finished Tango reports **your own** change and not your partner's, and
+  Activity no longer lists the coins of yours that went into a transaction.
+- Tango's Lightning change payout is **mainnet only**. On signet the change
+  stays on chain in your own wallet, exactly as it did before the setting
+  existed.
+
+### Fixed
+
+- **Removing a wallet took the other side's Tango history with it.** A round is
+  one record shared by two wallets; now only the leaving side is redacted. A
+  wallet removed and added back from the same seed also keeps its history,
+  which it lost because the id is new even when the seed is not.
+- **A SegWit send left no trace.** It did not show as pending, and once it
+  confirmed it disappeared from Activity altogether — the server never lists
+  those coins, so nothing else was going to say where the money went.
+- **Confirm Broadcast was missing the recipient** on a SegWit send, along with
+  the fee rate and the size.
+- The browser's Send page **crashed on load** for some wallets.
+- The browser and the phone **disagreed about how many coins you had**, because
+  the browser counted only the Silent Payments side.
+- The Spent list on the Coins page is **paginated** instead of running to
+  hundreds of rows, and the Saved contacts dialog is no longer squashed against
+  its own edge.
+
 ## [0.4.0] - 2026-10-04
 
 Released as **WhiSPa 0.1.0-beta**.

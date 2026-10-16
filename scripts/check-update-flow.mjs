@@ -325,6 +325,46 @@ console.log('\nrefusals from a malformed answer');
      /gh release list/.test(cut) && /grep -Fxq "\$title"/.test(cut),
      'bumping the number and forgetting the name passes every other check');
 
+  // AND THE RELEASE NOTES HAVE TO BE FINDABLE. The lookup matched a heading
+  // reading exactly "## v0.4.0"; CHANGELOG.md has written "## [0.4.0] - date"
+  // since it was created, because zapstore reads the same sections in Keep a
+  // Changelog format. So every release went out with no what's-new and the
+  // only sign was a note at the end of a successful publish.
+  //
+  // Run here rather than asserted on the script's text: what matters is that
+  // THIS version's section comes out, which is the thing that was silently
+  // false.
+  const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
+  const section = (() => {
+    const lines = changelog.split('\n');
+    const want = V.APP_VERSION;
+    let found = false;
+    const out = [];
+    for (const line of lines) {
+      if (line.startsWith('## ')) {
+        if (found) break;
+        const name = line
+          .replace(/^## +/, '')
+          .replace(/[[\]]/g, '')
+          .replace(/ +- +.*$/, '')
+          .replace(/^v/, '')
+          .trim();
+        found = name === want;
+        continue;
+      }
+      if (found) out.push(line);
+    }
+    return out.join('\n').trim();
+  })();
+  ok(`CHANGELOG.md has a section for ${V.APP_VERSION}`, section.length > 0,
+     'cut-release.sh would publish this release with no what\'s-new');
+  ok('and it names the release it goes out as',
+     !V.PRERELEASE_LABEL || section.includes(V.PRERELEASE_LABEL),
+     `the heading carries the build number, so the body has to carry ${V.PRERELEASE_LABEL}`);
+  ok('the script matches a heading the same way',
+     /sub\(\/\^## \+\/, "", line\)/.test(cut) && /gsub\(\/\[\]\[\]\/, "", line\)/.test(cut),
+     'by version, not by the literal heading');
+
   // THE COMPARISON IS AGAINST APP_VERSION, NOT THE LABEL, and that is the
   // whole reason the number was allowed to keep climbing. If the label ever
   // reached compareVersions the update check would read 0.1.0-beta as older

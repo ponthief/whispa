@@ -144,6 +144,15 @@ const ntfySaved   = ref(false)
 const ntfyError   = ref(null)
 const ntfyTesting = ref(false)
 const showNtfyToken = ref(false)
+
+// Turnstile (the signup form's bot check). `secret_key` here is an INPUT
+// buffer, never a stored value — the backend refuses to hand the secret back,
+// so there is nothing to populate it with and nothing to leak into the DOM.
+const turnstile          = ref({ site_key: '', secret_key: '', enforce: 'browser' })
+const turnstileSecretSet = ref(false)
+const turnstileSaving    = ref(false)
+const turnstileSaved     = ref(false)
+const turnstileError     = ref(null)
 const showNtfyPass = ref(false)
 
 // BitMail request queue moved to BitMailRequestsView (its own side-menu item).
@@ -254,6 +263,12 @@ async function loadConfig() {
       try { cfConfig.value = await api.getCloudflareConfig(auth.adminkey) } catch { /* may be unset */ }
     }
     try { ntfy.value = await api.getNtfyConfig(auth.adminkey) } catch { /* may be unset */ }
+    try {
+      const ts = await api.getTurnstileConfig(auth.adminkey)
+      turnstile.value.site_key = ts.site_key || ''
+      turnstile.value.enforce  = ts.enforce || 'browser'
+      turnstileSecretSet.value = !!ts.secret_set
+    } catch { /* may be unset */ }
     // Best-effort: a config page that cannot list wallets should still let the
     // rest of itself be edited.
     try {
@@ -364,6 +379,30 @@ async function saveNtfy() {
   } catch (e) { ntfyError.value = e.detail || e.message }
   finally { ntfySaving.value = false }
 }
+// Turnstile. The secret is write-only: the backend answers with `secret_set`
+// rather than the value, so this form holds a blank field and a flag saying
+// whether one is stored. A blank secret on save means "keep what you have" —
+// otherwise editing the site key alone would silently disable the bot check.
+async function saveTurnstile() {
+  turnstileSaving.value = true; turnstileError.value = null; turnstileSaved.value = false
+  try {
+    const res = await api.updateTurnstileConfig(auth.adminkey, {
+      site_key: turnstile.value.site_key,
+      secret_key: turnstile.value.secret_key,
+      enforce: turnstile.value.enforce,
+    })
+    turnstile.value.site_key = res.site_key || ''
+    turnstile.value.enforce  = res.enforce || 'browser'
+    turnstileSecretSet.value = !!res.secret_set
+    // Cleared so the field goes back to showing the "saved" placeholder, and
+    // so a second save does not re-post a secret that is already stored.
+    turnstile.value.secret_key = ''
+    turnstileSaved.value = true
+    setTimeout(() => turnstileSaved.value = false, 3000)
+  } catch (e) { turnstileError.value = e.detail || e.message }
+  finally { turnstileSaving.value = false }
+}
+
 async function testNtfy() {
   ntfyTesting.value = true; ntfyError.value = null
   try {
@@ -1168,6 +1207,73 @@ onBeforeUnmount(() => {
               </button>
               <button class="btn btn-ghost" :disabled="ntfyTesting || !ntfy.enabled" @click="testNtfy" title="Send a test notification to the configured topics">
                 {{ ntfyTesting ? 'Sending…' : 'Send test' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Turnstile: the bot check on the public signup form -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header"><h2>Sign-up bot check (Cloudflare Turnstile)</h2></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+            <p class="text-dim text-sm">
+              Guards <span class="mono">/register</span> against scripted account creation.
+              <strong>The secret key is what turns it on</strong> — without one, the web
+              form falls back to an arithmetic question that is checked in the browser
+              and nowhere else, which stops nobody who skips the page.
+            </p>
+
+            <div class="field">
+              <label>Site key</label>
+              <input class="input" v-model="turnstile.site_key" placeholder="0x4AAAAAAA…" spellcheck="false" autocomplete="off" />
+              <span class="text-dim text-xs">
+                Public — it is embedded in every page that renders the widget.
+                Cloudflare's always-passes test key is
+                <span class="mono">1x00000000000000000000AA</span>.
+              </span>
+            </div>
+
+            <div class="field">
+              <label>Secret key</label>
+              <input
+                class="input"
+                type="password"
+                v-model="turnstile.secret_key"
+                :placeholder="turnstileSecretSet ? '•••••••• (saved — leave blank to keep)' : '0x4AAAAAAA…'"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <span class="text-dim text-xs">
+                Never shown again after saving. Leave blank to keep the stored one;
+                type <span class="mono">-</span> to clear it and turn the check off.
+                Cloudflare's always-passes test secret is
+                <span class="mono">1x0000000000000000000000000000000AA</span>.
+              </span>
+            </div>
+
+            <div class="field">
+              <label>Who has to solve it</label>
+              <select class="input" v-model="turnstile.enforce" style="max-width:320px">
+                <option value="browser">Browsers only — the mobile app can still register</option>
+                <option value="always">Every client — blocks the mobile app</option>
+              </select>
+              <span class="text-dim text-xs">
+                The app posts to the same endpoint and renders no widget, so
+                <span class="mono">always</span> closes mobile onboarding entirely. Pick it
+                only if sign-up here is web-only.
+              </span>
+            </div>
+
+            <div v-if="turnstileError" class="alert alert-error">⚠ {{ turnstileError }}</div>
+            <div v-if="turnstileSaved" class="alert alert-success">✓ Turnstile config saved.</div>
+            <div v-if="!turnstileSecretSet && !turnstile.secret_key" class="alert alert-warn">
+              No secret stored — the sign-up form is running the fallback question only.
+            </div>
+
+            <div>
+              <button class="btn btn-primary" :disabled="turnstileSaving" @click="saveTurnstile">
+                <span v-if="turnstileSaving" class="spinner" style="border-top-color:#000"></span>
+                {{ turnstileSaving ? 'Saving…' : 'Save Bot Check Config' }}
               </button>
             </div>
           </div>

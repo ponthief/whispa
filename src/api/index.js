@@ -580,6 +580,18 @@ export async function testNtfy(adminkey) {
   return req(`${SILNT}/api/v1/ntfy/test`, { method: 'POST', headers: keyHeaders(adminkey) })
 }
 
+// Turnstile keys for the signup form. The GET answers with `secret_set` rather
+// than the secret itself — a credential echoed into a page is a credential in
+// a screenshot — so the admin form holds a write-only buffer for it.
+export async function getTurnstileConfig(adminkey) {
+  return req(`${SILNT}/api/v1/turnstile/config`, { headers: keyHeaders(adminkey) })
+}
+export async function updateTurnstileConfig(adminkey, data) {
+  return req(`${SILNT}/api/v1/turnstile/config`, {
+    method: 'PUT', headers: keyHeaders(adminkey), body: JSON.stringify(data),
+  })
+}
+
 export async function recoverWalletKeys(inkey, walletId, encryptedMnemonic, lastHeight, passphrase = null) {
   return req(`${SILNT}/api/v1/wallet/${walletId}/recover-keys`, {
     method: 'POST',
@@ -589,13 +601,36 @@ export async function recoverWalletKeys(inkey, walletId, encryptedMnemonic, last
 }
 
 // ── Auth: registration and password recovery ─────────────────────────────────
-export async function startRegistration(username, password, email) {
+
+// What the signup form needs before it can render: the Turnstile site key (an
+// empty string when this instance has no bot check configured) and the current
+// terms version.
+//
+// Fetched rather than built in, so an operator can rotate a Turnstile key or
+// publish new terms without a redeploy of the web app. The cost is one request
+// before the form is usable, which is why RegisterView renders the fields
+// immediately and only gates the SUBMIT on this having landed.
+export async function getSignupConfig() {
+  return req(`${SILNT}/api/v1/auth/signup-config`)
+}
+
+export async function startRegistration(
+  username, password, email, turnstileToken = null, termsVersion = null,
+) {
   // Sends a verification email — does NOT create an account yet.
   // Account is created when the user clicks the verification link.
+  //
+  // The Turnstile token is single use: a failure here spends it, and the view
+  // resets the widget rather than letting the next attempt fail for a reason
+  // the user cannot see.
   return req(`${SILNT}/api/v1/auth/register-start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, email }),
+    body: JSON.stringify({
+      username, password, email,
+      turnstile_token: turnstileToken,
+      terms_version: termsVersion,
+    }),
   })
 }
 

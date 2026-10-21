@@ -11,6 +11,35 @@ version from the APK, which reports `0.4.0`, so that is what the heading has to
 say or the section will not be found. The name it is released under goes in the
 first line of the body, where a reader looks anyway.
 
+## [Unreleased]
+
+### Added
+
+- **A real bot check on the web sign-up form.** Cloudflare Turnstile, verified
+  on the server in `helpers/turnstile.py`, replacing an arithmetic question
+  that was checked in the browser and nowhere else — anything that skipped the
+  page skipped the check. The check runs before the uniqueness lookups, so a
+  bot cannot use "username already in use" as a membership oracle either. Keys
+  are set from the admin portal and fetched by the form at load, so rotating
+  one needs no redeploy; the secret is never returned to the page.
+- **Terms of Use at `/terms`**, with a tick box on the sign-up form. The page
+  carries a version, the backend publishes the same one, and a registration
+  naming a different version is refused — so an account is tied to the text
+  that was on screen when it was made. `npm run check:terms` fails when the two
+  repos disagree, or when the page loses the MIT licence, the recovery-phrase
+  warning or the Signet disclaimer.
+- The sign-up page itself was rebuilt: field-level guidance, the recovery-phrase
+  consequence stated at the point of consent, and a note that WhiSPa is MIT
+  software anyone can read or self-host.
+
+### Notes
+
+- An instance with no Turnstile secret keeps the arithmetic question and is
+  otherwise unchanged. With a secret configured and Cloudflare unreachable,
+  registration is refused rather than waved through.
+- The mobile app registers through the same endpoint and renders no widget, so
+  the default `enforce: browser` leaves it working. It has no terms screen yet.
+
 ## [0.5.0] - 2026-10-16
 
 Released as **WhiSPa 0.2.0-beta**.

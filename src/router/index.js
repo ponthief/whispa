@@ -9,6 +9,9 @@ const IS_ADMIN_BUILD = APP_ROLE === 'admin'
 const publicRoutes = [
   { path: '/login',    name: 'login',    component: () => import('@/views/LoginView.vue'),          meta: { public: true } },
   { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'),       meta: { public: true } },
+  // Public, and public in the ADMIN build too: the signup form links to it,
+  // and a terms page that 404s for half the deployments is worse than none.
+  { path: '/terms', name: 'terms', component: () => import('@/views/TermsView.vue'), meta: { public: true } },
   { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotPasswordView.vue'), meta: { public: true } },
   { path: '/reset',  name: 'reset',  component: () => import('@/views/ResetPasswordView.vue'),  meta: { public: true } },
   { path: '/verify', name: 'verify', component: () => import('@/views/VerifyEmailView.vue'),    meta: { public: true } },

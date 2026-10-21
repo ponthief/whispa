@@ -84,6 +84,7 @@ npm run check:slider        # the Send amount slider sets an amount, and only an
 npm run check:plain         # a fresh plain address stays inside the gap limit
 npm run check:scan          # a rescan reaches back at least as far as it says
 npm run check:colors        # the two colours written in both theme.ts and colors.xml
+npm run check:terms         # one terms version, in two repos, behind one tick box
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -281,6 +282,88 @@ The app lock is the ONLY thing in the wallet written with an `accessControl`,
 so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
+
+## The signup form had a bot check that was decorative
+
+The arithmetic question on `/register` — `a + b = ?` — was checked in
+`RegisterView.vue` and **nowhere else**. The server never saw an answer and
+never asked for one, so anything that skipped the page skipped the check.
+`start_registration` is the one public endpoint that creates state for somebody
+with no account: it bcrypt-hashes a password, writes a pending row, sends mail,
+and answers *"Username or email already in use"* — a membership oracle for any
+address worth trying.
+
+**Cloudflare Turnstile is the real one** (2026-10-21), verified server-side in
+`helpers/turnstile.py`. Four things about it are load-bearing:
+
+**The check runs FIRST**, before the field validation and the uniqueness
+lookups. Placed after them it would protect the bcrypt call and leave the
+oracle open, which is the interesting half.
+
+**The SECRET is what enables it**, never the site key — `turnstile_enabled()`
+reads only the secret, and `/auth/signup-config` withholds the site key until
+one exists. A site key alone renders a widget whose answer nothing verifies:
+the form *looks* protected. That is the one combination the admin PUT refuses
+outright rather than quietly ignoring.
+
+**It fails CLOSED.** A configured secret plus an unreachable Cloudflare refuses
+the registration. Fail-open is a gate whose key is published — knock the
+verifier over, or merely sit on a slow path, and the protection is gone exactly
+when somebody is pushing on it. The honest cost: no signups while
+`challenges.cloudflare.com` is down, or until the operator clears the secret.
+An instance that never set a secret is unaffected and runs as it always did,
+the same call `payout_address_pin` makes about its environment variable.
+
+**It does not lock the phone out.** `RegisterScreen.tsx` posts at the same
+endpoint and renders no widget, because Turnstile is a browser control. So
+`enforce` defaults to `"browser"` — a missing token is fatal only for a request
+carrying an `Origin` header. That header is set by the client and is therefore
+spoofable, which is the shape of the control rather than a hole to plug: this
+raises the cost of pointing a script at the public *form*, and is not an
+authentication boundary. What bounds abuse for every client is that no account
+exists until an emailed link or code comes back. `enforce: "always"` is offered
+and the admin page says in as many words that it closes mobile onboarding —
+which on mainnet is the only way in.
+
+The arithmetic question **stays** as the fallback for an instance with no keys,
+and the two are never rendered together: two challenges on one form reads as a
+site that does not trust its own defences. `challengeAnswered` is one
+expression over both, so a third kind later cannot leave a path where neither
+is required.
+
+A Turnstile token is **single use** — Cloudflare refuses the second
+presentation with `timeout-or-duplicate`. So every failure resets the widget.
+Without that, a registration refused for a taken username fails the *next*
+press for a spent token, and the message names something the user cannot see.
+
+### The terms, and the number that makes agreeing to them mean anything
+
+`/terms` is a route, not a modal: somebody reading before agreeing needs to
+open it in another tab and come back to a form that still holds what they
+typed. It carries a **version**, `helpers/terms.py` publishes the same one, and
+a registration naming any other version is refused. An account is then tied to
+the text that was on screen when it was made, instead of to whatever the terms
+say later.
+
+That holds only while the two files agree, and they are in different repos in
+different languages. `check:terms` pins them, and also pins what the page may
+not quietly lose in a rewrite: the **MIT licence** (the software's actual
+distribution terms, whose warranty disclaimer is the one in force), the
+**recovery phrase** named as the only way back *together with* the sentence
+saying nobody here can restore it — a phrase mentioned without that consequence
+is a backup instruction, not a warning — and Signet coins called worthless.
+
+Be clear about what the tick box is: an assertion by the client, logged at
+registration. Not a signature. A caller posting straight at the API sends
+whatever it likes, exactly as it can skip the box. The number is for
+record-keeping, not enforcement.
+
+Two gaps left open deliberately, both recorded rather than papered over. The
+**mobile app has no terms screen**, so a client with no `Origin` header may
+omit the version; that is a follow-up, not a decision that app users agree to
+nothing. And `register-start` has **no rate limiter** — `scan_rate_limiter.py`
+and `invite_rate_limiter.py` are the pattern it should follow, and Turnstile is
+not a substitute for one on an endpoint that sends mail.
 
 ## It is a native SegWit address, and calling it "Plain" said nothing
 

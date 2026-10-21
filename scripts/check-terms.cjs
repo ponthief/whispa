@@ -132,6 +132,74 @@ if (REGISTER) {
       'than failing visibly');
 }
 
+// AND THE BOT CHECK HAS TO BE ALLOWED TO LOAD.
+//
+// Turnstile pulls a script from challenges.cloudflare.com and renders its
+// challenge in an iframe from the same origin, so `script-src` AND `frame-src`
+// both have to name it. The policy is written TWICE — the `CSP` array in
+// vite.config.js becomes a <meta> tag in the built index.html, and CSP-notes.md
+// carries the Caddy header an operator pastes — and the browser enforces the
+// INTERSECTION of whichever copies are present.
+//
+// Which is why widening one of them alone does nothing. On 2026-10-21 the
+// widget silently failed to render on the deployed signet app: the keys were
+// right, the site key was being served, the bundle was current, and
+// `script-src 'self'` refused the script. The console names the directive and
+// not the file, so there is nothing to say which of the two copies to edit —
+// or that there are two.
+//
+// frame-src is the half that gets missed, because fixing script-src alone
+// loads the code and leaves an empty box, which reads as a different bug.
+console.log('\nand the bot check is allowed to load');
+{
+  const VITE = readOr(path.join(ROOT, 'vite.config.js'));
+  const NOTES = readOr(path.join(ROOT, 'CSP-notes.md'));
+  const ORIGIN = 'https://challenges.cloudflare.com';
+
+  // Pull one directive out of a CSP written as a quoted header string, or as
+  // the joined array in vite.config.js. Matched up to the next `;` or the
+  // closing quote, so a later directive naming the origin cannot satisfy it.
+  const allows = (text, directive) => {
+    if (!text) return false;
+    // Up to the next `;` or end of line, so a LATER directive naming the
+    // origin cannot satisfy an earlier one. Quotes stay inside the class —
+    // `script-src 'self' https://…` is the normal shape, and excluding them
+    // was what made this check fail against its own fixture.
+    const re = new RegExp(`${directive}\\s+[^;\\n]*${ORIGIN.replace(/[.*+?^$()|[\]\\]/g, '\\$&')}`);
+    if (re.test(text)) return true;
+    // vite.config.js builds it from template literals, e.g.
+    //   `script-src 'self' ${TURNSTILE_ORIGIN}`
+    const viaConst = new RegExp(`${directive}[^\`\\n]*\\$\\{\\s*TURNSTILE_ORIGIN\\s*\\}`);
+    return viaConst.test(text) && text.includes(ORIGIN);
+  };
+
+  ok('vite.config.js exists', !!VITE);
+  ok('CSP-notes.md exists', !!NOTES);
+
+  for (const [label, text] of [['vite.config.js (the <meta> CSP)', VITE],
+                               ['CSP-notes.md (the Caddy header)', NOTES]]) {
+    if (!text) continue;
+    ok(`${label}: script-src allows Turnstile`,
+      allows(text, 'script-src'),
+      `without it the widget never loads and nothing on the page says why`);
+    ok(`${label}: frame-src allows Turnstile`,
+      allows(text, 'frame-src'),
+      `the script loads and the box stays empty — the half that gets missed`);
+  }
+
+  // The two are checked separately above so a failure names the file to edit,
+  // and together here so the reason is stated once: a policy widened in one
+  // place is a policy that has not been widened.
+  if (VITE && NOTES) {
+    const both = ['script-src', 'frame-src'].every(
+      (d) => allows(VITE, d) === allows(NOTES, d),
+    );
+    ok('the two copies agree about it', both,
+      'the browser enforces the intersection, so the stricter one wins and ' +
+        'the console blames a directive rather than a file');
+  }
+}
+
 console.log(
   failures
     ? `\n${failures} check(s) failed`

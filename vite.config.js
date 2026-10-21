@@ -29,9 +29,23 @@ export default defineConfig(({ mode }) => {
     } catch (_) { /* leave as 'self' */ }
   }
 
+  // The sign-up form's bot check loads a script from Cloudflare and renders its
+  // challenge in an iframe, so BOTH script-src and frame-src have to name that
+  // origin. Allowed unconditionally rather than only when Turnstile is on,
+  // because whether it is on is a backend setting an operator can flip from the
+  // admin page at any time — the build cannot know, and a policy that needed a
+  // rebuild to match would make key rotation a deploy.
+  //
+  // WHAT HAPPENS WITHOUT IT, because it happened (2026-10-21): the widget never
+  // renders, the console says the script was refused, and NOTHING on the page
+  // points at the policy — it looks like the keys are wrong. frame-src is the
+  // half that gets missed, because fixing script-src alone loads the script and
+  // still leaves an empty box.
+  const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+
   const CSP = [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self' ${TURNSTILE_ORIGIN}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data:",
@@ -39,7 +53,7 @@ export default defineConfig(({ mode }) => {
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
-    "frame-src 'none'",
+    `frame-src ${TURNSTILE_ORIGIN}`,
   ].join('; ')
 
   function cspMetaPlugin() {

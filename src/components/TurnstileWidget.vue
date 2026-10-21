@@ -68,6 +68,20 @@ function loadScript() {
       // Cleared so a later mount (a reload of the route, a retry) gets a
       // fresh attempt rather than the rejected promise forever.
       scriptPromise = null
+      // FOR WHOEVER RUNS THE SITE, not for the person at the form — they
+      // cannot fix either cause. The visible line below says what a user can
+      // act on; this says what an operator can, because the first time this
+      // fired the cause was the site's OWN Content-Security-Policy and the
+      // browser's message names a directive without naming a file. The policy
+      // is written twice (vite.config.js and the Caddy header in
+      // CSP-notes.md) and the browser enforces the intersection, so widening
+      // one of them changes nothing.
+      console.error(
+        '[turnstile] the challenge script was blocked. If the console also ' +
+        'shows a Content-Security-Policy violation, script-src AND frame-src ' +
+        'must both allow https://challenges.cloudflare.com — in BOTH ' +
+        'vite.config.js and the deployed Caddy header.',
+      )
       reject(new Error('turnstile script failed to load'))
     }
     document.head.appendChild(el)

@@ -132,6 +132,63 @@ if (REGISTER) {
       'than failing visibly');
 }
 
+// AND THE SIGNUP FORM BELONGS TO ONE BUILD.
+//
+// /register, /forgot and /terms shipped in BOTH builds until 2026-10-23,
+// because the router sorted routes by "needs no login" and the admin build
+// inherited every one of them. So admin.whispawallet.com and
+// admin-signet.whispawallet.com each served a working, internet-facing signup
+// form that nothing linked to and nobody meant to publish — on a mainnet
+// VITE_NETWORK_LOCK, against the rule that onboarding is mobile-app only.
+//
+// Nothing would have caught it. The route resolves, the page renders, the form
+// submits, and the only symptom is that it exists. It was found by curling the
+// admin host while checking something else.
+//
+// Two halves, and the second is the one that gets forgotten: the route must be
+// out of the admin build, AND the login page must stop offering it. A link to
+// a route that is not compiled in hits the catch-all, redirects to '/', and
+// bounces an unauthenticated visitor back to the login page they clicked from
+// — which reads as a broken button rather than as a removed feature.
+console.log('\nand the signup form is in the user build only');
+{
+  const ROUTER = readOr(path.join(ROOT, 'src', 'router', 'index.js'));
+  const LOGIN = readOr(path.join(ROOT, 'src', 'views', 'LoginView.vue'));
+
+  ok('src/router/index.js exists', !!ROUTER);
+  if (ROUTER) {
+    // The admin build gets adminRoutes; everything else is the user build's.
+    const selfService = /const\s+selfServiceRoutes\s*=\s*\[([\s\S]*?)\n\]/.exec(ROUTER);
+    ok('there is a user-build-only route list', !!selfService,
+      'public must mean "needs no login AND belongs on this host"');
+    const publicList = /const\s+publicRoutes\s*=\s*\[([\s\S]*?)\n\]/.exec(ROUTER);
+    ok('and a shared public list', !!publicList);
+
+    for (const p of ['/register', '/forgot', '/terms']) {
+      if (selfService) {
+        ok(`${p} is user-build only`, selfService[1].includes(`'${p}'`));
+      }
+      if (publicList) {
+        ok(`${p} is NOT in the both-builds list`,
+          !publicList[1].includes(`'${p}'`),
+          'the admin build would serve it');
+      }
+    }
+    ok('the admin build is given adminRoutes without the self-service ones',
+      /IS_ADMIN_BUILD\s*\?\s*adminRoutes\s*:\s*\[\s*\.\.\.selfServiceRoutes/.test(ROUTER),
+      'the ternary is what actually decides it');
+  }
+
+  if (LOGIN) {
+    ok('the login page hides the links in the admin build',
+      /v-if="!isAdminBuild"[^>]*class="login-links"|class="login-links"[^>]*v-if="!isAdminBuild"/
+        .test(LOGIN),
+      'otherwise Create account / Forgot password bounce back to login');
+    ok('and isAdminBuild is at component scope so the template can read it',
+      /^const isAdminBuild\s*=/m.test(LOGIN));
+  }
+}
+
 // AND THE BOT CHECK HAS TO BE ALLOWED TO LOAD.
 //
 // Turnstile pulls a script from challenges.cloudflare.com and renders its

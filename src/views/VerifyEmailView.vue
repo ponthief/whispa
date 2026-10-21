@@ -38,7 +38,12 @@
           <p class="text-dim text-sm" style="margin-bottom:24px">
             Verification links expire after 1 hour. Please register again.
           </p>
-          <router-link to="/register" class="btn btn-primary w-full" style="display:block;text-decoration:none">REGISTER AGAIN</router-link>
+          <!-- /verify stays in both builds because it is reached from a link
+               in an email, and /register no longer does — so in the admin
+               build this button would hit the catch-all and land on the login
+               page. The route it points at has to exist for the button to be
+               worth drawing. -->
+          <router-link v-if="!isAdminBuild" to="/register" class="btn btn-primary w-full" style="display:block;text-decoration:none">REGISTER AGAIN</router-link>
           <router-link to="/login" class="text-dim text-sm" style="display:inline-block;margin-top:16px">← Back to sign in</router-link>
         </div>
       </div>
@@ -52,6 +57,8 @@ import { useRoute } from 'vue-router'
 import * as api from '@/api'
 
 const route   = useRoute()
+// See the REGISTER AGAIN button: /register is compiled out of the admin build.
+const isAdminBuild = (import.meta.env.VITE_APP_ROLE || 'user') === 'admin'
 
 const loading  = ref(true)
 const success  = ref(false)

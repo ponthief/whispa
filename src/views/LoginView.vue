@@ -9,6 +9,15 @@ const route  = useRoute()
 
 // Build-time network lock (.env.signet sets 'signet'). The Signet build is a
 // test deployment, so it says so before anyone types a password.
+// Which build this is. At component scope because the TEMPLATE reads it now —
+// the sign-in handler below used to declare its own copy, and two bindings of
+// the same name in nested scopes is the setup where one gets changed and the
+// other does not.
+//
+// It decides what the login page OFFERS, never what it allows: the handler
+// still asks the server whether the account is an admin, because a flag
+// compiled into a bundle anyone can download is not evidence of anything.
+const isAdminBuild = (import.meta.env.VITE_APP_ROLE || 'user') === 'admin'
 const IS_SIGNET = (import.meta.env.VITE_NETWORK_LOCK || '') === 'signet'
 const FAUCET_URL = 'https://silentpayments.dev/faucet/signet'
 const sessionExpired = route.query.expired === '1'
@@ -106,8 +115,6 @@ async function handleLogin() {
     }
     return
   }
-
-  const isAdminBuild = (import.meta.env.VITE_APP_ROLE || 'user') === 'admin'
 
   // On the ADMIN portal, only LNbits admins may sign in. Check admin status
   // BEFORE recording success or the device flow. A non-admin is rejected via the
@@ -234,7 +241,12 @@ onUnmounted(() => clearInterval(lockTimer))
               <span v-else>{{ auth.loading ? 'AUTHENTICATING…' : 'SIGN IN' }}</span>
             </button>
 
-            <div class="login-links">
+            <!-- Not in the admin build, where these routes are not compiled
+                 in: the catch-all would redirect them to '/' and bounce the
+                 visitor back to this same page. A link that returns you to
+                 where you clicked it reads as a broken button, and removing
+                 the route without removing the link is how that ships. -->
+            <div v-if="!isAdminBuild" class="login-links">
               <router-link to="/register" class="text-dim text-sm">Create account</router-link>
               <router-link to="/forgot" class="text-dim text-sm">Forgot password?</router-link>
             </div>

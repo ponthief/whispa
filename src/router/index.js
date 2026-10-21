@@ -5,17 +5,40 @@ import { pushToast } from '@/stores/toasts'
 const APP_ROLE = import.meta.env.VITE_APP_ROLE || 'user'
 const IS_ADMIN_BUILD = APP_ROLE === 'admin'
 
-// Public routes exist in BOTH builds (you must log in to either).
+// Public routes in BOTH builds. You must log in to either, and these are the
+// paths that get you to a login or back from one — including the two reached
+// only by clicking a link in an email.
 const publicRoutes = [
   { path: '/login',    name: 'login',    component: () => import('@/views/LoginView.vue'),          meta: { public: true } },
-  { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'),       meta: { public: true } },
-  // Public, and public in the ADMIN build too: the signup form links to it,
-  // and a terms page that 404s for half the deployments is worse than none.
-  { path: '/terms', name: 'terms', component: () => import('@/views/TermsView.vue'), meta: { public: true } },
-  { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotPasswordView.vue'), meta: { public: true } },
   { path: '/reset',  name: 'reset',  component: () => import('@/views/ResetPasswordView.vue'),  meta: { public: true } },
   { path: '/verify', name: 'verify', component: () => import('@/views/VerifyEmailView.vue'),    meta: { public: true } },
   { path: '/pending-device', name: 'pending-device', component: () => import('@/views/PendingDeviceView.vue'), meta: { pending: true } },
+]
+
+// SELF-SERVICE routes — the USER build only, and that is the whole point.
+//
+// These shipped in both builds until 2026-10-23, so admin.whispawallet.com and
+// admin-signet.whispawallet.com each served a working, internet-facing signup
+// form. Nothing linked to it from the portal and nobody meant it to be there:
+// the admin build simply inherited every "public" route, and public was being
+// read as "needs no login" when what it had to mean here is "needs no login
+// AND belongs on this host". An admin portal's users are provisioned, not
+// self-registered, so a signup page on it is a surface with no purpose —
+// including, with a mainnet VITE_NETWORK_LOCK, one that sits against the rule
+// that onboarding is mobile-app only.
+//
+// /terms goes with them. It used to sit above with a comment arguing it
+// belonged in the admin build "because the signup form links to it" — which was
+// true only while the signup form was there. With no form, nothing in the admin
+// build links to it and nothing should.
+//
+// The catch-all below redirects a missing route to '/', which in the admin
+// build is the portal, which beforeEach bounces to /login for anyone not signed
+// in. So these paths resolve to a login prompt rather than a dead page.
+const selfServiceRoutes = [
+  { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'),       meta: { public: true } },
+  { path: '/terms', name: 'terms', component: () => import('@/views/TermsView.vue'), meta: { public: true } },
+  { path: '/forgot', name: 'forgot', component: () => import('@/views/ForgotPasswordView.vue'), meta: { public: true } },
 ]
 
 // User-app routes — the normal wallet UI. Compiled out of the admin build.
@@ -46,7 +69,7 @@ const adminRoutes = [
 
 const routes = [
   ...publicRoutes,
-  ...(IS_ADMIN_BUILD ? adminRoutes : userRoutes),
+  ...(IS_ADMIN_BUILD ? adminRoutes : [...selfServiceRoutes, ...userRoutes]),
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

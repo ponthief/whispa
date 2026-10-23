@@ -790,7 +790,18 @@ function expiresIn(r) {
             Select your WhiSPa partner/coins and amount to start collaborative
             mini-coinjoin round.
           </p>
-          <div class="field">
+          <!-- ONLY WHEN THERE IS A CHOICE TO MAKE. A picker with one entry
+               asks a question whose answer is already filled in, and this
+               build locks the network too, so the "(signet)" beside the name
+               says nothing either.
+
+               Gated on the count rather than deleted: max_wallets_per_user is
+               a per-network server setting (views_api.py) that defaults to 1
+               and can be raised, so an instance that allows two wallets still
+               needs a way to say which one is mixing. `selectedWallet` is
+               still set by load() in both cases — the binding is what every
+               propose/accept/sign call reads. -->
+          <div v-if="wallets.length > 1" class="field">
             <label class="text-dim text-xs">Wallet</label>
             <select class="input" v-model="selectedWallet" @change="load">
               <option v-for="w in wallets" :key="w.id" :value="w.id">

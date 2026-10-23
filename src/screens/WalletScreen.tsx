@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   RefreshControl,
   ScrollView,
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import Config from 'react-native-config';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '@stores/authStore';
@@ -24,6 +26,7 @@ import RecoverKeysModal from '../components/RecoverKeysModal';
 import TransactionList, { TxItem } from '../components/TransactionList';
 import TxDetailModal from '../components/TxDetailModal';
 import BitcoinSign from '../components/BitcoinSign';
+import QRCode from '../components/QRCode';
 import { usePendingSends } from '@stores/pendingSends';
 import { usePlainStatus } from '@stores/plainStatus';
 import { usePlainHistory } from '@stores/plainHistoryStore';
@@ -369,6 +372,66 @@ export default function WalletScreen() {
   const hidden = useBalancePrivacy((s) => s.hidden);
   const toggleHidden = useBalancePrivacy((s) => s.toggle);
 
+  // ── the card turns over ───────────────────────────────────────────────────
+  //
+  // Front: the balance. Back: the address somebody actually has to hand over,
+  // with its QR and its BitMail. Receive has had all of that from the start
+  // and this does not replace it — the point is that the balance card is
+  // where people already are, and "what do I give them" was two taps away on
+  // the screen least likely to be open.
+  //
+  // THE WHOLE-CARD TAP STILL HIDES THE BALANCE. That gesture is one of only
+  // two ways to do it and neither announces itself (see the eye below), so
+  // taking it for the flip would have removed a feature to add one. The flip
+  // is its own button on each face.
+  //
+  // HOW THE TURN IS DONE, and it is deliberately not the usual two-faces
+  // trick. That one stacks both faces absolutely with backfaceVisibility
+  // hidden, which forces a fixed height on a card whose two sides are
+  // nowhere near the same height — a QR is about twice the balance. So this
+  // rotates to 90°, swaps the face, and rotates back from -90°: one face
+  // exists at a time, it sits in normal flow so the card is as tall as what
+  // is in it, and nothing depends on backfaceVisibility behaving the same on
+  // both platforms.
+  const [face, setFace] = useState<'front' | 'back'>('front');
+  const spin = useRef(new Animated.Value(0)).current;
+  const flipTo = useCallback(
+    (next: 'front' | 'back') => {
+      Animated.timing(spin, {
+        toValue: 90,
+        duration: 140,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        // Only swap if the turn actually completed. An interrupted animation
+        // (a re-render, a second tap) that still swapped would leave the card
+        // showing one face at the other's angle.
+        if (!finished) return;
+        setFace(next);
+        spin.setValue(-90);
+        Animated.timing(spin, {
+          toValue: 0,
+          duration: 140,
+          useNativeDriver: true,
+        }).start();
+      });
+    },
+    [spin],
+  );
+  const cardSpin = {
+    transform: [
+      { perspective: 900 },
+      {
+        rotateY: spin.interpolate({
+          inputRange: [-90, 0, 90],
+          outputRange: ['-90deg', '0deg', '90deg'],
+        }),
+      },
+    ],
+  };
+
+  const spAddress = spWallet?.sp_address || '';
+  const bitmail = (spWallet?.hr_address || '').trim();
+
   // Prefill the tx-detail label editor with the real label only (not the
   // "Sent"/"Received" fallback used for display, and not a mix's label either:
   // "Tango · alice" is the app's own wording, and offering it as a draft
@@ -441,6 +504,56 @@ export default function WalletScreen() {
           </View>
         ) : (
           <>
+            {face === 'back' ? (
+              <Animated.View style={[styles.card, cardSpin]}>
+                <Text style={styles.label}>Your address</Text>
+
+                {spAddress ? (
+                  <>
+                    <View style={styles.qrWrap}>
+                      <QRCode value={spAddress} size={200} />
+                    </View>
+
+                    {/* The BitMail first when there is one: it is the thing a
+                        person can read out loud, and the sp1… below is what
+                        it resolves to. Absent, the address stands alone
+                        rather than leaving a gap where a name would be. */}
+                    {bitmail ? (
+                      <Text style={styles.backBitmail}>{bitmail}</Text>
+                    ) : null}
+                    <Text style={styles.backAddr} selectable>
+                      {spAddress}
+                    </Text>
+                    <Text style={styles.backNote}>
+                      Reusable — safe to share and reuse.
+                    </Text>
+
+                    <View style={styles.backActions}>
+                      <CardCopyButton
+                        value={spAddress}
+                        label="Copy address"
+                      />
+                      {bitmail ? (
+                        <CardCopyButton value={bitmail} label="Copy BitMail" />
+                      ) : null}
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.error}>
+                    No address yet — scan this wallet first.
+                  </Text>
+                )}
+
+                <TouchableOpacity
+                  style={styles.flipBtn}
+                  onPress={() => flipTo('front')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to balance">
+                  <Text style={styles.flipBtnText}>← Balance</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ) : (
+              <Animated.View style={cardSpin}>
             <TouchableOpacity
               style={styles.card}
               activeOpacity={0.7}
@@ -481,7 +594,23 @@ export default function WalletScreen() {
                   ) : null}
                 </>
               )}
+
+              {/* The way over, and the only new affordance on this face.
+                  Inside the card so it reads as part of it, and a separate
+                  touchable so the card's own tap keeps meaning "hide the
+                  balance". Hidden while there is nothing to show. */}
+              {!loading && !error && spAddress ? (
+                <TouchableOpacity
+                  style={styles.flipBtn}
+                  onPress={() => flipTo('back')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show your address">
+                  <Text style={styles.flipBtnText}>Details →</Text>
+                </TouchableOpacity>
+              ) : null}
             </TouchableOpacity>
+              </Animated.View>
+            )}
 
             {/* A scan is running — on the screen people sit on, rather than
                 only on the one that started it. Catching up can take minutes
@@ -656,6 +785,33 @@ export default function WalletScreen() {
   );
 }
 
+// Copy with its own confirmation, because a clipboard write is silent and the
+// only way to know it took is to paste somewhere. Mirrors ReceiveScreen's; not
+// shared yet because that one is local to its file too, and hoisting both into
+// a component is a change to a screen this commit does not otherwise touch.
+function CardCopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <TouchableOpacity
+      style={styles.backActionBtn}
+      onPress={() => {
+        Clipboard.setString(value);
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      }}>
+      <Text style={styles.backActionText}>{copied ? '✓ Copied' : label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   brand: {
@@ -693,6 +849,57 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: { fontSize: 14, color: colors.muted, marginBottom: 8 },
+
+  // ── the card's other face ───────────────────────────────────────────────
+  // White plate behind the QR: the card is dark and a QR needs light modules
+  // on a light field to scan at all.
+  qrWrap: {
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 14,
+  },
+  backBitmail: {
+    ...type.value,
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  // Wrapped, not truncated: this face exists so somebody can read the whole
+  // address out or check it against another screen, and an ellipsis in the
+  // middle defeats both. Selectable for the same reason.
+  backAddr: {
+    ...type.value,
+    fontSize: 11,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  backNote: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  backActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+  },
+  backActionBtn: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  backActionText: { fontSize: 13, color: colors.text },
+  flipBtn: { alignSelf: 'flex-end', marginTop: 14, paddingVertical: 4 },
+  flipBtnText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
   // Dim on purpose: an affordance, not a control competing with the balance.
   eye: { fontSize: 15, marginLeft: 10, opacity: 0.45 },
   spinner: { marginVertical: 12, alignSelf: 'flex-start' },

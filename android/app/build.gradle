@@ -156,6 +156,36 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+// ── Release signing, resolved ONCE ──────────────────────────────────────────
+//
+// Two things need this answer and they MUST NOT compute it separately:
+// `signingConfigs.release` fills the config, and `buildTypes.release` decides
+// whether to use it or fall back to debug. They were two expressions, and on
+// 2026-10-16 they stopped agreeing — the config was taught to read WHISPA_*
+// with a THRILLA_* fallback and the selector was left asking
+// `hasProperty('THRILLA_STORE_FILE')`. CI sets only WHISPA_*, so the selector
+// said no, every release APK came out DEBUG-SIGNED, and the workflow's
+// "Verify what signed it" step refused to publish it. Thirty-one red runs.
+//
+// So there is one resolution and one boolean, read in both places.
+//
+// NON-BLANK, NOT DEFINED, and that is the other half of the same bug. An
+// unset GitHub secret interpolates to `ORG_GRADLE_PROJECT_WHISPA_STORE_FILE=`,
+// which DEFINES the property with an empty value — `hasProperty` is true and
+// `file('')` throws "path may not be null or empty string". All four have to
+// be non-blank, so a half-configured environment falls back to debug signing
+// rather than failing the build.
+//
+// WHISPA_* first, THRILLA_* behind it: the rename does not reach a machine
+// whose gradle.properties nobody has edited yet.
+def releaseSigningProp = { n -> (project.findProperty(n) ?: '').toString().trim() }
+ext.releaseSigning = [
+    'STORE_FILE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD',
+].collectEntries { n ->
+    [(n): releaseSigningProp("WHISPA_$n") ?: releaseSigningProp("THRILLA_$n")]
+}
+ext.releaseSigningReady = releaseSigning.every { k, v -> v }
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -305,20 +335,11 @@ android {
         // half-configured environment falls back to debug signing rather than
         // failing the build.
         release {
-            def prop = { n -> (project.findProperty(n) ?: '').toString().trim() }
-            // WHISPA_* first, THRILLA_* behind it. Both are checked for
-            // non-blank rather than defined: an unset GitHub secret
-            // interpolates to an empty value, which DEFINES the property.
-            def pick = { n -> prop("WHISPA_$n") ?: prop("THRILLA_$n") }
-            def ksPath    = pick('STORE_FILE')
-            def ksPass    = pick('STORE_PASSWORD')
-            def ksAlias   = pick('KEY_ALIAS')
-            def ksKeyPass = pick('KEY_PASSWORD')
-            if (ksPath && ksPass && ksAlias && ksKeyPass) {
-                storeFile     file(ksPath)
-                storePassword ksPass
-                keyAlias      ksAlias
-                keyPassword   ksKeyPass
+            if (releaseSigningReady) {
+                storeFile     file(releaseSigning.STORE_FILE)
+                storePassword releaseSigning.STORE_PASSWORD
+                keyAlias      releaseSigning.KEY_ALIAS
+                keyPassword   releaseSigning.KEY_PASSWORD
             }
         }
     }
@@ -327,10 +348,10 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Sign release builds with the real release key when its properties
-            // are present; otherwise fall back to the debug key so local/dev
-            // release builds still assemble (never ship a debug-signed build).
-            signingConfig project.hasProperty('THRILLA_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
+            // The SAME boolean signingConfigs.release was filled from — see the
+            // note above `android {`. Asking the question a second time here is
+            // what shipped debug-signed release APKs for a week.
+            signingConfig releaseSigningReady ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }

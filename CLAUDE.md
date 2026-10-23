@@ -85,6 +85,7 @@ npm run check:plain         # a fresh plain address stays inside the gap limit
 npm run check:scan          # a rescan reaches back at least as far as it says
 npm run check:colors        # the two colours written in both theme.ts and colors.xml
 npm run check:terms         # one terms version, in two repos, behind one tick box
+npm run check:apksign       # which key signs a release, answered in one place
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 

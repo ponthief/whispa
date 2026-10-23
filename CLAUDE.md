@@ -439,13 +439,29 @@ do, and counting rows would skip the warning for the case that most needs it.
 prefixed (`sw:<index>`) so a leftover from one side could never be handed to
 the other's builder, and flipping clears the selection and the amount anyway.
 
-**The balance is the sum, and the split is named directly under it.** "How
-much have I got" has one answer, and the SegWit coins used to sit below the
-balance in a banner reading "held separately from this balance" — true about
-how they *spend* and useless as an answer to what you own. But the division is
-not cosmetic: a total that hid it would promise a payment the Send screen then
-refuses. The banner now carries only **arriving** coins, which are in no total
-and whose card is on another tab.
+**The balance is the sum.** "How much have I got" has one answer, and the
+SegWit coins used to sit below the balance in a banner reading "held
+separately from this balance" — true about how they *spend* and useless as an
+answer to what you own. The banner now carries only **arriving** coins, which
+are in no total and whose card is on another tab.
+
+**The split lives on Coins, and only there** (2026-10-23, on the user's
+instruction). It was named directly under the balance on both clients —
+`WalletsView.vue`'s card badge and `WalletScreen.tsx`'s headline — and both
+lines are gone.
+
+Know what that costs, because the reason it was there has not stopped being
+true: the two pockets cannot go into one transaction. A Silent Payments send
+draws on SP coins and a SegWit send on the BIP-84 chain, so the headline total
+can promise an amount the Send screen then refuses, and the page that explains
+why is now a tab away. What keeps that survivable is that the Send screen's
+chain picker only appears when there IS something on the SegWit side, and
+flipping it re-derives the spendable figure — so the refusal arrives with the
+two balances visible rather than as a bare error. If this ever gets reported
+as "it says I have X and won't send X", that is this trade, not a bug.
+
+Coins keeps the breakdown on both clients: `CoinsScreen.tsx`'s stats row and
+its **SegWit addresses** section, `UtxosView.vue`'s equivalent.
 
 **Labels, not freezing**, and the distinction is the point. Freezing is a
 defence against coins you did not ask for: a dust attack arrives unannounced

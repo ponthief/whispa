@@ -156,7 +156,7 @@
 
           <button class="btn btn-primary w-full" type="submit" :disabled="loading || !canSubmit">
             <span v-if="loading" class="spinner" style="border-top-color:#000"></span>
-            {{ loading ? 'CREATING…' : 'CREATE ACCOUNT' }}
+            {{ loading ? 'SIGNING UP…' : 'SIGN UP' }}
           </button>
 
           <p class="text-dim text-xs oss-note">

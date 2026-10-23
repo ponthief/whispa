@@ -331,7 +331,7 @@ onUnmounted(() => {
     <div style="margin-bottom:24px">
       <router-link :to="{ name: 'wallets' }" class="btn btn-ghost btn-sm" style="margin-bottom:10px">← Wallet</router-link>
       <h1>Receive Payments</h1>
-      <p class="text-dim text-sm" style="margin-top:2px">Scan the blockchain to detect Silent Payments sent to this wallet. Incoming funds appear in your balance once the scan covers the blocks they arrived in.</p>
+      <p class="text-dim text-sm" style="margin-top:2px">Scan the blockchain to detect Silent Payments sent to this wallet.</p>
     </div>
 
     <div v-if="selectedWallet && !hasKeys" class="card" style="border:1px solid rgba(249,115,22,.5);background:rgba(249,115,22,.06);margin-bottom:20px">

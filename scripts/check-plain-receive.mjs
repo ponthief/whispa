@@ -461,13 +461,27 @@ console.log('\none balance, two pockets, named');
   ok('the headline adds them up',
      /const sats = spSats != null \? spSats \+ plainSpendable : null;/.test(WALLET),
      WALLET);
-  // NAMED, not merged. A Silent Payments send draws on SP coins and a SegWit
-  // send on the BIP-84 chain; a total that hid the division would promise a
-  // payment the Send screen then refuses.
-  ok('and the split is still shown', /styles\.splitLine/.test(WALLET), WALLET);
+  // AND THE SPLIT IS NOT NAMED HERE, as of 2026-10-23 on the user's
+  // instruction. This check used to assert the opposite, so it is worth
+  // writing down what moved rather than just flipping the sign:
+  //
+  // The reason the split was under the balance has not stopped being true —
+  // a Silent Payments send draws on SP coins and a SegWit send on the BIP-84
+  // chain, so this total can promise an amount the Send screen then refuses.
+  // What changed is where that gets explained: Coins, which is the page that
+  // exists to say which coins you hold. The assertion stays, pointed the
+  // other way, because a split quietly reappearing under the balance is the
+  // same drift as it quietly vanishing — somebody re-adds it from the comment
+  // above without reading this one.
+  ok('and the split is NOT named under it', !/styles\.splitLine/.test(WALLET),
+     'the SP/SegWit breakdown belongs on Coins now');
   ok('the coins screen totals both',
      /const spendable = spSpendable \+ segwitSpendable;/.test(COINS), COINS);
-  ok('and names them there too', /Silent Payments ·/.test(COINS), COINS);
+  // WHERE IT HAS TO SURVIVE. Removing it from the wallet page makes this the
+  // only place either client answers "which of my coins are which", so a
+  // refactor that drops the section here leaves the question unanswerable.
+  ok('and Coins still breaks them out', /SegWit addresses/.test(COINS),
+     'the only remaining place the two pockets are named');
   // The banner said "held separately from this balance", which stopped being
   // true the moment the headline started adding them up.
   ok('nothing still calls them held separately',
@@ -746,7 +760,8 @@ console.log('\nthe browser does all of it too');
      SEND.indexOf("const source = ref('sp')") <
        SEND.indexOf('watch(selectedWallet, async (id)'), SEND);
 
-  // One balance on the card, split named under it.
+  // One balance on the card, and only the balance — see the note on the
+  // phone's headline above for what moved and what it costs.
   ok('the wallet card adds them up',
      /\(w\.balance \?\? 0\) \+ segwitSats\(w\.id\)/.test(WALLETS), WALLETS);
   // AND SO DOES THE COINS PAGE. The web reported 7 coins where the phone
@@ -757,7 +772,13 @@ console.log('\nthe browser does all of it too');
      /spSpendableBalance\.value \+ segwitSpendable\.value/.test(COINS), COINS);
   ok('with the split named there too',
      /\{\{ spCoinCount \}\} SP/.test(COINS), COINS);
-  ok('and names the split', /SP · .*SegWit|SegWit<\/div>/.test(WALLETS), WALLETS);
+  // The mirror of the phone's assertion: the breakdown is on Coins, not on
+  // the wallet card. Both clients, because a rule enforced on one of them is
+  // how the two drifted apart in the first place (2026-10-06, 7 coins against
+  // 8 for the same wallet).
+  ok('and does NOT name the split on the card',
+     !/SP · .*SegWit/.test(WALLETS),
+     'the SP/SegWit breakdown belongs on Coins now');
   // The panel is the only thing that walks the chain, so the card takes the
   // number from it rather than walking again against a limited endpoint.
   ok('the total comes from the panel, not a second walk',

@@ -275,7 +275,7 @@ export default function PlainAddressCard({ wallet }: Props) {
             </View>
           ) : (
             <View style={styles.balanceBox}>
-              <Text style={styles.balanceLabel}>Available here</Text>
+              <Text style={styles.balanceLabel}>Balance</Text>
               <Text style={styles.balanceValue}>
                 {hidden ? MASK : groupThousands(sats)} sats
               </Text>

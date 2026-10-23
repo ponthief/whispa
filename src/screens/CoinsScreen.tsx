@@ -382,8 +382,7 @@ export default function CoinsScreen({ visible, onClose }: Props) {
 
           {frozenHeld > 0 ? (
             <Text style={styles.splitLine}>
-              + {hidden ? MASK : groupThousands(frozenHeld)} sats frozen, not
-              counted above
+              + {hidden ? MASK : groupThousands(frozenHeld)} sats frozen
             </Text>
           ) : null}
 

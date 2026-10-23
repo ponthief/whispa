@@ -86,7 +86,7 @@ export default function AccountPage({ onBack }: { onBack: () => void }) {
       </Group>
 
       <Group title="Session">
-        <Block first help="Your keys and recovery phrase stay on this phone — signing out only forgets the sign-in.">
+        <Block first>
           <Button
             label="Sign out"
             kind="danger"

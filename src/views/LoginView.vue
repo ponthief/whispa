@@ -247,7 +247,7 @@ onUnmounted(() => clearInterval(lockTimer))
                  where you clicked it reads as a broken button, and removing
                  the route without removing the link is how that ships. -->
             <div v-if="!isAdminBuild" class="login-links">
-              <router-link to="/register" class="text-dim text-sm">Create account</router-link>
+              <router-link to="/register" class="text-dim text-sm">Sign up</router-link>
               <router-link to="/forgot" class="text-dim text-sm">Forgot password?</router-link>
             </div>
           </form>

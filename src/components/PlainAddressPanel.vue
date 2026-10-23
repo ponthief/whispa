@@ -379,7 +379,7 @@ async function runSetup() {
             <span class="text-dim text-xs">Waiting for the chain index to catch up</span>
           </template>
           <template v-else>
-            <span class="text-dim text-xs">Available here</span>
+            <span class="text-dim text-xs">Balance</span>
             <b class="amount">{{ groupThousands(sats) }} sats</b>
             <span v-if="chain.unconfirmedSats > 0" class="text-dim text-xs">
               + {{ groupThousands(chain.unconfirmedSats) }} sats from

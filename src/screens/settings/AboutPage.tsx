@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, StyleSheet, View } from 'react-native';
-import { Button, Group, Help, InfoRow, NavRow, Note, Page } from './ui';
+import { Button, Group, InfoRow, NavRow, Note, Page } from './ui';
 import { colors } from '@/theme';
 import { displayVersion } from '@/version';
 import {
@@ -244,10 +244,6 @@ export default function AboutPage({ onBack }: { onBack: () => void }) {
         />
       </Group>
 
-      <Help>
-        Set in Geist and Geist Mono, by Vercel with basement.studio, under the
-        SIL Open Font License 1.1.
-      </Help>
     </Page>
   );
 }

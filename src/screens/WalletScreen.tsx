@@ -356,12 +356,12 @@ export default function WalletScreen() {
   // saying "held separately", which is true about how they SPEND and useless
   // as an answer to what you own. So the headline is the sum.
   //
-  // The split is still named directly underneath, because it is not cosmetic:
-  // the two cannot go into one transaction. A Silent Payments send draws on SP
-  // coins and a SegWit send on the BIP-84 chain, so a total that hid the
-  // division would promise a payment the Send screen then refuses.
+  // The split used to be named directly underneath and is not, as of
+  // 2026-10-23, on the user's instruction — it lives on Coins alone now. What
+  // that gives up is recorded in CLAUDE.md: the two pockets cannot go into one
+  // transaction, so this total can promise an amount the Send screen then
+  // refuses, and the only place that says why is a screen away.
   const sats = spSats != null ? spSats + plainSpendable : null;
-  const split = spSats != null && plainSpendable > 0;
 
   const btc = sats != null ? (sats / 1e8).toFixed(8) : null;
   const usd = sats != null && rate != null ? (sats / 1e8) * rate : null;
@@ -474,13 +474,6 @@ export default function WalletScreen() {
                   <Text style={styles.sub}>
                     {hidden ? MASK : groupThousands(sats)} sats
                   </Text>
-                  {split ? (
-                    <Text style={styles.splitLine}>
-                      {hidden ? MASK : groupThousands(spSats!)} Silent Payments
-                      {' · '}
-                      {hidden ? MASK : groupThousands(plainSpendable)} SegWit
-                    </Text>
-                  ) : null}
                   {usd != null ? (
                     <Text style={styles.sub}>
                       ≈ ${hidden ? MASK : usd.toFixed(2)} USD
@@ -715,7 +708,6 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   balance: { fontSize: 30, fontWeight: 'bold', color: colors.primary },
   sub: { fontSize: 15, color: colors.muted, marginTop: 4 },
-  splitLine: { fontSize: 12, color: colors.faint, marginTop: 3 },
   error: { fontSize: 14, color: colors.danger, marginTop: 4 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 8 },
   emptyState: { fontSize: 14, color: colors.faint },

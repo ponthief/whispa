@@ -50,12 +50,30 @@ Then set the repo's identity in `config.yml`:
 
 ```yaml
 repo_url: https://fdroid.whispawallet.com/repo
+archive_url: https://fdroid.whispawallet.com/archive
 repo_name: WhiSPa
 repo_description: >-
   Bitcoin wallet with Silent Payments. Official builds, signed with the same
   key as the GitHub releases.
 archive_older: 3
 ```
+
+**Set these before the first `fdroid update`, or you will serve a working repo
+that points somewhere else.** The default `repo_url` is
+`https://MyFirstFDroidRepo.org/fdroid/repo` (`common.py:207`), and it is not
+only a config value: `fdroid update` writes it into `repo/index.html`, into
+the QR at `repo/index.png`, and into the signed index's own `address` field.
+Left alone, the site serves correctly and every link on it — and every client
+that adds the repo — goes to `MyFirstFDroidRepo.org/fdroid/repo`. The
+`/fdroid/` in that path is the tell: nothing in the Caddy block below ever
+produces it.
+
+Changing the config is not enough on its own. The address is inside the signed
+index, so it takes another `fdroid update` and another rsync.
+
+`repo_url` must end in `/repo` and `archive_url` in `/archive`
+(`common.py:662-668` raises otherwise), which is what the two routes below
+serve.
 
 Two more warnings `fdroid update` raises on a fresh repo, both one-time:
 

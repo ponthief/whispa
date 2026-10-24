@@ -16,10 +16,28 @@ watch(() => [props.show, props.address], async ([show]) => {
   if (show && props.address) {
     await nextTick()
     if (canvas.value) {
+      // BLACK ON WHITE, AND IT IS NOT A STYLE CHOICE.
+      //
+      // This drew orange (#f97316, luma 137) modules on near-black (#080b0f,
+      // luma 11) to match the card behind it. That inverts the code: the
+      // modules the spec calls DARK were the bright ones. ZXing decodes
+      // dark-on-light only, so from 2026-10-24 — when the Android scanner
+      // moved off MLKit, which reads inverted codes natively — this QR became
+      // unreadable by our own app, and by any other wallet with a strict
+      // reader. Feeding a perfect, noise-free render of it to ZXing's decoder
+      // fails with NotFoundException even with TRY_HARDER; swapping the two
+      // colours reads it instantly. `check:qr` pins the polarity.
+      //
+      // margin 4, not 2: the spec's quiet zone is four modules, and a canvas
+      // on a dark card has no white page around it to make up the difference.
+      //
+      // A QR is a machine-readable artifact that strangers' scanners have to
+      // read. If the orange is wanted back it has to be the BACKGROUND, with
+      // dark modules on it — never the modules.
       QRCode.toCanvas(canvas.value, props.address, {
         width: 260,
-        margin: 2,
-        color: { dark: '#f97316', light: '#080b0f' },
+        margin: 4,
+        color: { dark: '#000000', light: '#ffffff' },
       })
     }
   }

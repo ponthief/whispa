@@ -82,6 +82,7 @@ npm run check:admin         # the payout ledger reports earnings and debts apart
 npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
 npm run check:plain         # a fresh plain address stays inside the gap limit
+npm run check:qr            # every QR is dark-on-light, with a real quiet zone
 npm run check:scan          # a rescan reaches back at least as far as it says
 npm run check:colors        # the two colours written in both theme.ts and colors.xml
 npm run check:terms         # one terms version, in two repos, behind one tick box
@@ -440,7 +441,9 @@ so far.** Worth the whole sequence, because the pattern is the lesson:
    SCENE_MODE_BARCODE, metering, and `fullSensor` in the manifest) and the
    revert put all four back at once.
 5. **A device logcat, which is what should have happened at step 3.** It ended
-   the guessing.
+   the guessing about the camera.
+6. **The QR itself was inverted, and that was the whole bug.** Six builds
+   went into the camera and the camera was never wrong.
 
 **What the logcat settled.** `CameraPreview: Starting preview` is the line
 immediately before `previewActive = true; previewStarted()`, and
@@ -488,10 +491,56 @@ that the Activity the module launches is declared in the manifest, because
 `startActivityForResult` on an undeclared one throws
 `ActivityNotFoundException` and nothing in the Kotlin says so.
 
-If continuous focus alone does not fix it, the next lever is the **image size,
-not the camera**: in landscape the preview is 2412×1080 and ZXing's framing
-rect insets 10%, so every decode attempt is a 2196×864 crop — about 1.9 MP
-through `HybridBinarizer` with `TRY_HARDER` on. One setting, next build.
+### And then the actual cause, which was never on the phone
+
+Continuous focus shipped and the scanner still read nothing — but now with
+**yellow dots and the red line showing**. Those dots are
+`possibleResultPoints`: the decoder running, processing frames, and reporting
+candidate finder patterns. A decoder that gets that far is not being starved
+of focus.
+
+What it was: **`QrModal.vue` drew the web app's receive QR as orange modules
+on near-black**, to match the card behind it.
+
+```js
+color: { dark: '#f97316', light: '#080b0f' }   // luma 137 on luma 11
+```
+
+The modules the spec calls **dark were the bright ones**. The code was
+inverted. MLKit reads inverted QRs natively; **ZXing decodes dark-on-light
+only**. So the app stopped being able to read its own receive QR at exactly
+the moment the scanner changed, and every symptom followed from that.
+
+Proven with no camera in the loop: render that colour pair perfectly and
+noise-free, hand it to ZXing's own decoder, and it fails with
+`NotFoundException` with and without `TRY_HARDER`, at 2- and 4-module quiet
+zones alike. Swap the two colours and it reads first try. The cost of not
+doing that check at step 1 was six builds.
+
+**Both ends are fixed.** `QrModal.vue` renders black-on-white with a 4-module
+quiet zone, matching the phone's own renderer — a QR is a machine-readable
+artifact that strangers' scanners have to read, and a wallet address QR that
+only one reader can manage is an interoperability bug, not a theme. And the
+scan intent now carries `Intents.Scan.SCAN_TYPE = MIXED_SCAN`, so
+`DefaultDecoderFactory` builds a `MixedDecoder` that alternates normal and
+inverted frames — because fixing `QrModal` does nothing for a web build
+already deployed, or for the next wallet that styles its QR the same way.
+
+`check:qr` pins the polarity, the contrast and the quiet zone on both clients,
+and refuses a phone caller passing its own colours. None of this is a build
+error, a lint error, or visible to review: the inverted QR rendered cleanly
+and looked exactly like a QR code.
+
+**The lesson is the order.** Every symptom pointed at the reader, so six
+builds went at the reader. Nobody looked at the thing being read, and it was
+the one artifact in the loop that could be tested in ten seconds with no
+device at all.
+
+The camera changes from that hunt stay, because each is defensible on its own
+and one setting per build is cheap: continuous focus (the device offers
+`continuous-picture` and ZXing's default asks only for `auto`) and
+`TRY_HARDER`. Neither is *validated* as necessary — if the scanner ever
+misbehaves again, they are the first things to take back out.
 
 `check:fdroid` pins all of it. Verify a real APK too, because only that shows
 what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no

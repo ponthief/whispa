@@ -133,6 +133,30 @@ class ZxingScannerModule(
           // likely to return something the caller then has to reject.
           putExtra(Intents.Scan.FORMATS, "QR_CODE")
           putExtra(Intents.Scan.PROMPT_MESSAGE, promptText ?: "Point at a QR code")
+          // READ INVERTED CODES TOO, and this is the fix for a real bug
+          // rather than a nicety (2026-10-24).
+          //
+          // QrModal.vue drew the web app's receive QR as orange modules on
+          // near-black to match the card behind it — which inverts it: the
+          // modules the spec calls DARK were the bright ones. MLKit read that
+          // happily. ZXing decodes dark-on-light only, so the moment Android
+          // moved off MLKit our own app could no longer read our own QR.
+          // Proven off-device: a perfect, noise-free render of it fails with
+          // NotFoundException even with TRY_HARDER, and reads instantly with
+          // the two colours swapped.
+          //
+          // QrModal is fixed, but fixing it does not fix a web build somebody
+          // has already deployed, and it does nothing for the next wallet
+          // that styles its QR the same way. MIXED_SCAN makes the phone
+          // tolerant either way.
+          //
+          // DecoratedBarcodeView.initializeFromIntent reads SCAN_TYPE and
+          // hands it to DefaultDecoderFactory, which for MIXED_SCAN builds a
+          // MixedDecoder — it flips `isInverted` in toBitmap, so successive
+          // frames are tried normal, inverted, normal. The cost is half the
+          // decode attempts per second for an ordinary code, against a
+          // scanner that otherwise cannot read a whole class of them.
+          putExtra(Intents.Scan.SCAN_TYPE, Intents.Scan.MIXED_SCAN)
           // No beep: a wallet that chirps in a shop announces what you are
           // doing. The old scanner was silent and this keeps it that way.
           putExtra(Intents.Scan.BEEP_ENABLED, false)

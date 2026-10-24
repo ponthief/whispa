@@ -25,13 +25,17 @@ client's default index, and users must add the repo URL by hand.
 
 ```bash
 pip install fdroidserver          # or your distro's package
-mkdir -p ~/fdroid && cd ~/fdroid
-fdroid init --keystore ~/fdroid/repo-index.jks
+mkdir -p ~/dev/fdroid && cd ~/dev/fdroid
+fdroid init --keystore ~/dev/fdroid/repo-index.jks
 ```
 
 `fdroid init` creates the key that signs the **index**, not the APKs. It is a
 separate key from the app's release keystore and it is worth backing up: losing
 it means every subscriber has to remove and re-add the repo.
+
+It also writes `config.yml` **beside** `repo/`, with `keystorepass` and
+`keypass` in plaintext. That is why the web root below points *inside* `repo/`
+and never at its parent.
 
 Then set the repo's identity in `config.yml`:
 
@@ -51,16 +55,16 @@ archive_older: 3
 npm run apk:fdroid
 
 # 2. Drop it in and build the index.
-cp android/app/build/outputs/apk/mainnet/release/*.apk ~/fdroid/repo/
-cd ~/fdroid && fdroid update --pretty
+cp android/app/build/outputs/apk/mainnet/release/*.apk ~/dev/fdroid/repo/
+cd ~/dev/fdroid && fdroid update --pretty
 
 # 3. Publish the repo directory.
-rsync -av ~/fdroid/repo/ user@host:/srv/fdroid/repo/
+rsync -av --delete ~/dev/fdroid/repo/ user@host:/srv/fdroid/repo/
 ```
 
 `fdroid update` reads `fastlane/metadata/android/en-US/` out of the APK's
 source repo if you point it there, or you can copy that tree into
-`~/fdroid/metadata/com.whispawallet.app/`. The metadata in this repo is already
+`~/dev/fdroid/metadata/com.whispawallet.app/`. The metadata in this repo is already
 in the layout both F-Droid and Zapstore expect:
 
 ```
@@ -80,9 +84,44 @@ changelog named after the version string is silently ignored.
 
 ### Serving it
 
-Any static host. If it goes behind the same Caddy as the rest, remember the
-CSP block there is written for the web app and does not apply to a static file
-tree — give the repo its own site block.
+Any static host. Behind Caddy, its own site block — the CSP in the main one is
+written for the web app, does nothing for a static file tree, and can only
+break the F-Droid client.
+
+```caddyfile
+fdroid.whispawallet.com {
+	# Rooted INSIDE repo/, not at its parent. See below.
+	handle_path /repo/* {
+		root * /srv/fdroid/repo
+		file_server browse
+	}
+
+	# archive_older: 3 means fdroid update writes a second index here.
+	handle_path /archive/* {
+		root * /srv/fdroid/archive
+		file_server browse
+	}
+
+	redir / /repo/
+	header /repo/*.apk Content-Type application/vnd.android.package-archive
+}
+```
+
+**The web root is `repo/`, never the directory above it.** `fdroid init` leaves
+`config.yml` and the index keystore in that parent, and `config.yml` holds
+`keystorepass` and `keypass` as plaintext — serving the parent publishes the
+key that signs the index, and the password to use it, at a predictable URL.
+Nothing warns you; the directory listing just looks complete.
+
+Which is also the argument for `rsync`-ing to `/srv/fdroid/repo/` rather than
+pointing Caddy at the working tree in `~/dev/fdroid`: the keystore is then not
+under a web root at all, and Caddy does not need traverse permission on a home
+directory. Serving `~/dev/fdroid/repo` directly works, but needs
+`chmod o+x` on every directory down to it, and one `root *` typo exposes the
+key.
+
+`repo_url` in `config.yml` must match what the block serves —
+`https://fdroid.whispawallet.com/repo`.
 
 ## The no-push build
 

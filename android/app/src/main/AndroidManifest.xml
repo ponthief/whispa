@@ -83,17 +83,30 @@
       </activity>
 
       <!-- The QR scanner (scanner/WhispaCaptureActivity.kt), a subclass of
-           zxing-android-embedded's CaptureActivity that turns on continuous
-           focus and changes nothing else.
+           zxing-android-embedded's CaptureActivity.
 
-           Every attribute here MIRRORS the library's own declaration of
-           CaptureActivity, including screenOrientation. That is deliberate:
-           the build this one is being compared against ran the library's
-           Activity at sensorLandscape, so holding the orientation identical
-           leaves the focus mode as the only difference between them. An
-           earlier version of this entry used fullSensor and changed camera
-           settings in the same commit — four variables at once, which is why
-           its failure taught us nothing.
+           fullUser, NOT the library's sensorLandscape. The library declares
+           its own CaptureActivity landscape — inherited from the original
+           Barcode Scanner app — so a phone held upright got a sideways,
+           stretched-looking preview. Reported 2026-10-24 as "wide
+           perspective, as if it has been auto rotated", which is exactly what
+           it was.
+
+           This entry mirrored sensorLandscape for one build on purpose, so
+           that focus mode was the only difference while the scanner was being
+           bisected. That is over, so the orientation is ours again.
+
+           fullUser rather than fullSensor: it honours the device's rotation
+           LOCK, so the scanner behaves like every other screen in the app
+           instead of spinning when somebody tilts a phone they have
+           deliberately locked upright. CaptureManager.lockOrientation() pins
+           whatever it launched in, so the preview cannot flip mid-scan
+           either way.
+
+           It also decodes better. ZXing's framing rect insets 10% and then
+           squares itself off: landscape gives a 2196x864 letterbox, portrait
+           an 864x864 square — a third of the pixels per attempt, in the shape
+           a QR actually is.
 
            The rest is the library's reasoning, not ours: the scanner holds no
            state worth restoring, and a soft keyboard over a camera preview is
@@ -101,7 +114,7 @@
       <activity
         android:name=".scanner.WhispaCaptureActivity"
         android:clearTaskOnLaunch="true"
-        android:screenOrientation="sensorLandscape"
+        android:screenOrientation="fullUser"
         android:stateNotNeeded="true"
         android:theme="@style/zxing_CaptureTheme"
         android:windowSoftInputMode="stateAlwaysHidden"

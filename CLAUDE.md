@@ -542,6 +542,24 @@ and one setting per build is cheap: continuous focus (the device offers
 `TRY_HARDER`. Neither is *validated* as necessary — if the scanner ever
 misbehaves again, they are the first things to take back out.
 
+**And the scanner is portrait now.** `WhispaCaptureActivity` is declared
+`fullUser`, not the library's `sensorLandscape` — a phone held upright was
+getting a sideways, stretched preview, reported as "wide perspective, as if
+it has been auto rotated". The manifest mirrored `sensorLandscape` for exactly
+one build so that focus mode was the only variable while the scanner was being
+bisected; that is over.
+
+`fullUser` rather than `fullSensor` because it honours the device's rotation
+**lock**, so the scanner behaves like every other screen instead of spinning
+when somebody tilts a phone they deliberately locked upright.
+`CaptureManager.lockOrientation()` pins whatever it launched in, so the
+preview cannot flip mid-scan either way.
+
+It also decodes better, which is the part worth remembering: ZXing's framing
+rect insets 10% and then squares itself off, so landscape fed the decoder a
+2196×864 letterbox and portrait feeds it an 864×864 square — a third of the
+pixels per attempt, in the shape a QR actually is.
+
 `check:fdroid` pins all of it. Verify a real APK too, because only that shows
 what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no
 `.tflite` and no `libbarhopper_v3.so`.

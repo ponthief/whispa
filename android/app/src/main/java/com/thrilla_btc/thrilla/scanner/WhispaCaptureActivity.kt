@@ -5,65 +5,54 @@ import com.journeyapps.barcodescanner.CaptureActivity
 import com.journeyapps.barcodescanner.DecoratedBarcodeView
 
 /**
- * ZXing's capture screen with ONE setting changed: continuous focus.
+ * ZXing's capture screen with one camera setting changed: continuous focus.
  *
- * WHAT THE DEVICE LOG SAID (2026-10-24). A logcat from a failing scan settled
- * most of the question. Against the stock `CaptureActivity`:
+ * READ THIS FIRST, because the file's history is misleading. The scanner bug
+ * this was written during was **not a camera bug at all**: `QrModal.vue` drew
+ * the web app's receive QR inverted — bright orange modules on near-black —
+ * and ZXing decodes dark-on-light only, where MLKit had not cared. Fixing the
+ * QR fixed the scanner. Nothing in this file was the cause, and nothing in it
+ * is proven to be the cure.
  *
- *   - the Activity launches, the camera opens on the Camera1 legacy path, and
- *     `CameraPreview: Starting preview` appears — the line immediately before
- *     `previewActive = true; previewStarted()`, which is what calls
- *     `BarcodeView.startDecoderThread()`. `CaptureManager.decode()` has already
- *     set the mode to SINGLE by then, so THE DECODER THREAD RUNS.
- *   - a second camera stream (YCbCr_420_888, CPU_READ_OFTEN) is configured
- *     0.4s later: the decoder asking for its first frame.
- *   - ~380 frames are delivered over the 13 seconds the screen is open.
- *   - `DecodeHintManager: Hints from the Intent: {TRY_HARDER=true}` — the
- *     intent is parsed and the decoder is configured.
- *   - no exception, anywhere.
- *
- * So the wiring is not the problem. Frames reach a running decoder and the
- * decoder cannot read them. That is the IMAGE.
- *
- * AND THE SAME LOG NAMES THE ONE IMAGE SETTING WE CONTROL:
+ * SO WHY DOES IT STILL EXIST. Continuous focus is defensible on its own
+ * terms, and the device log is the argument:
  *
  *   CameraConfiguration: Requesting focus mode value from among: [auto]
  *   CameraConfiguration: Supported focus mode values:
  *                            [auto, macro, continuous-video, continuous-picture]
- *   CameraConfiguration: Focus mode already set to auto
- *   ...
  *   focus-distances=Infinity,Infinity,Infinity
  *
- * ZXing asked for exactly one focus mode — `auto` — on a device that offers
- * `continuous-picture`. That list of one is `CameraConfigurationUtils.setFocus`
- * taking its `FocusMode.AUTO` branch, which is the library default. Under
- * Camera1, `auto` means the lens moves only when something calls `autoFocus()`,
- * which `AutoFocusManager` does about every two seconds; the lens is reported
- * parked at infinity. MLKit ran through camera-kit with continuous focus. A
- * lens at infinity will not resolve a dense QR at reading distance, and that is
- * a real behavioural difference between the scanner that worked and this one.
+ * A list of one is `CameraConfigurationUtils.setFocus` taking its
+ * `FocusMode.AUTO` branch, the library default. Under Camera1 `auto` moves the
+ * lens only when something calls `autoFocus()`, which `AutoFocusManager` does
+ * about every two seconds; the device offers `continuous-picture` and was not
+ * being asked for it. A scanner that tracks focus is better than one that
+ * hunts, whatever today's bug turned out to be.
  *
- * WHY THIS IS NOT THE CHANGE THAT WAS ALREADY REVERTED. The earlier
- * WhispaCaptureActivity set continuous focus too — and `SCENE_MODE_BARCODE` and
- * metering with it, and changed the manifest orientation to `fullSensor` in the
- * same commit. Four variables. It failed, and was reverted on the reasoning
- * that under Camera1 a scene mode can make focus mode read-only, which would
- * pin the very focus being requested alongside it. If that reasoning is right,
- * continuous focus WITHOUT a scene mode has never actually been tried. That is
- * the whole of this file.
+ * But it is UNVALIDATED. It was aimed at a cause that turned out to be wrong,
+ * and the scanner was never seen working with it off and the QR fixed. If the
+ * scanner ever misbehaves again, this and the `TRY_HARDER` hint in
+ * `ZxingScannerModule` are the first two things to take back out.
  *
- * So: no `barcodeSceneModeEnabled`, no `meteringEnabled`, no `scanInverted`, no
- * preview-size change, and the manifest keeps the library's own
- * `sensorLandscape` — the orientation the failing build ran at. Focus mode is
- * the only thing that differs from the build this is compared against.
+ * ONE SETTING, and `check:fdroid` counts them: it fails if this class assigns
+ * more than one `settings.*`. That is not a ban on tuning, it is a ban on
+ * tuning blind — the first version of this file set continuous focus,
+ * `SCENE_MODE_BARCODE` and metering, and changed the manifest orientation, all
+ * in one commit. Four variables for one symptom, so its failure ruled out
+ * nothing and the revert that followed ruled out nothing either.
  *
- * HOW TO TELL WHETHER IT TOOK, without reading the code: the same
- * `CameraConfiguration` line changes. It should read
+ * ORIENTATION is in the manifest, and is `fullUser` rather than the library's
+ * `sensorLandscape` — a phone held upright was getting a sideways, stretched
+ * preview. The manifest entry has the reasoning, including why portrait also
+ * gives the decoder a better-shaped crop.
+ *
+ * HOW TO TELL WHETHER THE FOCUS SETTING TOOK, without reading any code: that
+ * same `CameraConfiguration` line should now read
  *
  *   Requesting focus mode value from among:
  *       [continuous-picture, continuous-video, auto]
  *
- * and then `Can set focus mode to: continuous-picture`. If it still says
+ * followed by `Can set focus mode to: continuous-picture`. If it still says
  * `[auto]`, this file is not being used and the manifest or the module is
  * wrong — not the camera.
  *

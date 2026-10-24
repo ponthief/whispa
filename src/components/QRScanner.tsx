@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Modal,
   NativeModules,
   PermissionsAndroid,
@@ -44,9 +45,35 @@ interface Props {
 type PermState = 'checking' | 'granted' | 'denied';
 
 const IS_ANDROID = Platform.OS === 'android';
-const Zxing = NativeModules.ZxingScanner as
-  | { scan(prompt: string | null): Promise<string | null> }
-  | undefined;
+
+// LOOKED UP AT CALL TIME, not at module load. `NativeModules.X` read at import
+// is a snapshot of whatever the bridge had registered at that instant, and
+// this file is imported from SendScreen's module graph — early. A module that
+// registers later reads as absent forever, and the only symptom is a scanner
+// that closes the moment it opens.
+type ZxingModule = { scan(prompt: string | null): Promise<string | null> };
+const zxing = (): ZxingModule | undefined =>
+  NativeModules.ZxingScanner as ZxingModule | undefined;
+
+// WHY THE FAILURES ARE LOUD NOW.
+//
+// Every branch below used to end in `onClose()`, which closes the sheet and
+// says nothing — and three rounds of "the scanner does not work" were spent
+// guessing which branch it was, because a missing native module, a refused
+// permission and a scan that returned nothing all looked identical from the
+// outside.
+//
+// A wallet should not normally shout at people. This is the exception: the
+// alternative is a control that silently does nothing, which is worse, and
+// the message names the stage so a report can say which one.
+function report(stage: string, detail?: string) {
+  Alert.alert(
+    'Scanner',
+    detail ? `${stage}\n\n${detail}` : stage,
+    [{ text: 'OK' }],
+    { cancelable: true },
+  );
+}
 
 export default function QRScanner({ visible, onClose, onScanned }: Props) {
   if (IS_ANDROID) return <AndroidScanner {...{ visible, onClose, onScanned }} />;
@@ -113,29 +140,50 @@ function AndroidScanner({ visible, onClose, onScanned }: Props) {
 
     (async () => {
       try {
+        const mod = zxing();
+        if (!mod) {
+          // No native module. An old build, or an autolinking/registration
+          // mistake. Named explicitly because it is indistinguishable from
+          // every other failure once the sheet has closed.
+          onCloseRef.current();
+          report(
+            'The scanner is not available in this build.',
+            'NativeModules.ZxingScanner is missing. The recipient can still ' +
+              'be pasted in.',
+          );
+          return;
+        }
+
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.CAMERA,
         );
         if (!mounted.current) return;
         if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
           onCloseRef.current();
+          report(
+            'Camera permission is required to scan.',
+            `Permission result: ${granted}`,
+          );
           return;
         }
-        if (!Zxing) {
-          // The module is missing — an old build, or a packaging mistake.
-          // Closing is the honest outcome: there is no scanner, and the
-          // recipient field can still be pasted into.
-          onCloseRef.current();
-          return;
-        }
-        const value = await Zxing.scan('Point at a QR code');
+
+        const value = await mod.scan('Point at a QR code');
         if (!mounted.current) return;
-        // null is a cancel (back button), which is an ordinary outcome and
-        // not an error — close without calling onScanned.
+        // null is a cancel (back button) and is an ordinary outcome — the one
+        // branch that stays quiet, because a user who pressed back does not
+        // need telling what they just did.
         if (value) onScannedRef.current(String(value).trim());
         onCloseRef.current();
-      } catch {
-        if (mounted.current) onCloseRef.current();
+      } catch (e: any) {
+        if (!mounted.current) return;
+        onCloseRef.current();
+        // Carries the native code and message through: "no-activity",
+        // "busy" and "launch-failed" are raised by ZxingScannerModule and
+        // each means something different.
+        report(
+          'The scanner could not run.',
+          `${e?.code ? `[${e.code}] ` : ''}${e?.message || String(e)}`,
+        );
       }
     })();
   }, [visible]);

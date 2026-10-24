@@ -61,8 +61,8 @@ Two more warnings `fdroid update` raises on a fresh repo, both one-time:
 
 ```bash
 # repo_icon "repo/icons/icon.png" does not exist
-mkdir -p repo/icons
-cp <app-checkout>/fastlane/metadata/android/en-US/images/icon.png repo/icons/icon.png
+# NOT in repo/icons/ — see below. Source path, relative to ~/dev/fdroid:
+cp <app-checkout>/fastlane/metadata/android/en-US/images/icon.png icon.png
 
 # <apk> (com.whispawallet.app) has no metadata — writes metadata/<appid>.yml
 fdroid update -c
@@ -72,9 +72,23 @@ mkdir -p metadata/com.whispawallet.app
 cp -r <app-checkout>/fastlane/metadata/android/en-US metadata/com.whispawallet.app/
 ```
 
-The URL you publish carries the index key's fingerprint, which `fdroid update`
-prints: `https://fdroid.whispawallet.com/repo?fingerprint=<SHA-256>`. Without
-it the client trusts whichever key answers first.
+**That icon warning names a path it did not look at.** `update.py` checks
+`os.path.exists(config['repo_icon'])` — cwd-relative, so `~/dev/fdroid/icon.png`
+— and then renders the message as `repo/icons/{path}`, which is the
+*destination*: `index.py` copies the file there itself. Putting it in
+`repo/icons/` by hand satisfies nothing and the warning repeats. Both paths end
+in `icon.png`, so the message reads as if it were already looking where you
+just put it.
+
+`fdroid update` also writes `repo/index.html` and `repo/index.png` — a landing
+page and a QR, both carrying the fingerprint of the index key:
+
+```bash
+grep -o 'fingerprint=[0-9A-F]*' ~/dev/fdroid/repo/index.html | head -1
+```
+
+The URL to publish is `https://fdroid.whispawallet.com/repo?fingerprint=<that>`.
+Without the fingerprint the client pins whichever key answers first.
 
 ### Each release
 
@@ -112,22 +126,29 @@ changelog named after the version string is silently ignored.
 
 ### Serving it
 
-Any static host. Behind Caddy, its own site block — the CSP in the main one is
-written for the web app, does nothing for a static file tree, and can only
-break the F-Droid client.
+Any static host — the tree is already complete, `index.html` and all. Behind
+Caddy, its own site block: the CSP in the main one is written for the web app,
+does nothing for a static file tree, and can only break the F-Droid client.
+
+```bash
+sudo mkdir -p /srv/fdroid
+sudo rsync -av --delete ~/dev/fdroid/repo/    /srv/fdroid/repo/
+sudo rsync -av --delete ~/dev/fdroid/archive/ /srv/fdroid/archive/
+sudo chown -R caddy:caddy /srv/fdroid
+```
 
 ```caddyfile
 fdroid.whispawallet.com {
 	# Rooted INSIDE repo/, not at its parent. See below.
 	handle_path /repo/* {
 		root * /srv/fdroid/repo
-		file_server browse
+		file_server
 	}
 
 	# archive_older: 3 means fdroid update writes a second index here.
 	handle_path /archive/* {
 		root * /srv/fdroid/archive
-		file_server browse
+		file_server
 	}
 
 	redir / /repo/
@@ -150,6 +171,18 @@ key.
 
 `repo_url` in `config.yml` must match what the block serves —
 `https://fdroid.whispawallet.com/repo`.
+
+Then check it, before telling anyone the URL:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+curl -sI https://fdroid.whispawallet.com/repo/entry.jar        # 200
+curl -sI https://fdroid.whispawallet.com/repo/index-v1.jar     # 200
+curl -s  https://fdroid.whispawallet.com/config.yml | head     # must 404
+```
+
+That third one is the check worth keeping: it is the failure the web root
+guards against, and it is invisible from the client side.
 
 ## The no-push build
 

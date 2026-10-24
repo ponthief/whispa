@@ -333,8 +333,17 @@ Two things specific to this app, both work rather than paperwork:
   environment does not reach the gradle step. The recipe burns it into
   `react-native.config.js` with `sed` instead.
 - **Reproducibility has to survive a JS bundle.** The Hermes bytecode and the
-  asset packaging must come out identical, so node and npm need pinning
-  alongside the NDK, build-tools and JDK. There is no `.nvmrc` yet.
+  asset packaging must come out identical, so node and npm are pinned
+  alongside the NDK, build-tools and JDK. `.nvmrc` holds the version (20.20.2,
+  which is what `node-version: '20'` was resolving to), and all three
+  workflows read it through `node-version-file` so there is one place to say
+  it. **The buildserver does not read `.nvmrc`** — the recipe's `sudo:` block
+  installs the same version by hand, with a checksum, and that pair has to be
+  kept in step.
+
+  Node 20 reached end of life in April 2026. Moving to 22 is its own change
+  and needs a build to validate; pinning the version CI already used keeps
+  this commit to one variable.
 
 ## Order of work, if the official repo is the eventual goal
 

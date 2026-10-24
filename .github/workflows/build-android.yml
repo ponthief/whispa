@@ -99,7 +99,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: npm
 
       # JDK 17, not 21: RN 0.73.6 pins AGP 8.1.1, which fails on 21 with a
@@ -710,7 +710,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: npm
 
       # JDK 17 for the same reason as the build job: AGP 8.1.1 fails on 21.

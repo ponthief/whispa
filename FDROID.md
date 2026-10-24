@@ -284,63 +284,66 @@ JDK), no build timestamps in the output, and a verified rebuild before each
 release. It is the only way onto f-droid.org without breaking the update path,
 and it is a project of its own.
 
-### What the submission actually is
+### The submission
 
 A merge request against `gitlab.com/fdroid/fdroiddata` adding one file,
 `metadata/com.whispawallet.app.yml`. **The self-hosted repo is no part of it**
 and does not become an f-droid.org listing by any route; the two are unrelated
 publications of the same APK.
 
-```yaml
-Categories: [Money]
-License: MIT
-WebSite: https://whispawallet.com
-SourceCode: https://github.com/ponthief/whispa
-IssueTracker: https://github.com/ponthief/whispa/issues
-
-RepoType: git
-Repo: https://github.com/ponthief/whispa.git
-Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-release.apk
-
-Builds:
-  - versionName: 0.5.0
-    versionCode: 500
-    commit: v0.5.0
-    subdir: android/app
-    prebuild: npm ci
-    gradle:
-      - mainnet
-
-AllowedAPKSigningKeys: <sha256 of the release cert, lowercase hex, no colons>
-
-AutoUpdateMode: Version
-UpdateCheckMode: Tags
-```
-
-`Binaries` plus `AllowedAPKSigningKeys` is the pair that keeps the app's
-identity: F-Droid rebuilds from source, compares byte-for-byte against the APK
-at that URL, and on a match publishes **yours**. Without them it publishes its
-own build under its own certificate, which is cost 3 above. The fingerprint
-comes from the release APK itself:
+The recipe is kept in this repo at **`fdroid/com.whispawallet.app.yml`**, with
+the reasoning for each field in comments. Nothing here reads it — it is
+versioned alongside the build it describes, because every claim it makes about
+`android/app/build.gradle` goes stale without a word.
 
 ```bash
-apksigner verify --print-certs whispa-mainnet-release.apk | grep -i SHA-256
+git clone git@gitlab.com:<you>/fdroiddata.git && cd fdroiddata
+cp <app-checkout>/fdroid/com.whispawallet.app.yml metadata/
+fdroid readmeta
+fdroid lint com.whispawallet.app
+fdroid build -v -l com.whispawallet.app:500      # needs their buildserver
 ```
 
-Two things about this app in particular, and both are work rather than
-paperwork. The buildserver has **no network during the Gradle phase**, so the
-npm install belongs in `prebuild` and the Gradle build has to resolve offline.
-And reproducibility has to survive a **JS bundle**: the Hermes bytecode and the
-asset packaging must come out identical, so node and npm are pinned alongside
-the NDK, build-tools and JDK.
+Then open the MR. Review is weeks to months.
+
+**`Binaries:` plus `AllowedAPKSigningKeys:` is the pair that matters**, and it
+is not optional for a wallet. With them, F-Droid builds from source, downloads
+our published APK and compares; on a match it publishes **ours**, under our
+certificate, so existing installs update normally. Without them it publishes
+its own build under its own key, which is cost 3 above.
+
+**A build that is not yet reproducible does not fall back to their key.**
+`build.py:1245-1264` raises, deletes the built APK and fails the build — so the
+comparison is a gate, not a preference, and submitting before reproducibility
+is solved costs a red build to iterate on rather than a stranded userbase.
+That makes it safe to submit first and work on reproducibility after.
+
+The fingerprint is read off the published APK, not the keystore:
+
+```bash
+unzip -p whispa-mainnet.apk META-INF/CERT.RSA \
+  | openssl pkcs7 -inform DER -print_certs \
+  | openssl x509 -outform DER | sha256sum
+```
+
+Two things specific to this app, both work rather than paperwork:
+
+- **`WHISPA_NO_PUSH=1` cannot be passed.** It is an environment variable read
+  during autolinking, a `Builds:` entry has no `env` field, and `prebuild`'s
+  environment does not reach the gradle step. The recipe burns it into
+  `react-native.config.js` with `sed` instead.
+- **Reproducibility has to survive a JS bundle.** The Hermes bytecode and the
+  asset packaging must come out identical, so node and npm need pinning
+  alongside the NDK, build-tools and JDK. There is no `.nvmrc` yet.
 
 ## Order of work, if the official repo is the eventual goal
 
 1. Self-hosted repo (this document's first half). Done once, keeps working.
 2. ~~Replace the MLKit scanner with a FOSS one.~~ Done — ZXing, above.
-3. Make the build reproducible, and verify it against a clean rebuild.
-4. Submit to `fdroiddata` with `Binaries:` set so F-Droid publishes your APK
-   rather than theirs.
+3. Submit to `fdroiddata` with `Binaries:` and `AllowedAPKSigningKeys:` set.
+4. Make the build reproducible until their rebuild matches ours, iterating on
+   the failed builds from step 3.
 
-Skipping step 3 is possible and costs every existing user a reinstall. Do not
-skip it quietly.
+Steps 3 and 4 are in that order on purpose: with `Binaries:` set, step 3 cannot
+publish anything under the wrong key, so there is nothing to protect by
+delaying it.

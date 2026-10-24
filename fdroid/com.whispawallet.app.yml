@@ -1,0 +1,72 @@
+# The f-droid.org submission: copy this to
+# metadata/com.whispawallet.app.yml in a fork of gitlab.com/fdroid/fdroiddata
+# and open a merge request. Nothing in this repo reads it — it lives here so it
+# is versioned alongside the build it describes, because every Builds: entry
+# below is a claim about android/app/build.gradle that goes stale silently.
+#
+# This is SEPARATE from the self-hosted repo in FDROID.md. That one serves our
+# own index at fdroid.whispawallet.com and has no connection to f-droid.org.
+
+Categories:
+  - Money
+License: MIT
+WebSite: https://whispawallet.com
+SourceCode: https://github.com/ponthief/whispa
+IssueTracker: https://github.com/ponthief/whispa/issues
+Changelog: https://github.com/ponthief/whispa/releases
+
+AutoName: WhiSPa
+
+RepoType: git
+Repo: https://github.com/ponthief/whispa.git
+
+# PUBLISH OUR APK, NOT THEIRS. Without this pair F-Droid signs its own build
+# with its own key, which is a different app to Android: nobody on an existing
+# install can update to it, and for a wallet that is a reinstall and a restore
+# from the recovery phrase for every user.
+#
+# With it, F-Droid builds from source, downloads this binary, and compares.
+# build.py:1245 — a mismatch raises, deletes the built APK and FAILS the build.
+# It does not fall back to publishing theirs. So a build that is not yet
+# reproducible costs a failed build, never a wrong-key release.
+#
+# %v is versionName, so v%v resolves to the tag.
+Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet.apk
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 500
+    commit: v0.5.0
+    subdir: android/app
+    ndk: r25b
+
+    # prebuild runs in build_dir/subdir — android/app — not the repo root
+    # (common.py:2484). Hence the ../.. on both lines.
+    prebuild:
+      # WHISPA_NO_PUSH=1 is how `npm run apk:fdroid` drops Firebase, and it is
+      # an ENVIRONMENT variable read by react-native.config.js during
+      # autolinking. A Build: entry has no env field (metadata.py build_flags),
+      # and prebuild's own environment does not reach the later gradle step, so
+      # the flag cannot be passed — it has to be burned into the file.
+      - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
+      - cd ../.. && npm ci
+
+    # node_modules carries prebuilt binaries that the scanner rejects; they are
+    # build-time only and nothing from them is packaged.
+    scandelete:
+      - node_modules
+
+    # assembleMainnetRelease. The signet flavor is a testnet build and is not
+    # published here.
+    gradle:
+      - mainnet
+
+# SHA-256 of the signing certificate, read from the published v0.5.0
+# whispa-mainnet.apk (META-INF/CERT.RSA). This is the app's permanent identity
+# to Android — it cannot be rotated without every user reinstalling.
+AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd1d4562f
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.5.0
+CurrentVersionCode: 500

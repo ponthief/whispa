@@ -284,6 +284,56 @@ JDK), no build timestamps in the output, and a verified rebuild before each
 release. It is the only way onto f-droid.org without breaking the update path,
 and it is a project of its own.
 
+### What the submission actually is
+
+A merge request against `gitlab.com/fdroid/fdroiddata` adding one file,
+`metadata/com.whispawallet.app.yml`. **The self-hosted repo is no part of it**
+and does not become an f-droid.org listing by any route; the two are unrelated
+publications of the same APK.
+
+```yaml
+Categories: [Money]
+License: MIT
+WebSite: https://whispawallet.com
+SourceCode: https://github.com/ponthief/whispa
+IssueTracker: https://github.com/ponthief/whispa/issues
+
+RepoType: git
+Repo: https://github.com/ponthief/whispa.git
+Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-release.apk
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 500
+    commit: v0.5.0
+    subdir: android/app
+    prebuild: npm ci
+    gradle:
+      - mainnet
+
+AllowedAPKSigningKeys: <sha256 of the release cert, lowercase hex, no colons>
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+```
+
+`Binaries` plus `AllowedAPKSigningKeys` is the pair that keeps the app's
+identity: F-Droid rebuilds from source, compares byte-for-byte against the APK
+at that URL, and on a match publishes **yours**. Without them it publishes its
+own build under its own certificate, which is cost 3 above. The fingerprint
+comes from the release APK itself:
+
+```bash
+apksigner verify --print-certs whispa-mainnet-release.apk | grep -i SHA-256
+```
+
+Two things about this app in particular, and both are work rather than
+paperwork. The buildserver has **no network during the Gradle phase**, so the
+npm install belongs in `prebuild` and the Gradle build has to resolve offline.
+And reproducibility has to survive a **JS bundle**: the Hermes bytecode and the
+asset packaging must come out identical, so node and npm are pinned alongside
+the NDK, build-tools and JDK.
+
 ## Order of work, if the official repo is the eventual goal
 
 1. Self-hosted repo (this document's first half). Done once, keeps working.

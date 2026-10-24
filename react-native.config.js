@@ -68,6 +68,23 @@ module.exports = {
         android: null,
       },
     },
+    // ANDROID ONLY, and the asymmetry is the whole point.
+    //
+    // react-native-camera-kit's Android side scans through
+    // com.google.mlkit:barcode-scanning — libbarhopper_v3.so and .tflite
+    // models, which F-Droid will not build. Android uses ZXing instead
+    // (android/.../scanner/ZxingScannerModule.kt), so camera-kit has nothing
+    // left to do there.
+    //
+    // iOS KEEPS IT. That podspec depends on React-Core and nothing else: the
+    // decode is AVFoundation's and MLKit was never in it. Excluding both
+    // platforms would have thrown away a working iOS scanner to solve an
+    // Android packaging problem. components/QRScanner.tsx branches to match.
+    'react-native-camera-kit': {
+      platforms: {
+        android: null,
+      },
+    },
     ...(NO_PUSH
       ? {
           '@react-native-firebase/app': EXCLUDED,

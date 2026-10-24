@@ -11,6 +11,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.flipper.ReactNativeFlipper
 import com.facebook.soloader.SoLoader
+import com.thrilla_btc.thrilla.scanner.ZxingScannerPackage
 import com.thrilla_btc.thrilla.updater.ApkInstallerPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -24,6 +25,10 @@ class MainApplication : Application(), ReactApplication {
               // for why downloading and installing an update is written here
               // rather than pulled in as a filesystem library.
               add(ApkInstallerPackage())
+              // QR scanning, with ZXing rather than MLKit — see
+              // scanner/ZxingScannerModule.kt and FDROID.md. Also local
+              // rather than autolinked, for the same reason.
+              add(ZxingScannerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

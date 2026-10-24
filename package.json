@@ -49,7 +49,8 @@
     "check:admin": "node scripts/check-admin-payouts.cjs",
     "check:lock": "node scripts/check-app-lock.cjs",
     "check:terms": "node scripts/check-terms.cjs",
-    "check:apksign": "node scripts/check-apk-signing.cjs"
+    "check:apksign": "node scripts/check-apk-signing.cjs",
+    "check:fdroid": "node scripts/check-fdroid.cjs"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^6.0.0",

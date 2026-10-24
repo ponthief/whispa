@@ -125,18 +125,36 @@ one that decides it.
 infrastructure and refuses non-free libraries. Two are in the APK today:
 
 - **Firebase Cloud Messaging** — solved by the no-push build above.
-- **Google MLKit barcode scanning** — NOT solved. It arrives through
-  `react-native-camera-kit`, which depends on `com.google.mlkit:barcode-scanning`
-  and brings `libbarhopper_v3.so` plus `.tflite` models. The QR scanner is
-  `src/components/QRScanner.tsx`. Replacing it means a FOSS scanner — ZXing
-  (`zxing-android-embedded`) is the usual answer — which is real work and a
-  user-visible change to a path used in every send.
+- **Google MLKit barcode scanning** — solved on 2026-10-24. It used to arrive
+  through `react-native-camera-kit`, which depends on
+  `com.google.mlkit:barcode-scanning` and brings `libbarhopper_v3.so` plus
+  `.tflite` models. Android now scans with ZXing
+  (`com.journeyapps:zxing-android-embedded`, Apache 2.0) through a native
+  module of our own, `android/.../scanner/ZxingScannerModule.kt`, and
+  camera-kit is excluded from Android autolinking.
+
+  iOS keeps camera-kit: its podspec depends on `React-Core` alone and the
+  decode is AVFoundation's, so MLKit was never on that side.
+  `src/components/QRScanner.tsx` branches on the platform and its contract to
+  callers is unchanged.
+
+  Visible cost: ZXing opens its own full-screen Activity, so on Android the
+  scanner is ZXing's screen rather than our Modal with its frame overlay. The
+  alternative was wrapping `DecoratedBarcodeView` in a custom ViewManager —
+  a camera lifecycle to get right, for a cosmetic match, on the screen that
+  starts every send.
 
 Check what is actually in a built APK rather than reasoning from the manifest:
 
 ```bash
 unzip -l app.apk | grep -E '\.so$|\.tflite$'
 ```
+
+After the ZXing change there should be no `.tflite` at all and no
+`libbarhopper_v3.so`. `npm run check:fdroid` holds the source side of this —
+that camera-kit stays out of the Android build, that the ZXing module is
+registered, and that neither camera-kit nor Firebase is statically imported —
+but only an APK proves what actually shipped.
 
 **2. A review that takes weeks to months**, plus an `fdroiddata` merge request
 carrying a build recipe.
@@ -156,8 +174,7 @@ and it is a project of its own.
 ## Order of work, if the official repo is the eventual goal
 
 1. Self-hosted repo (this document's first half). Done once, keeps working.
-2. Replace the MLKit scanner with a FOSS one. Until this lands, an official
-   submission cannot be accepted whatever else is true.
+2. ~~Replace the MLKit scanner with a FOSS one.~~ Done — ZXing, above.
 3. Make the build reproducible, and verify it against a clean rebuild.
 4. Submit to `fdroiddata` with `Binaries:` set so F-Droid publishes your APK
    rather than theirs.

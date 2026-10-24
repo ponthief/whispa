@@ -29,13 +29,22 @@ mkdir -p ~/dev/fdroid && cd ~/dev/fdroid
 fdroid init --keystore ~/dev/fdroid/repo-index.jks
 ```
 
-`fdroid init` creates the key that signs the **index**, not the APKs. It is a
-separate key from the app's release keystore and it is worth backing up: losing
-it means every subscriber has to remove and re-add the repo.
+**`init` does not make the key.** That flag only records the path in
+`config.yml`; `fdroid update` then fails with *"'…/repo-index.jks' does not
+exist! … you can create one using: fdroid update --create-key"*. So:
 
-It also writes `config.yml` **beside** `repo/`, with `keystorepass` and
-`keypass` in plaintext. That is why the web root below points *inside* `repo/`
-and never at its parent.
+```bash
+fdroid update --create-key
+```
+
+That key signs the **index**, not the APKs — a separate key from the app's
+release keystore, and the one worth backing up off the machine: losing it means
+every subscriber has to remove and re-add the repo. There is no re-signing your
+way out of it.
+
+`init` also writes `config.yml` **beside** `repo/`, holding that key's
+`keystorepass` and `keypass` in plaintext. That is why the web root below
+points *inside* `repo/` and never at its parent.
 
 Then set the repo's identity in `config.yml`:
 
@@ -47,6 +56,25 @@ repo_description: >-
   key as the GitHub releases.
 archive_older: 3
 ```
+
+Two more warnings `fdroid update` raises on a fresh repo, both one-time:
+
+```bash
+# repo_icon "repo/icons/icon.png" does not exist
+mkdir -p repo/icons
+cp <app-checkout>/fastlane/metadata/android/en-US/images/icon.png repo/icons/icon.png
+
+# <apk> (com.whispawallet.app) has no metadata — writes metadata/<appid>.yml
+fdroid update -c
+
+# then the real metadata, so the client shows more than a package name
+mkdir -p metadata/com.whispawallet.app
+cp -r <app-checkout>/fastlane/metadata/android/en-US metadata/com.whispawallet.app/
+```
+
+The URL you publish carries the index key's fingerprint, which `fdroid update`
+prints: `https://fdroid.whispawallet.com/repo?fingerprint=<SHA-256>`. Without
+it the client trusts whichever key answers first.
 
 ### Each release
 

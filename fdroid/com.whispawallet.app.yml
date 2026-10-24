@@ -6,9 +6,22 @@
 #
 # This is SEPARATE from the self-hosted repo in FDROID.md. That one serves our
 # own index at fdroid.whispawallet.com and has no connection to f-droid.org.
+#
+# RUN `fdroid rewritemeta com.whispawallet.app` IN THE FORK AFTER COPYING.
+# fdroiddata's CI enforces the canonical form, and rewritemeta produces it:
+# it reorders the fields and STRIPS EVERY COMMENT BELOW. That is fine — the
+# comments are our record, not theirs. Verified: rewriting loses no field.
+#
+# Checked against fdroidserver 2.4.5 with fdroiddata's own config/categories.yml:
+# `fdroid readmeta` and `fdroid lint com.whispawallet.app` both pass clean.
+# versionCode/versionName/applicationId below were read out of the published
+# v0.5.0 APK, not from build.gradle, so they match what Binaries points at.
 
+# Validated against fdroiddata's config/categories.yml, which is the list
+# `fdroid lint` checks and which has 116 entries. "Money" — the obvious guess,
+# and what the old flat list had — is not among them any more and fails lint.
 Categories:
-  - Money
+  - Wallet
 License: MIT
 WebSite: https://whispawallet.com
 SourceCode: https://github.com/ponthief/whispa

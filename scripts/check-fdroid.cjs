@@ -79,6 +79,36 @@ console.log('\nAndroid scans with ZXing, not MLKit');
     'Android has no such native module; it must be required lazily');
   ok('and it routes Android through the ZXing module', !!SCANNER &&
     /NativeModules\.ZxingScanner/.test(SCANNER));
+
+  // AND THE RESULT HAS TO SURVIVE A RE-RENDER.
+  //
+  // The scan runs in an effect, because the scanner is another Activity and
+  // there is nothing to render. SendScreen passes its callbacks inline
+  // (`onClose={() => setScanning(false)}`), so they get a fresh identity on
+  // every render — and it renders constantly: an amount field, a slider, fee
+  // tiers, a poller.
+  //
+  // With those callbacks in the effect's dependency array, a re-render while
+  // the scanner was open ran the effect's CLEANUP, and the in-flight scan
+  // then discarded its own result on the way back. The scanner opened, read
+  // the code, closed, and nothing happened — which is indistinguishable from
+  // a scanner that cannot read, and was reported as exactly that.
+  //
+  // Neither half of the fix breaks anything visibly if it is undone, which is
+  // why both are pinned rather than left to review.
+  const androidEffect = SCANNER &&
+    /function AndroidScanner[\s\S]*?\n\}/.exec(SCANNER);
+  ok('the launch effect depends on `visible` alone', !!androidEffect &&
+    /\}, \[visible\]\);/.test(androidEffect[0]),
+    'inline callbacks in the deps tear the effect down mid-scan');
+  ok('and the callbacks are read through refs', !!androidEffect &&
+    /onScannedRef\.current/.test(androidEffect[0]) &&
+    /onCloseRef\.current\(\)/.test(androidEffect[0]),
+    'that is what lets the deps be narrowed without a stale closure');
+  ok('the in-flight guard is mount state, not effect state', !!androidEffect &&
+    /mounted\.current/.test(androidEffect[0]) &&
+    !/let active = true/.test(androidEffect[0]),
+    'an effect-scoped flag is false by the time the scan returns');
 }
 
 // ── Firebase stays removable ────────────────────────────────────────────────

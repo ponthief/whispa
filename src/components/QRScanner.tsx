@@ -56,12 +56,51 @@ export default function QRScanner({ visible, onClose, onScanned }: Props) {
 /* ── Android: ZXing's own Activity ──────────────────────────────────────── */
 
 function AndroidScanner({ visible, onClose, onScanned }: Props) {
+  // THE CALLBACKS LIVE IN REFS, AND THAT IS THE WHOLE OF A BUG THAT MADE
+  // SCANNING SILENTLY DO NOTHING (2026-10-24).
+  //
+  // SendScreen passes them inline — `onClose={() => setScanning(false)}` —
+  // so they get a fresh identity on every one of its renders, and it renders
+  // constantly: an amount field, a slider, fee tiers, a poller. With them in
+  // the dependency array below, the sequence was:
+  //
+  //   1. visible → true, effect runs, the scanner Activity launches
+  //   2. SendScreen re-renders for any reason at all
+  //   3. deps changed, so React runs this effect's CLEANUP: active = false
+  //   4. the effect re-runs, sees launched.current, and returns early
+  //   5. the user scans; the promise from step 1 resolves; `if (!active)`
+  //      throws the result away
+  //
+  // The scanner opened, read the code, closed, and nothing happened. It looked
+  // like a scanner that could not read.
+  //
+  // So the effect depends on `visible` ALONE, and the result is guarded on
+  // whether the component is still mounted rather than on whether this
+  // particular effect invocation is still current. Refs rather than
+  // useCallback, because the fix has to hold however the PARENT chooses to
+  // pass its props — a caller is entitled to pass an inline arrow.
+  const onCloseRef = useRef(onClose);
+  const onScannedRef = useRef(onScanned);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onScannedRef.current = onScanned;
+  });
+
+  // Mount state, not effect state. A scan in flight has to survive every
+  // re-render of the screen underneath it.
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+
   // The launch is an effect rather than a render, because there is nothing to
   // render: the scanner is another Activity on top of ours.
   //
-  // `launched` makes it once per open. Without it any re-render while visible
-  // — a parent's state change, a keyboard dismissal — would stack a second
-  // scanner Activity on the first.
+  // `launched` makes it once per open. Without it a re-run of this effect
+  // would stack a second scanner Activity on the first.
   const launched = useRef(false);
 
   useEffect(() => {
@@ -72,39 +111,34 @@ function AndroidScanner({ visible, onClose, onScanned }: Props) {
     if (launched.current) return;
     launched.current = true;
 
-    let active = true;
     (async () => {
       try {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.CAMERA,
         );
-        if (!active) return;
+        if (!mounted.current) return;
         if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          onClose();
+          onCloseRef.current();
           return;
         }
         if (!Zxing) {
           // The module is missing — an old build, or a packaging mistake.
           // Closing is the honest outcome: there is no scanner, and the
           // recipient field can still be pasted into.
-          onClose();
+          onCloseRef.current();
           return;
         }
         const value = await Zxing.scan('Point at a QR code');
-        if (!active) return;
+        if (!mounted.current) return;
         // null is a cancel (back button), which is an ordinary outcome and
         // not an error — close without calling onScanned.
-        if (value) onScanned(String(value).trim());
-        onClose();
+        if (value) onScannedRef.current(String(value).trim());
+        onCloseRef.current();
       } catch {
-        if (active) onClose();
+        if (mounted.current) onCloseRef.current();
       }
     })();
-
-    return () => {
-      active = false;
-    };
-  }, [visible, onClose, onScanned]);
+  }, [visible]);
 
   return null;
 }

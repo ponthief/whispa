@@ -196,11 +196,32 @@ Then check it, before telling anyone the URL:
 sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 curl -sI https://fdroid.whispawallet.com/repo/entry.jar        # 200
 curl -sI https://fdroid.whispawallet.com/repo/index-v1.jar     # 200
-curl -s  https://fdroid.whispawallet.com/config.yml | head     # must 404
+
+# The one that matters: the keystore and its passwords must not be reachable.
+# Check the BODY, not the status. With handle_path routes and no catch-all,
+# an unmatched path answers 200 with content-length: 0 rather than 404, so a
+# status check reads as a failure when the server is in fact correct.
+for p in /config.yml /repo-index.jks /keystore.p12; do
+  printf '%s %s bytes\n' "$p" \
+    "$(curl -s https://fdroid.whispawallet.com$p | wc -c)"   # must be 0
+done
 ```
 
-That third one is the check worth keeping: it is the failure the web root
-guards against, and it is invisible from the client side.
+And confirm the index says what it should, since the address inside it is
+signed and is what every subscriber will use:
+
+```bash
+curl -s https://fdroid.whispawallet.com/repo/index-v1.jar -o /tmp/i.jar
+unzip -p /tmp/i.jar index-v1.json | python3 -c \
+  'import json,sys; d=json.load(sys.stdin); print(d["repo"]["address"])'
+```
+
+**The link on the landing page only works on a phone.** It is
+`https://fdroid.link/#<repo_url>?fingerprint=…`, and fdroid.link exists to
+hand that URL to the F-Droid app over an Android intent — in a desktop browser
+there is nothing to hand it to and it errors, which looks exactly like a
+broken repo and is not one. Add the repo by pasting the fingerprinted URL into
+F-Droid → Settings → Repositories → +, or by scanning `repo/index.png`.
 
 ## The no-push build
 

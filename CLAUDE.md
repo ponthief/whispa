@@ -86,6 +86,7 @@ npm run check:scan          # a rescan reaches back at least as far as it says
 npm run check:colors        # the two colours written in both theme.ts and colors.xml
 npm run check:terms         # one terms version, in two repos, behind one tick box
 npm run check:apksign       # which key signs a release, answered in one place
+npm run check:fdroid        # no proprietary scanner, and push can be left out
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -393,14 +394,33 @@ is "is the native side here", and a build flag can disagree with the APK while
 that cannot. Settings → Notifications renders "Alerts unavailable in this
 build" rather than a switch storing a preference nothing can honour.
 
-**MLKit is still in there, and it is the blocker for the official repo.** Not
-via Capacitor — `react-native.config.js` excludes that — but through
-`react-native-camera-kit`, which depends on
-`com.google.mlkit:barcode-scanning` and brings `libbarhopper_v3.so` and
-`.tflite` models. `components/QRScanner.tsx` is the user of it. Until that is
-a FOSS scanner, an official submission cannot be accepted whatever else is
-true. Check a real APK rather than the manifest:
-`unzip -l app.apk | grep -E '\.so$|\.tflite$'`.
+**MLKit is gone from the Android APK** (2026-10-24). It came through
+`react-native-camera-kit`, whose Android side depends on
+`com.google.mlkit:barcode-scanning` — `libbarhopper_v3.so` and `.tflite`
+models. Android now scans with **ZXing**
+(`com.journeyapps:zxing-android-embedded`, Apache 2.0) through
+`scanner/ZxingScannerModule.kt`, registered by hand in `MainApplication`
+beside `ApkInstallerPackage`.
+
+**camera-kit is excluded from ANDROID autolinking only, and the asymmetry is
+deliberate.** Its podspec depends on `React-Core` and nothing else: the iOS
+decode is AVFoundation's and MLKit was never on that side, so excluding both
+platforms would have thrown away a working, already-free scanner to solve an
+Android packaging problem. `components/QRScanner.tsx` branches, and its
+contract to callers is unchanged — renders on `visible`, calls `onScanned`
+once with a trimmed string, then `onClose`.
+
+Two consequences worth knowing. **ZXing opens its own Activity**, so on
+Android the scanner is ZXing's screen, not our Modal with the frame overlay —
+`DecoratedBarcodeView` in a custom ViewManager would have matched the old look
+and meant owning a camera lifecycle on the screen that starts every send. And
+**camera-kit must not be imported statically** in `QRScanner.tsx`: on Android
+the import resolves and hands back a native module that is not linked, which
+is the same failure the Firebase import had.
+
+`check:fdroid` pins all of it. Verify a real APK too, because only that shows
+what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no
+`.tflite` and no `libbarhopper_v3.so`.
 
 The repo had **no LICENSE file** until 2026-10-24, while asserting MIT in the
 README, both zapstore manifests, `TermsView.vue` and `check:terms`. F-Droid

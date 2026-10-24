@@ -371,6 +371,20 @@ dependencies {
     // compileSdk 34; Gradle takes the higher of this and React Native's.
     implementation("androidx.core:core:1.12.0")
 
+    // QR scanning (scanner/ZxingScannerModule.kt).
+    //
+    // ZXing, not MLKit, and that is the point rather than a preference.
+    // react-native-camera-kit scanned through com.google.mlkit:barcode-scanning,
+    // which ships libbarhopper_v3.so and .tflite models — closed binaries
+    // F-Droid will not build. zxing-android-embedded is Apache 2.0 over ZXing
+    // core, pulls in no Google Play Services, and is what most FOSS Android
+    // scanners use. See FDROID.md.
+    //
+    // camera-kit is still a dependency: it serves iOS, where its podspec needs
+    // React-Core alone and the decode is AVFoundation's. It is excluded from
+    // ANDROID autolinking in react-native.config.js.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

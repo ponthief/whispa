@@ -434,22 +434,64 @@ so far.** Worth the whole sequence, because the pattern is the lesson:
 3. Still broken, now with the failure paths made loud (each names itself in
    an Alert) → **the camera screen appears and the decode never fires**, with
    no alert. So launch, module and permission are all fine.
+4. Reverted the step-1 tuning to isolate it → **stock decoded nothing either.**
+   So the tuning was not the cause, and four builds had now ruled out nothing,
+   because step 1 changed four things at once (continuous focus,
+   SCENE_MODE_BARCODE, metering, and `fullSensor` in the manifest) and the
+   revert put all four back at once.
+5. **A device logcat, which is what should have happened at step 3.** It ended
+   the guessing.
 
-That left the camera tuning from step 1 as the only thing here that no other
-consumer of the library does — added speculatively, for a symptom that turned
-out to be step 2. **`WhispaCaptureActivity` is gone and the stock
-`CaptureActivity` is back.** `SCENE_MODE_BARCODE` is the specific suspect:
-under Camera1 a scene mode can make focus mode read-only, colliding with the
-continuous focus requested alongside it, and a camera pinned to fixed focus
-returns frames forever without ever resolving a code held close.
+**What the logcat settled.** `CameraPreview: Starting preview` is the line
+immediately before `previewActive = true; previewStarted()`, and
+`BarcodeView.previewStarted()` calls `startDecoderThread()` — with the mode
+already SINGLE from `CaptureManager.decode()`. A second camera stream
+(`YCbCr_420_888`, `CPU_READ_OFTEN`) is configured 0.4s later, which is the
+decoder asking for its first frame, and ~380 frames are delivered over the 13
+seconds the screen is open. `DecodeHintManager: Hints from the Intent:
+{TRY_HARDER=true}` confirms the intent is parsed. No exception anywhere.
+
+So **the decoder runs, frames reach it, and it cannot read them.** Not the
+wiring, not the module, not the permission, not the intent: the image.
+
+And the same log names the one image setting we control:
+
+```
+CameraConfiguration: Requesting focus mode value from among: [auto]
+CameraConfiguration: Supported focus mode values:
+                         [auto, macro, continuous-video, continuous-picture]
+focus-distances=Infinity,Infinity,Infinity
+```
+
+A list of one is `CameraConfigurationUtils.setFocus` taking its
+`FocusMode.AUTO` branch, the library default. Under Camera1 `auto` moves the
+lens only when something calls `autoFocus()`, which `AutoFocusManager` does
+about every two seconds, and the lens reports as parked at infinity — which
+will not resolve a dense QR at reading distance. MLKit ran through camera-kit
+with continuous focus.
+
+**So `WhispaCaptureActivity` is back, with continuous focus and nothing else**,
+and the manifest keeps the library's own `sensorLandscape` rather than the
+`fullSensor` of the first attempt. That is the one combination step 1 never
+tested, because the scene mode it set alongside can make focus mode read-only.
+Whether it took is visible in the log without reading any code: the same line
+should become `[continuous-picture, continuous-video, auto]`.
 
 `TRY_HARDER` stays — it is an in-library decode hint passed as an intent
 extra named after the `DecodeHintType`, and cannot affect the camera.
 
-**If tuning is wanted again, one setting per build, each confirmed to still
-read at all.** Three rounds went on stacked speculation, and the thing that
-finally made the reports useful was making every failure path say which one
-it was rather than closing the sheet in silence.
+**One setting per build, each confirmed to still read at all**, and
+`check:fdroid` now counts them rather than trusting review: it fails if
+`WhispaCaptureActivity` assigns more than one `settings.*`, and raising that
+number is the deliberate act that adds the second variable. It also checks
+that the Activity the module launches is declared in the manifest, because
+`startActivityForResult` on an undeclared one throws
+`ActivityNotFoundException` and nothing in the Kotlin says so.
+
+If continuous focus alone does not fix it, the next lever is the **image size,
+not the camera**: in landscape the preview is 2412×1080 and ZXing's framing
+rect insets 10%, so every decode attempt is a 2196×864 crop — about 1.9 MP
+through `HybridBinarizer` with `TRY_HARDER` on. One setting, next build.
 
 `check:fdroid` pins all of it. Verify a real APK too, because only that shows
 what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no

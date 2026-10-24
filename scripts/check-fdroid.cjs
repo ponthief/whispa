@@ -54,6 +54,8 @@ console.log('\nAndroid scans with ZXing, not MLKit');
   const GRADLE = read('android/app/build.gradle');
   const MAIN = read('android/app/src/main/java/com/thrilla_btc/thrilla/MainApplication.kt');
   const MOD = read('android/app/src/main/java/com/thrilla_btc/thrilla/scanner/ZxingScannerModule.kt');
+  const CAPTURE = read('android/app/src/main/java/com/thrilla_btc/thrilla/scanner/WhispaCaptureActivity.kt');
+  const MANIFEST = read('android/app/src/main/AndroidManifest.xml');
   const SCANNER = read('src/components/QRScanner.tsx');
 
   ok('camera-kit is excluded from ANDROID autolinking', !!CFG &&
@@ -70,6 +72,46 @@ console.log('\nAndroid scans with ZXing, not MLKit');
   ok('and is registered in MainApplication', !!MAIN &&
     /add\(ZxingScannerPackage\(\)\)/.test(MAIN),
     'a native module nobody registers is a module that is not there');
+
+  // THE ACTIVITY THE MODULE LAUNCHES HAS TO BE IN THE MANIFEST.
+  //
+  // startActivityForResult on an undeclared Activity throws
+  // ActivityNotFoundException, which the module reports as "launch-failed" —
+  // loud, but only on a device, after a CI build and an install. Nothing in
+  // the Kotlin says the declaration is missing.
+  const launched = MOD && /Intent\(activity,\s*(\w+)::class\.java\)/.exec(MOD);
+  ok('the module names an Activity to launch', !!launched);
+  if (launched) {
+    const name = launched[1];
+    // The library's own CaptureActivity is declared by the AAR, so it needs
+    // nothing here; one of ours does.
+    const ours = name !== 'CaptureActivity';
+    ok(`and ${name} is declared in the manifest`,
+      !ours || (!!MANIFEST && new RegExp(`android:name="\\.scanner\\.${name}"`).test(MANIFEST)),
+      'startActivityForResult would throw ActivityNotFoundException');
+  }
+
+  // ONE CAMERA SETTING PER BUILD.
+  //
+  // The first WhispaCaptureActivity set continuous focus, SCENE_MODE_BARCODE
+  // and metering, and changed the manifest orientation in the same commit.
+  // Four variables for one symptom: when it failed it ruled out nothing, and
+  // the revert that followed ruled out nothing either, because it put all four
+  // back at once. Three builds went that way.
+  //
+  // This is not a ban on tuning. It is a ban on tuning BLIND: add the second
+  // setting in its own build, once the first is known to read at all, and
+  // raise this number in the same commit so the next person inherits the rule
+  // rather than the exception.
+  if (CAPTURE) {
+    const MAX_SETTINGS = 1;
+    const tuned = (CAPTURE.match(/^\s*settings\.\w+\s*=/gm) || []);
+    ok(`WhispaCaptureActivity changes at most ${MAX_SETTINGS} camera setting`,
+      tuned.length <= MAX_SETTINGS,
+      tuned.length
+        ? `sets ${tuned.length}: ${tuned.map((t) => t.trim().replace(/\s*=$/, '')).join(', ')}`
+        : '');
+  }
 
   // A STATIC import of camera-kit would resolve on Android and then hand back
   // a native module that is not linked in — the same failure mode the Firebase

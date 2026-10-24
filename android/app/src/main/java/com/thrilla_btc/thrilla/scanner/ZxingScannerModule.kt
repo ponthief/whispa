@@ -10,7 +10,6 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.google.zxing.DecodeHintType
 import com.google.zxing.client.android.Intents
-import com.journeyapps.barcodescanner.CaptureActivity
 
 /**
  * QR scanning with ZXing, so the APK carries no proprietary blob.
@@ -29,24 +28,29 @@ import com.journeyapps.barcodescanner.CaptureActivity
  * the platform. Replacing both would have thrown away a working iOS path to
  * solve an Android packaging problem.
  *
- * STOCK CaptureActivity, AND THAT IS A DELIBERATE RETREAT (2026-10-24).
+ * WHICH ACTIVITY, AND WHY IT MOVED TWICE (2026-10-24).
  *
- * It briefly launched a WhispaCaptureActivity subclass that set
- * continuous focus, SCENE_MODE_BARCODE and metering, added to fix a report of
- * "will not read a QR off a monitor". That report turned out to be a
- * JavaScript bug — the result was arriving and being discarded — so the
- * camera tuning was treating a symptom that did not exist. With the real bug
- * fixed the scanner STILL showed a live preview and decoded nothing, and the
- * tuning is the only thing here that no other consumer of this library does.
+ * It launched a WhispaCaptureActivity that set continuous focus,
+ * SCENE_MODE_BARCODE and metering — and changed the manifest orientation in
+ * the same commit. Four variables, added speculatively for a report that
+ * turned out to be a JavaScript bug (the result was arriving and being
+ * discarded). With that bug fixed the scanner still decoded nothing, so the
+ * whole subclass was reverted to isolate it.
  *
- * SCENE_MODE_BARCODE is the specific suspect: under the Camera1 API a scene
- * mode may make focus mode read-only, which collides with the continuous
- * focus requested in the same breath. A camera pinned to fixed focus returns
- * frames forever and never resolves a code held close — exactly the symptom.
+ * Stock decoded nothing either, and a device logcat then narrowed it a long
+ * way: the decoder thread RUNS, frames reach it, and it cannot read them —
+ * so the fault is the image. The same log shows the camera being asked for
+ * focus mode `auto` on a device that offers `continuous-picture`, with the
+ * lens parked at infinity.
  *
- * So this is back to the path the library tests and every other caller uses.
- * If tuning is wanted later it goes back ONE setting at a time, each with a
- * build that confirms the scanner still reads at all.
+ * So WhispaCaptureActivity is back, carrying continuous focus and NOTHING
+ * else — the one combination the earlier commit never tested, because the
+ * scene mode it set alongside can make focus mode read-only under Camera1.
+ * Its own header has the log lines and the signature that says whether the
+ * setting took.
+ *
+ * ONE SETTING PER BUILD, each confirmed to still read at all. The four-at-once
+ * commit is why that rule exists.
  *
  * WHY AN ACTIVITY RATHER THAN AN EMBEDDED VIEW. zxing-android-embedded offers
  * both: `CaptureActivity`, launched with an Intent, and `DecoratedBarcodeView`,
@@ -122,7 +126,7 @@ class ZxingScannerModule(
     }
 
     val intent =
-        Intent(activity, CaptureActivity::class.java).apply {
+        Intent(activity, WhispaCaptureActivity::class.java).apply {
           action = Intents.Scan.ACTION
           // QR only. The wallet has no use for a barcode on a tin of beans,
           // and narrowing the formats makes the decode both faster and less

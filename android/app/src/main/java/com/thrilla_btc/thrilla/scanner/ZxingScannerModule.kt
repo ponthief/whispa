@@ -10,6 +10,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.google.zxing.DecodeHintType
 import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.CaptureActivity
 
 /**
  * QR scanning with ZXing, so the APK carries no proprietary blob.
@@ -27,6 +28,25 @@ import com.google.zxing.client.android.Intents
  * from ANDROID autolinking only, and `components/QRScanner.tsx` branches on
  * the platform. Replacing both would have thrown away a working iOS path to
  * solve an Android packaging problem.
+ *
+ * STOCK CaptureActivity, AND THAT IS A DELIBERATE RETREAT (2026-10-24).
+ *
+ * It briefly launched a WhispaCaptureActivity subclass that set
+ * continuous focus, SCENE_MODE_BARCODE and metering, added to fix a report of
+ * "will not read a QR off a monitor". That report turned out to be a
+ * JavaScript bug — the result was arriving and being discarded — so the
+ * camera tuning was treating a symptom that did not exist. With the real bug
+ * fixed the scanner STILL showed a live preview and decoded nothing, and the
+ * tuning is the only thing here that no other consumer of this library does.
+ *
+ * SCENE_MODE_BARCODE is the specific suspect: under the Camera1 API a scene
+ * mode may make focus mode read-only, which collides with the continuous
+ * focus requested in the same breath. A camera pinned to fixed focus returns
+ * frames forever and never resolves a code held close — exactly the symptom.
+ *
+ * So this is back to the path the library tests and every other caller uses.
+ * If tuning is wanted later it goes back ONE setting at a time, each with a
+ * build that confirms the scanner still reads at all.
  *
  * WHY AN ACTIVITY RATHER THAN AN EMBEDDED VIEW. zxing-android-embedded offers
  * both: `CaptureActivity`, launched with an Intent, and `DecoratedBarcodeView`,
@@ -102,7 +122,7 @@ class ZxingScannerModule(
     }
 
     val intent =
-        Intent(activity, WhispaCaptureActivity::class.java).apply {
+        Intent(activity, CaptureActivity::class.java).apply {
           action = Intents.Scan.ACTION
           // QR only. The wallet has no use for a barcode on a tin of beans,
           // and narrowing the formats makes the decode both faster and less

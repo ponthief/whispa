@@ -82,27 +82,6 @@
         </intent-filter>
       </activity>
 
-      <!-- The QR scanner (scanner/WhispaCaptureActivity.kt).
-
-           Declared here because it is ours. zxing-android-embedded declares
-           its own CaptureActivity as sensorLandscape, which turns a phone
-           held upright into a sideways preview with a letterbox framing rect.
-           fullSensor follows how the phone is actually held; CaptureManager
-           still locks to whatever that was at launch, so the preview does not
-           flip mid-scan.
-
-           The rest mirrors the library's own declaration: the scanner holds
-           no state worth restoring, and a soft keyboard over a camera preview
-           is never wanted. -->
-      <activity
-        android:name=".scanner.WhispaCaptureActivity"
-        android:clearTaskOnLaunch="true"
-        android:screenOrientation="fullSensor"
-        android:stateNotNeeded="true"
-        android:theme="@style/zxing_CaptureTheme"
-        android:windowSoftInputMode="stateAlwaysHidden"
-        android:exported="false" />
-
       <!-- What a push notification looks like.
            Without this, FCM falls back to the launcher icon: the small icon is
            masked to a white silhouette of a full-colour icon, which is the

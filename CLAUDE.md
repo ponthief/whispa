@@ -418,36 +418,38 @@ and meant owning a camera lifecycle on the screen that starts every send. And
 the import resolves and hands back a native module that is not linked, which
 is the same failure the Firebase import had.
 
-**ZXing's defaults could not read a QR off a monitor**, reported the same day
-the swap shipped, and all four reasons are the backlit-screen case that MLKit
-was quietly absorbing:
+**The scanner reports chased three different causes, and only one was real
+so far.** Worth the whole sequence, because the pattern is the lesson:
 
-- `focusMode = AUTO` — periodic autofocus that hunts at the close range a
-  monitor is read from. `WhispaCaptureActivity` sets **continuous** focus.
-- `barcodeSceneModeEnabled = false` — the camera HAL has a mode tuned for
-  codes and nothing was asking for it.
-- `meteringEnabled = false` — a monitor IS a light source, and centre-weighted
-  metering is what stops auto-exposure blowing the white modules out.
-- no `TRY_HARDER` — ZXing does one decode pass unless asked. The hint arrives
-  as an intent extra **named after the `DecodeHintType`**, because
-  `DecodeHintManager` turns any such extra into that hint and the Void-typed
-  ones are flags, so the key is the whole of it.
+1. "Will not read a QR off a monitor" → I tuned the camera (continuous focus,
+   SCENE_MODE_BARCODE, metering) and added the `TRY_HARDER` hint. ZXing's
+   defaults genuinely are weaker than MLKit's on a backlit screen, so this
+   looked right.
+2. Still broken → the actual bug was in **JavaScript**: `SendScreen` passes
+   `onClose`/`onScanned` as inline arrows, they were in the launch effect's
+   dependency array, and any re-render of that screen ran the effect's
+   cleanup and made the in-flight scan discard its own result. The scanner
+   read the code and threw it away. Callbacks are in refs now and the effect
+   depends on `visible` alone; `check:fdroid` pins both halves.
+3. Still broken, now with the failure paths made loud (each names itself in
+   an Alert) → **the camera screen appears and the decode never fires**, with
+   no alert. So launch, module and permission are all fine.
 
-**The timing of the first three is the part that is easy to get wrong.**
-`CaptureActivity.onCreate` runs `initializeContent()` and then
-`CaptureManager.initializeFromIntent()`, and that second call constructs a
-**fresh `CameraSettings`** and installs it over anything set before it. So
-they cannot go in an `initializeContent()` override — they go after
-`super.onCreate`, which is still before `onResume` opens the camera.
+That left the camera tuning from step 1 as the only thing here that no other
+consumer of the library does — added speculatively, for a symptom that turned
+out to be step 2. **`WhispaCaptureActivity` is gone and the stock
+`CaptureActivity` is back.** `SCENE_MODE_BARCODE` is the specific suspect:
+under Camera1 a scene mode can make focus mode read-only, colliding with the
+continuous focus requested alongside it, and a camera pinned to fixed focus
+returns frames forever without ever resolving a code held close.
 
-`WhispaCaptureActivity` is also declared **`fullSensor`** in our manifest. The
-library declares its own `CaptureActivity` as `sensorLandscape`, which turns a
-phone held upright into a sideways preview with a letterbox framing rect.
+`TRY_HARDER` stays — it is an in-library decode hint passed as an intent
+extra named after the `DecodeHintType`, and cannot affect the camera.
 
-It captures the view through the `initializeContent()` override rather than
-`findViewById(com.google.zxing.client.android.R.id.…)`: reaching into the
-library's R class is a coin toss under AGP 8's non-transitive R classes, and
-the hook needs no R at all.
+**If tuning is wanted again, one setting per build, each confirmed to still
+read at all.** Three rounds went on stacked speculation, and the thing that
+finally made the reports useful was making every failure path say which one
+it was rather than closing the sheet in silence.
 
 `check:fdroid` pins all of it. Verify a real APK too, because only that shows
 what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no

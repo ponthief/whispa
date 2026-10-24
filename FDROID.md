@@ -156,6 +156,19 @@ that camera-kit stays out of the Android build, that the ZXing module is
 registered, and that neither camera-kit nor Firebase is statically imported —
 but only an APK proves what actually shipped.
 
+**CI does that now.** The `fdroid-blobs` job in `.github/workflows/build-android.yml`
+builds `npm run apk:fdroid` on every push and inspects the result: no
+`.tflite`, no `libbarhopper_v3.so`, no MLKit native library — and, before any
+of those, that the listing it is reading is of a real APK, because a check
+shaped "X is absent" passes just as happily when it inspects nothing. It also
+asserts that `WHISPA_NO_PUSH=1` empties Firebase out of `react-native config`
+while the unflagged build still has it, so the exclusion cannot start passing
+because there was nothing to exclude.
+
+Its artifact is **release-built but debug-signed** — the job takes no
+keystore. Use it to look inside, never to publish. The release build is still
+the local `npm run apk:fdroid` above, with the real key.
+
 **2. A review that takes weeks to months**, plus an `fdroiddata` merge request
 carrying a build recipe.
 

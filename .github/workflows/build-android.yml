@@ -682,3 +682,199 @@ jobs:
         run: |
           shred -u android/app/release.keystore 2>/dev/null \
             || rm -f android/app/release.keystore
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Does the F-Droid build actually contain no proprietary blobs?
+  #
+  # Everything else asserting that is SOURCE-side: `npm run check:fdroid` reads
+  # react-native.config.js, build.gradle and MainApplication.kt and concludes
+  # that camera-kit is excluded and ZXing is wired in. FDROID.md has said from
+  # the start that only an APK proves what shipped — and until this job, that
+  # command had never been run against one. `npm run apk:fdroid` had never been
+  # built at all, so its first failure would have been found by hand, later.
+  #
+  # This is a VERIFICATION job, not a release pipeline. It takes no keystore,
+  # so the artifact is release-BUILT but debug-SIGNED and must not be
+  # published; the per-release build is still local `npm run apk:fdroid` with
+  # the real key (FDROID.md). Signing does not change which .so files are
+  # packaged, which is the only thing being inspected here.
+  #
+  # No Firebase secret either, deliberately: the point of this build is that
+  # WHISPA_NO_PUSH=1 leaves the native side out, and handing it
+  # google-services.json would be testing the opposite.
+  fdroid-blobs:
+    name: f-droid build carries no blobs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # JDK 17 for the same reason as the build job: AGP 8.1.1 fails on 21.
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cheap, and fails in seconds rather than after an eight-minute build.
+      - name: Source-side checks first
+        run: npm run check:fdroid
+
+      # The autolinking exclusion is the whole mechanism, so confirm it took
+      # before spending a build on it. `react-native config` is what Gradle
+      # reads to decide which native modules exist.
+      - name: WHISPA_NO_PUSH drops Firebase from autolinking
+        run: |
+          WITH=$(npx react-native config | grep -c firebase || true)
+          WITHOUT=$(WHISPA_NO_PUSH=1 npx react-native config | grep -c firebase || true)
+          echo "firebase mentions in autolinking config: normal=$WITH  no-push=$WITHOUT"
+          if [ "$WITHOUT" -ne 0 ]; then
+            echo "::error::WHISPA_NO_PUSH did not drop Firebase from autolinking"
+            exit 1
+          fi
+          # The negative control. If a refactor ever makes BOTH zero, the
+          # assertion above stops proving anything and starts passing for the
+          # wrong reason — so that is a failure too.
+          if [ "$WITH" -le 0 ]; then
+            echo "::error::Firebase is absent even WITHOUT the flag, so the check above proves nothing"
+            exit 1
+          fi
+
+      # Run the documented command verbatim — part of what is being verified is
+      # that `npm run apk:fdroid` works at all. It nests `npm run apk:mainnet`,
+      # so extra CLI args would not reach Gradle; configuration goes by env.
+      - name: Build the no-push APK
+        env:
+          # gradle.properties asks for -Xmx2048m, sized for a desktop also
+          # running an editor; a runner has its 16GB to itself.
+          #
+          # Heap only, no MaxMetaspaceSize: GRADLE_OPTS is split on whitespace,
+          # so a two-argument value cannot survive it the way the quoted
+          # -Dorg.gradle.jvmargs="..." in the build job does. Setting
+          # org.gradle.jvmargs at all replaces the properties-file value
+          # entirely, so metaspace falls back to the JDK default — which is
+          # unbounded, i.e. looser than the 512m being replaced, not tighter.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g
+        run: |
+          chmod +x android/gradlew
+          npm run apk:fdroid
+
+      - name: Inspect the APK
+        id: inspect
+        run: |
+          APK="$(find android/app/build/outputs/apk -name '*.apk' -print | head -1)"
+          if [ -z "$APK" ]; then echo "::error::no APK was produced"; exit 1; fi
+          APK="$(realpath "$APK")"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "Inspecting $APK"
+
+          # -Z1 lists bare entry names: no column guessing, no trouble with
+          # spaces, unlike parsing `unzip -l`.
+          unzip -Z1 "$APK" > /tmp/entries.txt
+          ENTRIES=$(wc -l < /tmp/entries.txt)
+          echo "$ENTRIES entries"
+
+          # THE CONTROL, and it is the point. Every assertion below is of the
+          # form "X is absent", and the way those pass by accident is by
+          # inspecting nothing — a wrong path, an unzip that quietly failed, an
+          # empty list. So first prove the listing is real by finding things we
+          # KNOW are in it.
+          if [ "$ENTRIES" -le 100 ]; then
+            echo "::error::only $ENTRIES entries — the listing is wrong, not the APK"
+            exit 1
+          fi
+          if ! grep -qE 'libreactnative|libhermes|libjsc' /tmp/entries.txt; then
+            echo "::error::no React Native native library found — this is not a listing of a built APK"
+            exit 1
+          fi
+
+          fail=0
+
+          # MLKit: the one F-Droid would refuse, and the reason the scanner
+          # moved to ZXing. FDROID.md names both artefacts by hand.
+          if grep -E '\.tflite$' /tmp/entries.txt; then
+            echo "::error::.tflite model(s) in the APK — MLKit is back"
+            fail=1
+          fi
+          if grep -i 'barhopper' /tmp/entries.txt; then
+            echo "::error::libbarhopper_v3.so in the APK — MLKit is back"
+            fail=1
+          fi
+          if grep -E '^lib/.*/lib.*(mlkit|vision).*\.so$' /tmp/entries.txt; then
+            echo "::error::an MLKit/vision native library is in the APK"
+            fail=1
+          fi
+
+          echo "--- native libraries packaged ---"
+          grep -E '^lib/' /tmp/entries.txt | sed 's|^lib/[^/]*/||' | sort -u
+
+          exit $fail
+
+      # REPORTED, NOT ENFORCED, and the distinction is deliberate.
+      #
+      # The route this repo took is a SELF-HOSTED F-Droid repo, which has no
+      # policy about proprietary dependencies — the blob checks above are the
+      # real gate. Non-free Java in the dex only becomes a hard requirement if
+      # an official f-droid.org submission happens, and that needs reproducible
+      # builds first (FDROID.md, step 3).
+      #
+      # It is also an assertion nobody has ever seen the output of, and a check
+      # that goes red on its first real run teaches people to ignore it. Read
+      # what this prints; turn it into a failure once it is known to be right.
+      #
+      # It looks at the dex ONLY, never the JS bundle: the npm packages stay
+      # installed so `require('@react-native-firebase/messaging')` in
+      # services/push.ts still resolves, and the bundle mentioning Firebase is
+      # by design, not a finding.
+      - name: Report non-free class names in the dex
+        run: |
+          APK='${{ steps.inspect.outputs.apk }}'
+          rm -rf /tmp/dex && mkdir -p /tmp/dex && cd /tmp/dex
+          unzip -o -q "$APK" 'classes*.dex' || true
+          ls -1 classes*.dex 2>/dev/null || echo "(no dex extracted)"
+          found=0
+          for pattern in com/google/firebase io/invertase/firebase com/google/mlkit com/google/android/gms; do
+            n=$(cat classes*.dex 2>/dev/null | strings | grep -c "$pattern" || true)
+            printf '%-28s %s\n' "$pattern" "$n"
+            if [ "$n" -gt 0 ]; then found=1; fi
+          done
+          {
+            echo "### F-Droid build: dex contents"
+            echo
+            if [ "$found" -eq 0 ]; then
+              echo "No Firebase, MLKit or Play Services class names in the dex."
+            else
+              echo "Non-free class names are present — counts in the job log."
+              echo
+              echo "Not a failure: the self-hosted repo has no policy about this."
+              echo "It would be one for an f-droid.org submission."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fdroid-nopush-release-build-DEBUG-SIGNED
+          path: ${{ steps.inspect.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### F-Droid no-push build"
+            echo
+            echo "Release-built, **debug-signed** — for inspection only, never publish it."
+            echo "The release build is still local \`npm run apk:fdroid\` with the real key."
+          } >> "$GITHUB_STEP_SUMMARY"

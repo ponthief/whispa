@@ -473,10 +473,12 @@ about every two seconds, and the lens reports as parked at infinity — which
 will not resolve a dense QR at reading distance. MLKit ran through camera-kit
 with continuous focus.
 
-**So `WhispaCaptureActivity` is back, with continuous focus and nothing else**,
-and the manifest keeps the library's own `sensorLandscape` rather than the
-`fullSensor` of the first attempt. That is the one combination step 1 never
-tested, because the scene mode it set alongside can make focus mode read-only.
+**So `WhispaCaptureActivity` came back, with continuous focus and nothing
+else**, and the manifest mirrored the library's own `sensorLandscape` rather
+than the `fullSensor` of the first attempt — for that one build only, so the
+focus mode was the sole variable (it is `fullUser` now; see below). That is
+the one combination step 1 never tested, because the scene mode it set
+alongside can make focus mode read-only.
 Whether it took is visible in the log without reading any code: the same line
 should become `[continuous-picture, continuous-video, auto]`.
 
@@ -560,9 +562,22 @@ rect insets 10% and then squares itself off, so landscape fed the decoder a
 2196×864 letterbox and portrait feeds it an 864×864 square — a third of the
 pixels per attempt, in the shape a QR actually is.
 
-`check:fdroid` pins all of it. Verify a real APK too, because only that shows
-what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no
-`.tflite` and no `libbarhopper_v3.so`.
+`check:fdroid` pins all of it, and it is all **source-side** — config files
+read, conclusions drawn. Only an APK shows what shipped, so the
+**`fdroid-blobs` CI job** builds `npm run apk:fdroid` and looks inside one:
+no `.tflite`, no `libbarhopper_v3.so`, no MLKit native library. By hand it is
+`unzip -l app.apk | grep -E '\.so$|\.tflite$'`.
+
+Three things about that job are deliberate. It **proves the listing is real
+before asserting anything is absent** — every check in it has the form "X is
+not here", and the way those pass by accident is by inspecting nothing, so it
+first requires 100+ entries and a React Native `.so`. It carries **no
+keystore and no Firebase secret**: the artifact is release-built but
+debug-signed and must never be published, and handing the no-push build a
+`google-services.json` would test the opposite of the point. And the
+**non-free classes in the dex are reported, not enforced** — the self-hosted
+repo has no policy about those, that only binds an f-droid.org submission,
+and a check nobody has seen the output of should not go red on its first run.
 
 The repo had **no LICENSE file** until 2026-10-24, while asserting MIT in the
 README, both zapstore manifests, `TermsView.vue` and `check:terms`. F-Droid

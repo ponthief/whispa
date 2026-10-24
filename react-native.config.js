@@ -49,12 +49,16 @@ module.exports = {
   // Capacitor ships. Both platforms are pinned to null here so the exclusion
   // is stated rather than relying on that asymmetry staying as it is.
   //
-  // The React Native app does its own QR scanning with react-native-camera-kit
-  // (see src/components/QRScanner.tsx), so nothing on the mobile side loses a
-  // capability. Note this does NOT remove MLKit from the Android APK:
-  // react-native-camera-kit depends on com.google.mlkit:barcode-scanning
-  // itself, which is where libbarhopper_v3.so and the .tflite models come
-  // from.
+  // The React Native app does its own QR scanning (see
+  // src/components/QRScanner.tsx), so nothing on the mobile side loses a
+  // capability by excluding this one. Android scans with ZXing and iOS with
+  // camera-kit; the camera-kit entry below has the asymmetry.
+  //
+  // This exclusion is not what removed MLKit from the APK — that is the
+  // camera-kit entry below, and it only became true on 2026-10-24. Before
+  // then camera-kit scanned through com.google.mlkit:barcode-scanning on
+  // Android, which is where libbarhopper_v3.so and the .tflite models came
+  // from, and this comment said so.
   dependencies: {
     '@capacitor-mlkit/barcode-scanning': {
       platforms: {

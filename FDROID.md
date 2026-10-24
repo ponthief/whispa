@@ -1,0 +1,166 @@
+# Publishing WhiSPa through F-Droid
+
+Two routes exist and they are not the same product decision. This repo is set
+up for the first; the second is written down because the first is a step
+towards it.
+
+## The route taken: a self-hosted F-Droid repository
+
+You publish your own repo index at, say, `https://fdroid.whispawallet.com/repo`
+and users add it to their F-Droid client. **You keep your own signing key**,
+which is the whole reason this route was chosen first.
+
+That matters more here than in most apps. An Android APK's signing certificate
+is the app's identity to every device that has it installed. An APK signed by a
+different key is a different app: it cannot update over the existing one, so
+every current user would have to uninstall and reinstall — and for a wallet,
+uninstalling is the keys gone unless they still hold their recovery phrase.
+Staying on your own key means an install from GitHub, from Zapstore, or from
+your F-Droid repo all update each other.
+
+What you give up: discoverability. Your app does not appear in the F-Droid
+client's default index, and users must add the repo URL by hand.
+
+### One-time setup
+
+```bash
+pip install fdroidserver          # or your distro's package
+mkdir -p ~/fdroid && cd ~/fdroid
+fdroid init --keystore ~/fdroid/repo-index.jks
+```
+
+`fdroid init` creates the key that signs the **index**, not the APKs. It is a
+separate key from the app's release keystore and it is worth backing up: losing
+it means every subscriber has to remove and re-add the repo.
+
+Then set the repo's identity in `config.yml`:
+
+```yaml
+repo_url: https://fdroid.whispawallet.com/repo
+repo_name: WhiSPa
+repo_description: >-
+  Bitcoin wallet with Silent Payments. Official builds, signed with the same
+  key as the GitHub releases.
+archive_older: 3
+```
+
+### Each release
+
+```bash
+# 1. Build the APK you are going to publish — the no-push build, see below.
+npm run apk:fdroid
+
+# 2. Drop it in and build the index.
+cp android/app/build/outputs/apk/mainnet/release/*.apk ~/fdroid/repo/
+cd ~/fdroid && fdroid update --pretty
+
+# 3. Publish the repo directory.
+rsync -av ~/fdroid/repo/ user@host:/srv/fdroid/repo/
+```
+
+`fdroid update` reads `fastlane/metadata/android/en-US/` out of the APK's
+source repo if you point it there, or you can copy that tree into
+`~/fdroid/metadata/com.whispawallet.app/`. The metadata in this repo is already
+in the layout both F-Droid and Zapstore expect:
+
+```
+fastlane/metadata/android/en-US/
+├── title.txt
+├── short_description.txt
+├── full_description.txt
+├── changelogs/500.txt          # named for the versionCode, not the version
+└── images/
+    ├── icon.png                # 512×512 PNG
+    └── phoneScreenshots/
+```
+
+The changelog filename is the **versionCode**, which `android/app/build.gradle`
+derives as `major * 10000 + minor * 100 + patch` — so 0.5.0 is `500.txt`. A
+changelog named after the version string is silently ignored.
+
+### Serving it
+
+Any static host. If it goes behind the same Caddy as the rest, remember the
+CSP block there is written for the web app and does not apply to a static file
+tree — give the repo its own site block.
+
+## The no-push build
+
+`npm run apk:fdroid` sets `WHISPA_NO_PUSH=1`, which `react-native.config.js`
+turns into an autolinking exclusion for `@react-native-firebase/app` and
+`@react-native-firebase/messaging`. The npm packages stay installed so the
+JavaScript still resolves; what goes is the native side, and with it the
+Firebase AARs.
+
+Verify it took, before trusting a build:
+
+```bash
+WHISPA_NO_PUSH=1 npx react-native config | grep -c firebase    # expect 0
+npx react-native config | grep -c firebase                     # expect non-zero
+```
+
+`services/push.ts` asks `NativeModules.RNFBMessagingModule` whether the native
+side is present rather than reading the flag — the app discovers the answer
+from the APK it is actually running in, because a flag can disagree with what
+was built and that disagreement would surface as a crash on launch. Settings →
+Notifications says "Alerts unavailable in this build" rather than offering a
+switch that stores a preference nothing can honour.
+
+**What users lose.** Nothing arrives while the app is closed. Payments are
+still found — the chain scan runs when the app is opened, and the foreground
+watcher picks up changes while it is open — but there is no notification of a
+payment or a Tango until then.
+
+You do not have to ship the no-push build on your own repo; a self-hosted repo
+has no policy about proprietary dependencies. It is built that way so the
+F-Droid build and a future official submission are the same artifact, and so
+the option is exercised rather than theoretical.
+
+## The other route: the official f-droid.org repo
+
+Listed in the default index, so discoverable. Three costs, and the third is the
+one that decides it.
+
+**1. No proprietary dependencies.** F-Droid builds from source on its own
+infrastructure and refuses non-free libraries. Two are in the APK today:
+
+- **Firebase Cloud Messaging** — solved by the no-push build above.
+- **Google MLKit barcode scanning** — NOT solved. It arrives through
+  `react-native-camera-kit`, which depends on `com.google.mlkit:barcode-scanning`
+  and brings `libbarhopper_v3.so` plus `.tflite` models. The QR scanner is
+  `src/components/QRScanner.tsx`. Replacing it means a FOSS scanner — ZXing
+  (`zxing-android-embedded`) is the usual answer — which is real work and a
+  user-visible change to a path used in every send.
+
+Check what is actually in a built APK rather than reasoning from the manifest:
+
+```bash
+unzip -l app.apk | grep -E '\.so$|\.tflite$'
+```
+
+**2. A review that takes weeks to months**, plus an `fdroiddata` merge request
+carrying a build recipe.
+
+**3. F-Droid signs the APK with its own key.** Different certificate, so it is
+a different app to Android: nobody on an existing install can update to it.
+For a wallet that means a reinstall and a restore from the recovery phrase, for
+every user, at a moment they did not choose.
+
+The third cost is avoidable — F-Droid can publish *your* signed APK if the
+build is **reproducible**, meaning their rebuild from source is byte-for-byte
+identical to yours. That needs a pinned toolchain (exact NDK, build-tools and
+JDK), no build timestamps in the output, and a verified rebuild before each
+release. It is the only way onto f-droid.org without breaking the update path,
+and it is a project of its own.
+
+## Order of work, if the official repo is the eventual goal
+
+1. Self-hosted repo (this document's first half). Done once, keeps working.
+2. Replace the MLKit scanner with a FOSS one. Until this lands, an official
+   submission cannot be accepted whatever else is true.
+3. Make the build reproducible, and verify it against a clean rebuild.
+4. Submit to `fdroiddata` with `Binaries:` set so F-Droid publishes your APK
+   rather than theirs.
+
+Skipping step 3 is possible and costs every existing user a reinstall. Do not
+skip it quietly.

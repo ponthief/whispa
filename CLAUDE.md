@@ -366,6 +366,51 @@ nothing. And `register-start` has **no rate limiter** — `scan_rate_limiter.py`
 and `invite_rate_limiter.py` are the pattern it should follow, and Turnstile is
 not a substitute for one on an endpoint that sends mail.
 
+## F-Droid, and the two proprietary blobs in the APK
+
+`FDROID.md` carries the steps. Three things belong here because they constrain
+unrelated work.
+
+**The signing certificate is the app's identity.** The official f-droid.org
+repo signs with ITS key, which makes the result a different app to Android:
+nobody on an existing install can update to it, and for a wallet a reinstall
+means restoring from the recovery phrase. That is why the chosen route
+(2026-10-24) is a **self-hosted F-Droid repo**, which keeps our key, so an
+install from GitHub, Zapstore or F-Droid all update each other. Same reasoning
+as the applicationId note in `zapstore.yaml`.
+
+**`WHISPA_NO_PUSH=1` drops Firebase** from the native build —
+`react-native.config.js` turns it into an autolinking exclusion, `npm run
+apk:fdroid` sets it. The npm packages stay installed so the JavaScript
+resolves; what goes is the native side.
+
+`services/push.ts` therefore has **no static import of
+`@react-native-firebase/messaging`**, and must not regain one: a static import
+resolves fine and then throws "a firebase module that's not installed
+natively" at the first call, on launch, naming a library the user has never
+heard of. It asks `NativeModules.RNFBMessagingModule` instead — the question
+is "is the native side here", and a build flag can disagree with the APK while
+that cannot. Settings → Notifications renders "Alerts unavailable in this
+build" rather than a switch storing a preference nothing can honour.
+
+**MLKit is still in there, and it is the blocker for the official repo.** Not
+via Capacitor — `react-native.config.js` excludes that — but through
+`react-native-camera-kit`, which depends on
+`com.google.mlkit:barcode-scanning` and brings `libbarhopper_v3.so` and
+`.tflite` models. `components/QRScanner.tsx` is the user of it. Until that is
+a FOSS scanner, an official submission cannot be accepted whatever else is
+true. Check a real APK rather than the manifest:
+`unzip -l app.apk | grep -E '\.so$|\.tflite$'`.
+
+The repo had **no LICENSE file** until 2026-10-24, while asserting MIT in the
+README, both zapstore manifests, `TermsView.vue` and `check:terms`. F-Droid
+requires one and GitHub showed none.
+
+`fastlane/metadata/android/en-US/` is the metadata tree, in the layout F-Droid
+and Zapstore both read. Its changelog file is named for the **versionCode**
+(`major * 10000 + minor * 100 + patch`, so 0.5.0 is `500.txt`) — one named
+after the version string is silently ignored.
+
 ## It is a native SegWit address, and calling it "Plain" said nothing
 
 Renamed on 2026-10-05, in both clients. "Plain" named it by what it is *not*,

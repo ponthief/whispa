@@ -1,3 +1,22 @@
+// WHISPA_NO_PUSH=1 drops Firebase from the native build. See FDROID.md.
+//
+// Firebase Cloud Messaging is a proprietary Google SDK, and an F-Droid build
+// should not carry one. The npm packages stay installed so the JavaScript
+// still resolves; what this removes is the AUTOLINKING, and with it the
+// Firebase AARs and their .so files.
+//
+// services/push.ts asks NativeModules whether the native side is there rather
+// than reading this variable, so the app discovers the answer from the APK it
+// is actually running in — a flag can disagree with what was built, and that
+// disagreement would surface as a crash on launch.
+//
+// This does NOT make the build free of proprietary code. react-native-camera-kit
+// depends on com.google.mlkit:barcode-scanning, which is where
+// libbarhopper_v3.so and the .tflite models come from, and that is a separate
+// problem with its own answer (FDROID.md).
+const NO_PUSH = process.env.WHISPA_NO_PUSH === '1';
+const EXCLUDED = { platforms: { ios: null, android: null } };
+
 module.exports = {
   project: {
     ios: {},
@@ -49,5 +68,11 @@ module.exports = {
         android: null,
       },
     },
+    ...(NO_PUSH
+      ? {
+          '@react-native-firebase/app': EXCLUDED,
+          '@react-native-firebase/messaging': EXCLUDED,
+        }
+      : {}),
   },
 };

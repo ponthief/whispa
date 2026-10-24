@@ -7,6 +7,7 @@ import * as api from '@services/api';
 import {
   ensureNotificationPermission,
   hasNotificationPermission,
+  pushAvailable,
 } from '@services/push';
 import { Block, Group, NavRow, Note, Page, SwitchRow } from './ui';
 
@@ -135,14 +136,27 @@ export default function NotificationsPage({ onBack }: { onBack: () => void }) {
       title="Notifications"
       onBack={onBack}>
       <Group title="Payments and Tango">
-        <SwitchRow
-          first
-          title="Alerts"
-          help="Receive Silent Payments and Tango activity alerts."
-          value={alerts}
-          onValueChange={onToggle}
-          busy={busy}
-        />
+        {/* A BUILD WITHOUT PUSH SAYS SO. The F-Droid build excludes Firebase
+            (see FDROID.md), so there is no delivery mechanism and the switch
+            would store a preference nothing could honour — the worst version
+            of this screen, since it reports alerts as ON while the phone can
+            never receive one. Payments still arrive; they are found by the
+            scan when the app is opened rather than announced while it is
+            closed. */}
+        {pushAvailable() ? (
+          <SwitchRow
+            first
+            title="Alerts"
+            help="Receive Silent Payments and Tango activity alerts."
+            value={alerts}
+            onValueChange={onToggle}
+            busy={busy}
+          />
+        ) : (
+          <Block first help="This build has no push service, so WhiSPa cannot be notified while it is closed. Payments are found by the chain scan when you open the app.">
+            <Note kind="info">Alerts unavailable in this build</Note>
+          </Block>
+        )}
       </Group>
 
       {/* One grant and one device token serve every kind of alert, so this

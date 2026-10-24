@@ -7,6 +7,8 @@
     "android:signet": "react-native run-android --mode=signetDebug",
     "apk:mainnet": "cd android && ./gradlew assembleMainnetRelease",
     "apk:signet": "cd android && ./gradlew assembleSignetRelease",
+    "apk:fdroid": "WHISPA_NO_PUSH=1 npm run apk:mainnet",
+    "apk:fdroid:signet": "WHISPA_NO_PUSH=1 npm run apk:signet",
     "apk:mainnet:lowmem": "cd android && ./gradlew assembleMainnetRelease -PreactNativeArchitectures=arm64-v8a --no-daemon",
     "apk:signet:lowmem": "cd android && ./gradlew assembleSignetRelease -PreactNativeArchitectures=arm64-v8a --no-daemon",
     "ios": "react-native run-ios",

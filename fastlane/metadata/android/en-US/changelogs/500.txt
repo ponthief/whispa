@@ -1,0 +1,16 @@
+Spending your SegWit coins moved from Receive to Send, under a chain picker
+beside the Silent Payments form.
+
+The balance headline now adds both pockets together; the SP / SegWit split is
+on the Coins screen.
+
+SegWit addresses can be labelled, on this device only.
+
+Rescan by day or by a date from a calendar, rather than by a number of blocks.
+
+A scanning bar on the Wallet screen, so a catch-up is visible without opening
+the scan page.
+
+A splash screen from the moment the launcher is tapped.
+
+The balance card turns over to show your address, its QR and your BitMail.

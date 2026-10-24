@@ -7,8 +7,7 @@
 //
 // Everything is wrapped so the app works fine when Firebase ISN'T configured
 // (no android/app/google-services.json) — push simply stays off.
-import { PermissionsAndroid, Platform } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import * as api from './api';
 import { usePushBanner } from '@stores/pushBanner';
 import { alertsOn } from '@stores/notifyStore';
@@ -16,6 +15,49 @@ import { useNavStore } from '@stores/navStore';
 
 let unsubscribeRefresh: (() => void) | null = null;
 let unsubscribeMessage: (() => void) | null = null;
+
+// ── Firebase may not be in this build at all ────────────────────────────────
+//
+// The F-Droid build excludes @react-native-firebase/* from autolinking (see
+// react-native.config.js and FDROID.md), because Firebase Cloud Messaging is a
+// proprietary Google SDK and an F-Droid build should not carry one. The npm
+// packages stay installed, so this file still resolves — what is missing is
+// the NATIVE module behind it.
+//
+// Which is why the import is no longer at the top. A static
+// `import messaging from '@react-native-firebase/messaging'` resolves fine and
+// then throws "You attempted to use a firebase module that's not installed
+// natively" the first time anything calls it — at app start, from an effect,
+// with a message naming a library the user has never heard of.
+//
+// Asked of NativeModules rather than of a build flag, because the question is
+// "is the native side here", and that is the thing that actually answers it.
+// A flag can disagree with the APK; this cannot.
+//
+// NOT platform-gated. iOS registers for push through the same module, and
+// gating this on Android would have switched iOS push off as a side effect of
+// an Android packaging decision.
+export function pushAvailable(): boolean {
+  return !!NativeModules.RNFBMessagingModule;
+}
+
+// The module's default export, loaded on demand. It is both callable (for the
+// instance) and the carrier of AuthorizationStatus, so the two uses below both
+// come from here. Typed loosely on purpose: importing the package's types at
+// the top is the static dependency this is avoiding.
+function fcm(): any {
+  if (!pushAvailable()) throw new Error('push-unavailable');
+  return require('@react-native-firebase/messaging').default;
+}
+
+// Every caller below already sits in a try/catch with a safe default, so a
+// throw from here degrades to "push is off" rather than to a crash. The
+// explicit early returns in register/unregister are there anyway, because
+// control flow through an exception for the ordinary case of a build without
+// Firebase would be the wrong shape.
+function messaging(): any {
+  return fcm()();
+}
 
 // Every `type` the backend sets on a push (siLNt views_api.py).
 //
@@ -102,8 +144,8 @@ export async function ensureNotificationPermission(): Promise<boolean> {
     // iOS: the FCM/APNs authorization prompt.
     const status = await messaging().requestPermission();
     return (
-      status === messaging.AuthorizationStatus.AUTHORIZED ||
-      status === messaging.AuthorizationStatus.PROVISIONAL
+      status === fcm().AuthorizationStatus.AUTHORIZED ||
+      status === fcm().AuthorizationStatus.PROVISIONAL
     );
   } catch {
     return false;
@@ -125,8 +167,8 @@ export async function hasNotificationPermission(): Promise<boolean> {
     }
     const status = await messaging().hasPermission();
     return (
-      status === messaging.AuthorizationStatus.AUTHORIZED ||
-      status === messaging.AuthorizationStatus.PROVISIONAL
+      status === fcm().AuthorizationStatus.AUTHORIZED ||
+      status === fcm().AuthorizationStatus.PROVISIONAL
     );
   } catch {
     return true;
@@ -137,6 +179,10 @@ export async function hasNotificationPermission(): Promise<boolean> {
 // register it with the backend. Also keeps the backend in sync if the token
 // rotates. Safe no-op if Firebase/native push isn't available.
 export async function registerForPush(inkey: string): Promise<void> {
+  // No Firebase in this build (F-Droid) — there is no token to hand the
+  // server and nothing to unregister. Returns quietly: a build without
+  // push is a supported configuration, not a failure.
+  if (!pushAvailable()) return;
   try {
     // Alerts off in Settings → don't hand the server a token to push to.
     // Callers already gate on the pref; this is a second line of defence so
@@ -152,7 +198,7 @@ export async function registerForPush(inkey: string): Promise<void> {
     if (token) await api.registerPushToken(inkey, token);
 
     if (unsubscribeRefresh) unsubscribeRefresh();
-    unsubscribeRefresh = messaging().onTokenRefresh(async (t) => {
+    unsubscribeRefresh = messaging().onTokenRefresh(async (t: string) => {
       try {
         await api.registerPushToken(inkey, t);
       } catch {
@@ -162,7 +208,7 @@ export async function registerForPush(inkey: string): Promise<void> {
 
     // Foreground messages: display them ourselves (Android won't).
     if (unsubscribeMessage) unsubscribeMessage();
-    unsubscribeMessage = messaging().onMessage(async (msg) => {
+    unsubscribeMessage = messaging().onMessage(async (msg: any) => {
       handleForegroundMessage(msg);
     });
   } catch {
@@ -173,6 +219,10 @@ export async function registerForPush(inkey: string): Promise<void> {
 // Stop this device from receiving pushes (on logout, or when the user turns
 // alerts off in Settings).
 export async function unregisterForPush(inkey: string): Promise<void> {
+  // No Firebase in this build (F-Droid) — there is no token to hand the
+  // server and nothing to unregister. Returns quietly: a build without
+  // push is a supported configuration, not a failure.
+  if (!pushAvailable()) return;
   try {
     if (unsubscribeRefresh) {
       unsubscribeRefresh();

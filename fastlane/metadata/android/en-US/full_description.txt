@@ -1,0 +1,35 @@
+WhiSPa is a self-custodial, Bitcoin-only wallet built on Silent Payments
+(BIP-352). You publish one reusable address, and every payment still lands at a
+fresh, unrelated output on chain — so the people who pay you cannot see each
+other's payments, and nobody watching the chain can tie them together.
+
+Your keys are generated on the device from a standard recovery phrase and never
+leave it. Transactions are built and signed on the phone, so no key is ever
+sent to a server. The practical consequence runs both ways: nobody operating
+the service can spend your bitcoin, and nobody can restore it for you either.
+If you lose your recovery phrase and your device, the coins are gone.
+
+Features
+
+* Silent Payments (BIP-352) — one reusable address, unlinkable on chain
+* A standard BIP-84 SegWit chain alongside it, for senders that need a plain
+  bc1q address
+* On-device transaction building and signing
+* Coin control: per-coin labels, freezing, and a dust warning
+* Tango — an optional two-party equal-output mix with another user, to break
+  the link between your coins
+* Optional app lock with biometrics or a PIN, and a separate duress PIN that
+  wipes the keys
+* Background chain scanning, or manual scans with a lookback you choose
+
+What this is not
+
+WhiSPa is not a Lightning wallet and holds no Lightning balance. It is not a
+custodian, not a bank, and carries no deposit insurance of any kind.
+
+Silent Payments remove the most common way payments get linked. They do not
+make Bitcoin anonymous: chain analysis, the counterparty you transact with,
+your network path and your own habits can all undo it.
+
+Free software under the MIT License. The source is public — you are not
+required to take anyone's word for what this software does.

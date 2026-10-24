@@ -418,6 +418,37 @@ and meant owning a camera lifecycle on the screen that starts every send. And
 the import resolves and hands back a native module that is not linked, which
 is the same failure the Firebase import had.
 
+**ZXing's defaults could not read a QR off a monitor**, reported the same day
+the swap shipped, and all four reasons are the backlit-screen case that MLKit
+was quietly absorbing:
+
+- `focusMode = AUTO` — periodic autofocus that hunts at the close range a
+  monitor is read from. `WhispaCaptureActivity` sets **continuous** focus.
+- `barcodeSceneModeEnabled = false` — the camera HAL has a mode tuned for
+  codes and nothing was asking for it.
+- `meteringEnabled = false` — a monitor IS a light source, and centre-weighted
+  metering is what stops auto-exposure blowing the white modules out.
+- no `TRY_HARDER` — ZXing does one decode pass unless asked. The hint arrives
+  as an intent extra **named after the `DecodeHintType`**, because
+  `DecodeHintManager` turns any such extra into that hint and the Void-typed
+  ones are flags, so the key is the whole of it.
+
+**The timing of the first three is the part that is easy to get wrong.**
+`CaptureActivity.onCreate` runs `initializeContent()` and then
+`CaptureManager.initializeFromIntent()`, and that second call constructs a
+**fresh `CameraSettings`** and installs it over anything set before it. So
+they cannot go in an `initializeContent()` override — they go after
+`super.onCreate`, which is still before `onResume` opens the camera.
+
+`WhispaCaptureActivity` is also declared **`fullSensor`** in our manifest. The
+library declares its own `CaptureActivity` as `sensorLandscape`, which turns a
+phone held upright into a sideways preview with a letterbox framing rect.
+
+It captures the view through the `initializeContent()` override rather than
+`findViewById(com.google.zxing.client.android.R.id.…)`: reaching into the
+library's R class is a coin toss under AGP 8's non-transitive R classes, and
+the hook needs no R at all.
+
 `check:fdroid` pins all of it. Verify a real APK too, because only that shows
 what shipped: `unzip -l app.apk | grep -E '\.so$|\.tflite$'` should find no
 `.tflite` and no `libbarhopper_v3.so`.

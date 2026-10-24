@@ -8,8 +8,8 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.google.zxing.DecodeHintType
 import com.google.zxing.client.android.Intents
-import com.journeyapps.barcodescanner.CaptureActivity
 
 /**
  * QR scanning with ZXing, so the APK carries no proprietary blob.
@@ -102,7 +102,7 @@ class ZxingScannerModule(
     }
 
     val intent =
-        Intent(activity, CaptureActivity::class.java).apply {
+        Intent(activity, WhispaCaptureActivity::class.java).apply {
           action = Intents.Scan.ACTION
           // QR only. The wallet has no use for a barcode on a tin of beans,
           // and narrowing the formats makes the decode both faster and less
@@ -116,6 +116,16 @@ class ZxingScannerModule(
           // finishes, so there is nothing to ask for — and ZXing reads
           // TIMEOUT as "milliseconds of inactivity before the scan fails",
           // which at 0 is a scanner that closes the moment it opens.
+          //
+          // TRY_HARDER: ZXing's single-pass decode could not read a QR off a
+          // monitor (2026-10-24). DecodeHintManager turns any extra NAMED
+          // after a DecodeHintType into that hint, and the Void-typed ones
+          // are flags — so the key is the whole of it and the value is
+          // ignored. MLKit always worked this hard; ZXing has to be asked.
+          //
+          // It costs frame rate, which on a scanner that is open for a second
+          // or two and is failing to read at all is the right way round.
+          putExtra(DecodeHintType.TRY_HARDER.name, true)
         }
 
     pending = promise

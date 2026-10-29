@@ -26,6 +26,38 @@ function onSegwitBalance({ walletId, spendable }) {
 function segwitSats(walletId) {
   return segwitByWallet.value[walletId] || 0
 }
+
+// Which pocket a wallet card is showing. Per wallet, not one global choice:
+// with several cards on screen, flipping one and having the rest flip under you
+// is the kind of thing nobody reports and everybody notices.
+//
+// 'sp' is the default because it is the chain this wallet is FOR — the SegWit
+// side exists for senders that cannot pay an sp1… address.
+const walletTab = ref({})
+function tabFor(walletId) {
+  return walletTab.value[walletId] || 'sp'
+}
+function setTab(walletId, tab) {
+  walletTab.value = { ...walletTab.value, [walletId]: tab }
+}
+
+// The per-wallet ⚙ menu: Edit, Background scanning and Delete used to be three
+// of seven buttons in a row under every card. Which wallet's menu is open, or
+// null. One at a time — two open menus on two cards is two answers to "what am
+// I about to act on".
+const openMenu = ref(null)
+function toggleMenu(walletId) {
+  openMenu.value = openMenu.value === walletId ? null : walletId
+}
+function closeMenu() {
+  openMenu.value = null
+}
+// Run the action, then shut the menu. Every item does both, and forgetting the
+// second half leaves a menu hanging over a modal it just opened.
+function fromMenu(fn, ...args) {
+  closeMenu()
+  return fn(...args)
+}
 // Client-side Silent Payments derivation — the same module the mobile app uses,
 // verified byte-for-byte against the backend. Keeps the seed on this device.
 import { deriveSilentPayment, generateMnemonic, isValidMnemonic, validateNewWalletPassphrase } from '@/services/spKeys'
@@ -706,6 +738,42 @@ watch(swapCompletedAt, () => {
             </div>
           </div>
 
+          <!-- TWO POCKETS, TWO TABS. The badge above is still the sum — "how
+               much have I got" has one answer — and these two say which half
+               is which, because the two cannot share a transaction and Send
+               will refuse a total that spans them.
+
+               This restores the split to this page, which was removed on
+               2026-10-23 and lived on Coins alone. See CLAUDE.md. It is back
+               as a figure you choose to look at rather than a line under the
+               headline, so the total is still what the card leads with. -->
+          <div class="wallet-tabs" role="tablist">
+            <button
+              type="button" role="tab" class="wallet-tab"
+              :class="{ 'is-active': tabFor(w.id) === 'sp' }"
+              :aria-selected="tabFor(w.id) === 'sp'"
+              @click="setTab(w.id, 'sp')"
+            >
+              <span class="wallet-tab-name">Silent Payments</span>
+              <span class="wallet-tab-sats mono">{{ fmt(w.balance ?? 0) }}</span>
+            </button>
+            <button
+              type="button" role="tab" class="wallet-tab"
+              :class="{ 'is-active': tabFor(w.id) === 'segwit' }"
+              :aria-selected="tabFor(w.id) === 'segwit'"
+              @click="setTab(w.id, 'segwit')"
+            >
+              <span class="wallet-tab-name">SegWit</span>
+              <span class="wallet-tab-sats mono">{{ fmt(segwitSats(w.id)) }}</span>
+            </button>
+          </div>
+
+          <!-- v-show, NEVER v-if, on both panels. PlainAddressPanel in the
+               other one is what reports the SegWit balance to this card, and
+               the badge above adds it in — v-if would unmount it whenever the
+               SP tab was selected, the emit would stop, and the headline total
+               would silently drop to the SP side alone. -->
+          <div v-show="tabFor(w.id) === 'sp'" class="wallet-pocket">
           <!-- SP Address -->
           <div class="addr-row">
             <span class="text-xs text-dim" style="white-space:nowrap">SP Address</span>
@@ -779,27 +847,60 @@ watch(swapCompletedAt, () => {
             <div v-else class="text-xs text-dim" style="padding:6px 0">No labeled addresses yet.</div>
           </div>
 
-          <!-- Actions -->
-          <div class="flex gap-2" style="margin-top:16px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" @click="goScan(w)" title="Scan the chain for payments sent to this wallet">↓ Receive</button>
-            <button class="btn btn-primary btn-sm" @click="goSend(w)">↗ Send</button>
-            <button class="btn btn-ghost btn-sm" @click="openEdit(w)">✎ Edit</button>
-            <button v-if="!auth.hasWalletKeys(w.id)" class="btn btn-warn btn-sm" @click="openRecoverKeys(w)" title="Wallet keys not found locally — recover from mnemonic">🔑 Recover Keys</button>
-            <button v-if="auth.hasWalletKeys(w.id)" class="btn btn-ghost btn-sm" :disabled="bgBusy[w.id]" @click="toggleBgScan(w)"
-              :title="bgScan[w.id] ? 'Server keeps this wallet synced while you\'re away (knows the scan key). Click to turn off.' : 'Let the server keep this wallet synced in the background (uploads scan key — detection only).'">
-              {{ bgBusy[w.id] ? '…' : (bgScan[w.id] ? '🔄 Background: On' : '🔄 Background: Off') }}
-            </button>
-            <button class="btn btn-ghost btn-sm" :disabled="refreshing || loading" @click="refreshWallets" title="Refresh balances and scan status">{{ refreshing ? '…' : '↻ Refresh' }}</button>
-            <button class="btn btn-danger btn-sm" @click="askDeleteWallet(w)">✕ Delete</button>
-          </div>
-          <p class="text-dim text-xs" style="margin-top:8px">
+          <p class="text-dim text-xs" style="margin-top:10px">
             ↓ Receive scans the blockchain for Silent Payments sent to this wallet — payments only appear in your balance after a scan.
           </p>
+          </div>
 
           <!-- The SegWit chain: for senders that can't pay an sp1… address.
                Counted in the badge above, spent from the Send page, and never
                mixed into a transaction with the wallet's own coins. -->
-          <PlainAddressPanel :wallet="w" @balance="onSegwitBalance" />
+          <div v-show="tabFor(w.id) === 'segwit'" class="wallet-pocket">
+            <PlainAddressPanel :wallet="w" @balance="onSegwitBalance" />
+          </div>
+
+          <!-- Actions. OUTSIDE the tabs, because they act on the wallet rather
+               than on one pocket of it — Send has its own chain picker, which
+               only appears when there is something on the SegWit side.
+
+               Edit, Background and Delete moved into the ⚙ menu: seven buttons
+               wrapping onto three lines made the two that matter, Receive and
+               Send, no more prominent than Delete. Recover Keys stays out here
+               on purpose — it only renders when the keys are missing, the
+               badge in the header tells you to click it by name, and a
+               recovery affordance behind a menu is one nobody finds. -->
+          <div class="flex gap-2" style="margin-top:16px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" @click="goScan(w)" title="Scan the chain for payments sent to this wallet">↓ Receive</button>
+            <button class="btn btn-primary btn-sm" @click="goSend(w)">↗ Send</button>
+            <button v-if="!auth.hasWalletKeys(w.id)" class="btn btn-warn btn-sm" @click="openRecoverKeys(w)" title="Wallet keys not found locally — recover from mnemonic">🔑 Recover Keys</button>
+            <button class="btn btn-ghost btn-sm" :disabled="refreshing || loading" @click="refreshWallets" title="Refresh balances and scan status">{{ refreshing ? '…' : '↻ Refresh' }}</button>
+
+            <div class="wallet-menu">
+              <button
+                class="btn btn-ghost btn-sm"
+                :aria-expanded="openMenu === w.id"
+                aria-haspopup="true"
+                title="Wallet settings"
+                @click.stop="toggleMenu(w.id)"
+              >⚙ Settings</button>
+              <!-- A backdrop rather than a document listener: it closes on any
+                   click outside, needs no mounted/unmounted pair to keep in
+                   step, and cannot outlive the card it belongs to. -->
+              <div v-if="openMenu === w.id" class="wallet-menu-backdrop" @click="closeMenu"></div>
+              <div v-if="openMenu === w.id" class="wallet-menu-sheet" role="menu">
+                <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openEdit, w)">✎ Edit</button>
+                <button
+                  v-if="auth.hasWalletKeys(w.id)"
+                  class="wallet-menu-item" role="menuitem"
+                  :disabled="bgBusy[w.id]"
+                  :title="bgScan[w.id] ? 'Server keeps this wallet synced while you\'re away (knows the scan key). Click to turn off.' : 'Let the server keep this wallet synced in the background (uploads scan key — detection only).'"
+                  @click="fromMenu(toggleBgScan, w)"
+                >{{ bgBusy[w.id] ? '🔄 Background: …' : (bgScan[w.id] ? '🔄 Background: On' : '🔄 Background: Off') }}</button>
+                <div class="wallet-menu-rule"></div>
+                <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1176,6 +1277,94 @@ watch(swapCompletedAt, () => {
 
 <style scoped>
 .wallet-card .card-body { padding: 20px; }
+
+/* ── The two pockets ──────────────────────────────────────────────────────
+   Colours come from the existing tokens so this follows the theme in both
+   light and dark rather than pinning its own greys. */
+.wallet-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.wallet-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  /* The selected tab grows a 2px border. Padding shrinks to match, so the
+     card does not jump by two pixels every time somebody switches. */
+  transition: background .12s ease, border-color .12s ease;
+}
+.wallet-tab:hover { border-color: var(--text-dim); }
+.wallet-tab.is-active {
+  border-color: var(--orange);
+  border-width: 2px;
+  padding: 7px 9px;
+  background: var(--orange-bg);
+}
+.wallet-tab-name { font-size: 11px; color: var(--text-dim); }
+.wallet-tab.is-active .wallet-tab-name { color: var(--orange); }
+.wallet-tab-sats { font-size: 15px; font-weight: 600; }
+.wallet-pocket { min-height: 1px; }
+
+/* ── The per-wallet ⚙ menu ───────────────────────────────────────────── */
+.wallet-menu { position: relative; display: inline-flex; }
+/* Covers the viewport so a click anywhere else closes the menu. Below the
+   sheet, above everything else on the card. */
+.wallet-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+.wallet-menu-sheet {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 21;
+  min-width: 200px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+}
+.wallet-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wallet-menu-item:hover:not(:disabled) { background: rgba(127, 127, 127, .14); }
+.wallet-menu-item:disabled { opacity: .5; cursor: default; }
+.wallet-menu-item.is-danger { color: var(--red); }
+.wallet-menu-rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* One column at phone width: two tabs side by side with a sats figure in each
+   overflow below about 360px, and the figure is the part that gets clipped. */
+@media (max-width: 420px) {
+  .wallet-tabs { grid-template-columns: 1fr; }
+  .wallet-menu-sheet { right: auto; left: 0; }
+}
 .wallets-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 420px));
@@ -1226,7 +1415,7 @@ watch(swapCompletedAt, () => {
   background: linear-gradient(to right, rgba(249, 115, 22, 0.04), transparent);
 }
 
-.badge-warn { background: #3d1f08; color: #f97316; border: 1px solid #6b3410; }
+.badge-warn { background: #3d1f08; color: var(--orange); border: 1px solid #6b3410; }
 
 .addr-label-display {
   cursor: pointer;

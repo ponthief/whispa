@@ -668,23 +668,63 @@ separately from this balance" — true about how they *spend* and useless as an
 answer to what you own. The banner now carries only **arriving** coins, which
 are in no total and whose card is on another tab.
 
-**The split lives on Coins, and only there** (2026-10-23, on the user's
-instruction). It was named directly under the balance on both clients —
+**The split was taken off the headline on 2026-10-23**, on the user's
+instruction: it had been named directly under the balance on both clients —
 `WalletsView.vue`'s card badge and `WalletScreen.tsx`'s headline — and both
-lines are gone.
+lines went.
 
-Know what that costs, because the reason it was there has not stopped being
-true: the two pockets cannot go into one transaction. A Silent Payments send
-draws on SP coins and a SegWit send on the BIP-84 chain, so the headline total
-can promise an amount the Send screen then refuses, and the page that explains
-why is now a tab away. What keeps that survivable is that the Send screen's
-chain picker only appears when there IS something on the SegWit side, and
-flipping it re-derives the spendable figure — so the refusal arrives with the
-two balances visible rather than as a bare error. If this ever gets reported
-as "it says I have X and won't send X", that is this trade, not a bug.
+Know what that cost, because the reason it was there never stopped being true:
+the two pockets cannot go into one transaction. A Silent Payments send draws on
+SP coins and a SegWit send on the BIP-84 chain, so the headline total can
+promise an amount the Send screen then refuses. What keeps that survivable is
+that the Send screen's chain picker only appears when there IS something on the
+SegWit side, and flipping it re-derives the spendable figure — so the refusal
+arrives with the two balances visible rather than as a bare error. If this ever
+gets reported as "it says I have X and won't send X", that is this trade, not a
+bug.
+
+**The web brought it back as tabs on 2026-10-29**, asked and confirmed first,
+because the SegWit side had a second problem the removal made worse: its panel
+was the LAST thing on the wallet card, under the labelled addresses and the
+Receive explainer, so the pocket nobody mentions was also the hardest thing on
+the page to find. `WalletsView.vue` now has a two-tab control per card —
+Silent Payments and SegWit, each showing its own figure — with the header badge
+still the sum.
+
+That answers the 2026-10-23 objection by shape rather than by omission: the
+card still LEADS with one total, and the split is a figure you choose to look
+at rather than a second number under the headline. The honest cost is that the
+two clients now disagree: `WalletScreen.tsx` is untouched and still shows the
+sum alone, which is the usual rule ("a rule enforced in one client usually
+belongs in the other too") deliberately not followed, pending whether the tabs
+stay.
+
+**Those panels are `v-show`, and that is load-bearing.** `PlainAddressPanel`
+is what reports the SegWit balance up to the card, and the header badge adds it
+in. A `v-if` would unmount it whenever the SP tab was selected, the emit would
+stop, and the headline total would silently fall back to the SP side alone —
+no error, no blank space, just a wrong number on the page that exists to say
+what you own.
 
 Coins keeps the breakdown on both clients: `CoinsScreen.tsx`'s stats row and
 its **SegWit addresses** section, `UtxosView.vue`'s equivalent.
+
+**The wallet card's secondary actions live behind ⚙ Settings** (2026-10-29,
+web only). Seven buttons wrapped onto three lines, which left Receive and Send
+— the two anyone opened the page for — no more prominent than Delete. Edit,
+Background and Delete moved into a per-wallet menu; `Receive`, `Send`,
+`Refresh` and the ⚙ stayed in the row.
+
+**Recover Keys deliberately did NOT move.** It renders only when the keys are
+missing, and the badge in the header tells you to click it by name. A recovery
+affordance behind a menu is one nobody finds at the moment they need it, and
+burying it would also make that badge's own wording wrong.
+
+The menu closes on a click anywhere outside through a fixed backdrop element
+rather than a document listener — nothing to add on mount and remove on
+unmount, so it cannot outlive the card. Every item goes through `fromMenu()`,
+which closes before acting: an item that opens a modal and leaves the menu
+hanging over it is the failure that pattern exists to prevent.
 
 **Labels, not freezing**, and the distinction is the point. Freezing is a
 defence against coins you did not ask for: a dust attack arrives unannounced

@@ -286,14 +286,20 @@ async function runSetup() {
 <template>
   <div class="plain-panel">
     <button v-if="!open" class="collapsed" @click="open = true">
+      <!-- NO BALANCE AND NO "held separately" HERE. This panel now sits inside
+           the SegWit tab of the wallet card, which already shows this chain's
+           figure in the tab itself — repeating it told the reader the same
+           number twice and then explained it with a sentence about how these
+           coins SPEND, which is not what somebody opening a panel labelled
+           SegWit is asking. The one thing worth saying that the tab cannot is
+           money that is on its way and in no total yet. -->
       <span class="collapsed-text">
-        <b v-if="sats > 0">{{ groupThousands(sats) }} sats on a SegWit address</b>
-        <b v-else-if="arriving > 0">{{ groupThousands(arriving) }} sats arriving</b>
-        <b v-else>Need a SegWit address?</b>
-        <span class="text-dim text-xs">
-          <template v-if="sats > 0">Held separately from this balance, ready to send.</template>
-          <template v-else-if="arriving > 0">Waiting to be mined — held separately from this balance.</template>
-          <template v-else>For senders that can't pay a Silent Payments address.</template>
+        <b>Details</b>
+        <span v-if="arriving > 0" class="text-dim text-xs">
+          {{ groupThousands(arriving) }} sats arriving — waiting to be mined.
+        </span>
+        <span v-else-if="sats <= 0" class="text-dim text-xs">
+          For senders that can't pay a Silent Payments address.
         </span>
       </span>
       <span class="chevron">›</span>

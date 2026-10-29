@@ -236,6 +236,26 @@ undefined class name is not a build error, not a lint error, and not visibly
 wrong unless you know what it was meant to look like. All five are defined
 now.
 
+**Two more CSS failures of exactly that shape**, both shipped on 2026-10-29 in
+one commit and both found by the user rather than by any check:
+
+**A `<button>` does not inherit the page's text colour.** It defaults to the
+UA's `buttontext`, which computes to `rgb(0, 0, 0)` — black on a `#0e1318`
+card. The wallet card's new balance tabs set a font size and weight and no
+`color`, so both figures rendered, correctly, and could not be read. Any
+`<button>` carrying content rather than a label needs `color: var(--text)`
+stated.
+
+**`.card` is `overflow: hidden`** (`src/style.css:76`, for its rounded
+corners), so an absolutely positioned child hanging below its anchor is
+clipped at the card edge and simply is not there. The ⚙ menu was built that
+way and showed one item: Edit fitted, Background and Delete were cut off with
+no error, no scrollbar and nothing in the DOM to suggest a problem. The menu
+sits in normal flow now and cannot be clipped at any card height. Both were
+confirmed in Chromium against a cut-down repro of the real rules — the
+quickest way to settle a "why is this invisible" question, and it needs no
+login.
+
 `check:admin` covers the Tango payout ledger, which is an earnings report and
 a liability report in one page. It refuses three ways that could mislead:
 counting fees on payouts that never went out (the instance is holding the

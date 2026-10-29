@@ -875,31 +875,42 @@ watch(swapCompletedAt, () => {
             <button v-if="!auth.hasWalletKeys(w.id)" class="btn btn-warn btn-sm" @click="openRecoverKeys(w)" title="Wallet keys not found locally — recover from mnemonic">🔑 Recover Keys</button>
             <button class="btn btn-ghost btn-sm" :disabled="refreshing || loading" @click="refreshWallets" title="Refresh balances and scan status">{{ refreshing ? '…' : '↻ Refresh' }}</button>
 
-            <div class="wallet-menu">
-              <button
-                class="btn btn-ghost btn-sm"
-                :aria-expanded="openMenu === w.id"
-                aria-haspopup="true"
-                title="Wallet settings"
-                @click.stop="toggleMenu(w.id)"
-              >⚙ Settings</button>
-              <!-- A backdrop rather than a document listener: it closes on any
-                   click outside, needs no mounted/unmounted pair to keep in
-                   step, and cannot outlive the card it belongs to. -->
-              <div v-if="openMenu === w.id" class="wallet-menu-backdrop" @click="closeMenu"></div>
-              <div v-if="openMenu === w.id" class="wallet-menu-sheet" role="menu">
-                <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openEdit, w)">✎ Edit</button>
-                <button
-                  v-if="auth.hasWalletKeys(w.id)"
-                  class="wallet-menu-item" role="menuitem"
-                  :disabled="bgBusy[w.id]"
-                  :title="bgScan[w.id] ? 'Server keeps this wallet synced while you\'re away (knows the scan key). Click to turn off.' : 'Let the server keep this wallet synced in the background (uploads scan key — detection only).'"
-                  @click="fromMenu(toggleBgScan, w)"
-                >{{ bgBusy[w.id] ? '🔄 Background: …' : (bgScan[w.id] ? '🔄 Background: On' : '🔄 Background: Off') }}</button>
-                <div class="wallet-menu-rule"></div>
-                <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
-              </div>
-            </div>
+            <!-- Hidden on the SegWit tab: everything in here is a setting for
+                 the WALLET, and there is nothing to configure about the SegWit
+                 chain — it is one derived address list. -->
+            <button
+              v-if="tabFor(w.id) === 'sp'"
+              class="btn btn-ghost btn-sm"
+              :aria-expanded="openMenu === w.id"
+              aria-haspopup="true"
+              title="Wallet settings"
+              @click.stop="toggleMenu(w.id)"
+            >⚙ Settings</button>
+          </div>
+
+          <!-- IN NORMAL FLOW, not an absolutely positioned popover, and that
+               is the whole reason this works. `.card` is `overflow: hidden`
+               (style.css:76) for its rounded corners, so a popover hanging
+               below the button was clipped at the card edge: Edit was the
+               sliver that fitted and Background and Delete were not rendered
+               anywhere the user could see them. Nothing says so — no error,
+               no scrollbar, just a menu with one item in it.
+
+               A backdrop rather than a document listener: it closes on any
+               click outside, needs no mounted/unmounted pair to keep in step,
+               and cannot outlive the card it belongs to. -->
+          <div v-if="openMenu === w.id" class="wallet-menu-backdrop" @click="closeMenu"></div>
+          <div v-if="openMenu === w.id" class="wallet-menu-sheet" role="menu">
+            <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openEdit, w)">✎ Edit wallet</button>
+            <button
+              v-if="auth.hasWalletKeys(w.id)"
+              class="wallet-menu-item" role="menuitem"
+              :disabled="bgBusy[w.id]"
+              :title="bgScan[w.id] ? 'Server keeps this wallet synced while you\'re away (knows the scan key). Click to turn off.' : 'Let the server keep this wallet synced in the background (uploads scan key — detection only).'"
+              @click="fromMenu(toggleBgScan, w)"
+            >{{ bgBusy[w.id] ? '🔄 Background scanning: …' : (bgScan[w.id] ? '🔄 Background scanning: On' : '🔄 Background scanning: Off') }}</button>
+            <div class="wallet-menu-rule"></div>
+            <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
           </div>
         </div>
       </div>
@@ -1296,6 +1307,11 @@ watch(swapCompletedAt, () => {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: transparent;
+  /* EXPLICIT, and it has to be. A <button> does not inherit the page colour —
+     it defaults to the UA's `buttontext`, which against this dark surface is
+     near-black on near-black. The balance was rendering; it just could not be
+     read. Same trap as an undefined utility class: no error anywhere. */
+  color: var(--text);
   cursor: pointer;
   text-align: left;
   /* The selected tab grows a 2px border. Padding shrinks to match, so the
@@ -1311,11 +1327,10 @@ watch(swapCompletedAt, () => {
 }
 .wallet-tab-name { font-size: 11px; color: var(--text-dim); }
 .wallet-tab.is-active .wallet-tab-name { color: var(--orange); }
-.wallet-tab-sats { font-size: 15px; font-weight: 600; }
+.wallet-tab-sats { font-size: 17px; font-weight: 700; color: var(--text); }
 .wallet-pocket { min-height: 1px; }
 
 /* ── The per-wallet ⚙ menu ───────────────────────────────────────────── */
-.wallet-menu { position: relative; display: inline-flex; }
 /* Covers the viewport so a click anywhere else closes the menu. Below the
    sheet, above everything else on the card. */
 .wallet-menu-backdrop {
@@ -1323,19 +1338,20 @@ watch(swapCompletedAt, () => {
   inset: 0;
   z-index: 20;
 }
+/* STATIC FLOW. An absolutely positioned sheet is clipped away by the
+   `overflow: hidden` on `.card`; see the comment in the template. Sitting in
+   the flow it simply cannot be cut off, at any card height or screen width.
+   position: relative is only here to let z-index apply over the backdrop. */
 .wallet-menu-sheet {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
+  position: relative;
   z-index: 21;
-  min-width: 200px;
+  margin-top: 8px;
   padding: 4px;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--bg);
+  border: 1px solid var(--border-hi, var(--border));
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
 }
 .wallet-menu-item {
   appearance: none;
@@ -1363,7 +1379,6 @@ watch(swapCompletedAt, () => {
    overflow below about 360px, and the figure is the part that gets clipped. */
 @media (max-width: 420px) {
   .wallet-tabs { grid-template-columns: 1fr; }
-  .wallet-menu-sheet { right: auto; left: 0; }
 }
 .wallets-grid {
   display: grid;

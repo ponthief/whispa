@@ -46,10 +46,6 @@
         android:windowSoftInputMode="adjustResize"
         android:theme="@style/SplashTheme"
         android:exported="true">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
 
         <!-- App Link for the registration verification URL, so the link in the
              email opens the app instead of a browser. The app redeems the token
@@ -81,6 +77,74 @@
                 android:pathPrefix="/verify" />
         </intent-filter>
       </activity>
+
+      <!-- ── Stealth mode: the launcher entry is an ALIAS, not MainActivity ──
+           MainActivity deliberately carries NO MAIN/LAUNCHER filter any more.
+           Every launcher icon below is an activity-alias pointing at it, which
+           is the only way Android lets one app show a different icon and name
+           on the home screen: an alias has its own icon and label, and its
+           enabled state can be flipped at runtime with
+           PackageManager.setComponentEnabledSetting.
+
+           EXACTLY ONE OF THESE IS EVER ENABLED. Zero enabled means no icon
+           anywhere and no way to open the app at all — on a wallet that is
+           somebody's money behind a door with no handle. StealthModule.kt
+           enables the new alias BEFORE disabling the old one for that reason,
+           and check:stealth pins both that ordering and that the real alias is
+           the only one shipped enabled.
+
+           The alias name is a PERMANENT part of the component identity, so
+           these strings must never be renamed: a launcher stores the component
+           of a pinned shortcut or home-screen icon, and renaming the alias
+           leaves the user with an icon that opens nothing. Change the icon or
+           the label freely; the android:name is frozen.
+
+           What this does NOT hide, because an alias cannot touch it: the app
+           name in Settings → Apps, in storage and battery lists, and — the one
+           that matters — in the header of every push notification, which comes
+           from the application label. Turning stealth on therefore turns push
+           off; see services/stealth.ts and the note in SecurityPage. -->
+      <activity-alias
+        android:name=".Launcher"
+        android:targetActivity=".MainActivity"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:enabled="true"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity-alias>
+
+      <activity-alias
+        android:name=".LauncherCalculator"
+        android:targetActivity=".MainActivity"
+        android:label="@string/decoy_calculator"
+        android:icon="@mipmap/ic_decoy_calculator"
+        android:roundIcon="@mipmap/ic_decoy_calculator"
+        android:enabled="false"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity-alias>
+
+      <activity-alias
+        android:name=".LauncherNotes"
+        android:targetActivity=".MainActivity"
+        android:label="@string/decoy_notes"
+        android:icon="@mipmap/ic_decoy_notes"
+        android:roundIcon="@mipmap/ic_decoy_notes"
+        android:enabled="false"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+      </activity-alias>
 
       <!-- The QR scanner (scanner/WhispaCaptureActivity.kt), a subclass of
            zxing-android-embedded's CaptureActivity.

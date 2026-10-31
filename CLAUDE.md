@@ -88,6 +88,7 @@ npm run check:colors        # the two colours written in both theme.ts and color
 npm run check:terms         # one terms version, in two repos, behind one tick box
 npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
+npm run check:stealth       # one launcher icon always enabled, and the UI says what it hides
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -305,6 +306,65 @@ The app lock is the ONLY thing in the wallet written with an `accessControl`,
 so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
+
+## Stealth mode hides an icon, not an app
+
+Added 2026-10-31. The home screen can show a **Calculator** or **Notes** icon
+instead of the wallet, chosen under Settings → Security → Home screen.
+
+Android gives an app one icon per enabled `activity-alias` carrying
+MAIN/LAUNCHER, so the manifest declares three onto `MainActivity` —
+`.Launcher`, `.LauncherCalculator`, `.LauncherNotes` — and
+`stealth/StealthModule.kt` flips which is enabled with
+`setComponentEnabledSetting`. **`MainActivity` carries no launcher filter of
+its own any more**, and that is the line that makes the feature real rather
+than decorative: a filter there cannot be disabled, so the wallet's own icon
+would sit on the home screen whatever the user chose.
+
+**The failure to design against is ZERO enabled aliases.** That is an app with
+no icon on any launcher and no way to start it — for a wallet, somebody's money
+behind a door with no handle, recoverable only by reinstalling and restoring
+the recovery phrase, which plenty of people do not have to hand. So `setAlias`
+**enables the target before disabling the others**: between the two calls there
+are briefly two icons, which is cosmetic and self-correcting, where the other
+order leaves a window with none and a process killed inside it never reaches
+the enable call. An unrecognised name is **rejected**, never quietly resolved
+to `default` — that would turn stealth off for a caller that asked for a
+disguise. `check:stealth` pins both, the one-enabled-alias rule, and that every
+`setComponentEnabledSetting` passes `DONT_KILL_APP` (without it Android may
+stop the process the moment the toggle is used, which reads as a crash caused
+by turning on a security feature).
+
+The alias `android:name`s are **frozen**. A launcher stores the component
+behind a pinned or home-screen icon, so renaming one leaves whoever pinned it
+with an icon that opens nothing. Icons and labels can change freely.
+
+**The current icon is read from the PackageManager, never from app storage.**
+The enabled state is what the launcher obeys and it outlives this app's data,
+so a cached copy can disagree with what is actually on the home screen — and
+the screen offering to change it has to show what is true.
+
+**What it does not hide, which the Settings copy states rather than letting
+anyone infer otherwise**: the app name in Settings → Apps and in the storage
+and battery lists; the recent-apps card; and the header of every push
+notification. All of those read the *application* label, which an alias cannot
+touch. **So turning a disguise on turns alerts off** — a payment arriving under
+a calculator icon would otherwise still say WhiSPa on the lock screen, which is
+the one place it matters most. That is gated on `isDisguised()` rather than on
+one alias name, so a third decoy added later cannot ship with alerts on.
+Turning them back on is left to the user: somebody who removed the disguise has
+not necessarily decided they want their lock screen naming this app again.
+
+And anyone who *taps* the decoy gets the wallet. The disguise is against a
+glance, not against a search; the app lock and the duress PIN are what stand
+behind it. A working calculator with a secret entry code was considered and not
+built — it is a second UI surface to keep working and a new way to be locked
+out, and coercion is what the duress PIN already answers.
+
+Android only. `stealthAvailable()` asks `NativeModules.StealthModule` rather
+than a build flag, for the reason `push.ts` gives about its own module, and the
+section does not render without it — a switch storing a preference nothing can
+honour is the worse failure.
 
 ## The signup form had a bot check that was decorative
 

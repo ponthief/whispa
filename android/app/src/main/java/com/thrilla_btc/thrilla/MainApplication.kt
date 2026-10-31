@@ -12,6 +12,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.flipper.ReactNativeFlipper
 import com.facebook.soloader.SoLoader
 import com.thrilla_btc.thrilla.scanner.ZxingScannerPackage
+import com.thrilla_btc.thrilla.stealth.StealthPackage
 import com.thrilla_btc.thrilla.updater.ApkInstallerPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -29,6 +30,10 @@ class MainApplication : Application(), ReactApplication {
               // scanner/ZxingScannerModule.kt and FDROID.md. Also local
               // rather than autolinked, for the same reason.
               add(ZxingScannerPackage())
+              // Stealth mode — which launcher icon the app wears. Local for
+              // the same reason, and see stealth/StealthModule.kt for the one
+              // rule it exists to enforce (never zero enabled aliases).
+              add(StealthPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

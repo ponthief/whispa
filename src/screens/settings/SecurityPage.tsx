@@ -3,6 +3,15 @@ import { Alert } from 'react-native';
 import { useAppLockStore } from '@stores/appLockStore';
 import * as appLock from '@services/appLock';
 import * as appPin from '@services/appPin';
+import {
+  STEALTH_ALIASES,
+  type StealthAlias,
+  currentAlias,
+  isDisguised,
+  setAlias as setStealthAlias,
+  stealthAvailable,
+} from '@services/stealth';
+import { useNotifyStore } from '@stores/notifyStore';
 import { hasSeed } from '@services/seedVault';
 import { useSilntWallet } from '../../hooks/useSilntWallet';
 import DevicesModal from '../../components/DevicesModal';
@@ -143,6 +152,57 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
     appPin.setDuressPin(null).then(() => setHasDuress(false));
   }, []);
 
+  // ── Stealth mode ──────────────────────────────────────────────────────────
+  // Read from the PackageManager on mount, not from a store: the enabled state
+  // is what the launcher obeys and it outlives this app's own data, so a cached
+  // copy can disagree with the icon actually on the home screen.
+  const [alias, setAliasState] = useState<StealthAlias>('default');
+  const [aliasMsg, setAliasMsg] = useState<string | null>(null);
+  const setAlerts = useNotifyStore((s) => s.setAlerts);
+
+  useEffect(() => {
+    let cancelled = false;
+    currentAlias().then((a) => {
+      if (!cancelled) setAliasState(a);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onPickAlias = useCallback(
+    async (next: StealthAlias) => {
+      if (next === alias) return;
+      setAliasMsg(null);
+      try {
+        await setStealthAlias(next);
+        setAliasState(next);
+        // ALERTS OFF WITH THE DISGUISE ON. A notification's header carries the
+        // application label, which an activity-alias cannot touch — so a
+        // payment arriving under a calculator icon would still say WhiSPa on
+        // the lock screen, which is the one place it most matters.
+        //
+        // Turning them back on is left to the user rather than restored
+        // automatically: somebody who turned the disguise off has not
+        // necessarily decided they want their lock screen naming this app
+        // again, and Notifications is one tap away.
+        if (isDisguised(next)) {
+          await setAlerts(false);
+        }
+      } catch (e: any) {
+        // The icon did not change, so neither does what is on screen. Saying
+        // so beats a chip that looks selected over a home screen that
+        // disagrees with it.
+        setAliasMsg(
+          e?.message === 'stealth-unavailable'
+            ? 'This build cannot change the launcher icon.'
+            : 'Could not change the icon. Your home screen is unchanged.',
+        );
+      }
+    },
+    [alias, setAlerts],
+  );
+
   const onPinDone = useCallback(() => {
     setPinModal(null);
     appPin.hasPin().then(setPinSet);
@@ -212,6 +272,58 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
               onSelect={setAutoLockMs}
             />
           </Block>
+        </Group>
+      ) : null}
+
+      {/* HOME-SCREEN DISGUISE, and the copy is careful about what it is not.
+          Stealth mode changes which launcher alias is enabled, so the icon and
+          name on the home screen become a calculator or a notepad. The app
+          behind it is unchanged — a tap opens WhiSPa, into the lock above if
+          one is set. It hides the wallet from a glance, not from a search.
+
+          Only rendered when the native module is there: on iOS, and on any
+          build predating it, offering a switch that stores a preference
+          nothing can honour is the failure NotificationsPage already names. */}
+      {stealthAvailable() ? (
+        <Group title="Home screen">
+          <Block first>
+            <Chips
+              options={STEALTH_ALIASES}
+              selected={alias}
+              onSelect={onPickAlias}
+            />
+          </Block>
+          <Block>
+            <Help>
+              {isDisguised(alias)
+                ? `Your home screen shows "${STEALTH_ALIASES.find((a) => a.key === alias)?.label}". Tapping it opens WhiSPa as usual.`
+                : 'Show a different icon and name on your home screen. Tapping it still opens WhiSPa.'}
+            </Help>
+          </Block>
+          {/* Said here rather than discovered later. A disguise that leaves
+              the name in four other places is still worth having; one the
+              user believes is complete is not. */}
+          <Block>
+            <Note kind="info">
+              This hides the icon and name on your home screen only. Your phone
+              still lists WhiSPa under Settings → Apps, and in its storage and
+              battery screens. Anyone who opens the icon gets the wallet, so
+              keep a PIN or biometric lock on as well.
+            </Note>
+          </Block>
+          {isDisguised(alias) ? (
+            <Block>
+              <Note kind="info">
+                Alerts are off while a disguise is on. A notification shows the
+                app it came from, and that name is one no icon can change.
+              </Note>
+            </Block>
+          ) : null}
+          {aliasMsg ? (
+            <Block>
+              <Note kind="error">{aliasMsg}</Note>
+            </Block>
+          ) : null}
         </Group>
       ) : null}
 

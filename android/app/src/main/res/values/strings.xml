@@ -1,4 +1,13 @@
 <resources>
   <!-- app_name is provided per build flavor via resValue in app/build.gradle
        (Thrilla / Thrilla Signet), so it is intentionally not defined here. -->
+
+  <!-- Stealth mode launcher labels. These are what the home screen reads
+       under a decoy icon, so they are deliberately ordinary and are NOT
+       flavor-dependent: a decoy reading "Calculator Signet" would announce
+       itself. They are also not translated — a disguise that renders in a
+       different language to everything else on the home screen is a worse
+       disguise, and the real app_name is not translated either. -->
+  <string name="decoy_calculator">Calculator</string>
+  <string name="decoy_notes">Notes</string>
 </resources>

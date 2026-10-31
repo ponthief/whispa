@@ -339,6 +339,28 @@ The alias `android:name`s are **frozen**. A launcher stores the component
 behind a pinned or home-screen icon, so renaming one leaves whoever pinned it
 with an icon that opens nothing. Icons and labels can change freely.
 
+**The component name is (applicationId, namespace-qualified class)**, and
+getting that wrong is how this shipped broken on 2026-10-31. `namespace` is
+`com.thrilla_btc.thrilla`; `applicationId` is `com.whispawallet.app`, plus
+`.signet` on the signet flavor. `getPackageName()` returns the applicationId,
+so a class built from it names `com.whispawallet.app.Launcher`, which does not
+exist — `setComponentEnabledSetting` throws *Unknown component*, every call
+fails, and the user gets "Could not change the icon" with nothing to say why.
+app/build.gradle already documented this exact divergence for
+`build_config_package` and react-native-config's `BuildConfig` lookup, and this
+walked into it anyway. `StealthModule.aliasPackage` holds the namespace and
+`check:stealth` pins it against build.gradle's, because nothing else notices
+the two drifting until somebody tries to turn stealth on.
+
+**Mainnet and signet have the same launcher artwork**, which the feature made
+worth fixing: one `res` directory serves both flavors, so only the label
+differed (`WhiSPa` / `WhiSPa Signet`) and launchers truncate that. Signet now
+has its own `android/app/src/signet/res/mipmap-*/ic_launcher*.png` — the same
+icon with an amber disc in the top-right corner, chosen over lettering because
+at mdpi (48px) any text is mud. The decoy icons are deliberately NOT badged:
+a disguise that advertises which build it is would be a poor disguise, so two
+installs both wearing Calculator look identical on purpose.
+
 **The current icon is read from the PackageManager, never from app storage.**
 The enabled state is what the launcher obeys and it outlives this app's data,
 so a cached copy can disagree with what is actually on the home screen — and

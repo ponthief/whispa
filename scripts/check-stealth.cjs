@@ -169,6 +169,28 @@ console.log('the module can never leave the app with no icon');
     ok('StealthPackage is registered in MainApplication',
       !!APP && /add\(StealthPackage\(\)\)/.test(APP),
       'an unregistered module is simply absent at runtime, with no error');
+
+    // THE COMPONENT NAME, which is where this feature first broke.
+    //
+    // A ComponentName is (installed package, fully-qualified class). The
+    // installed package is the applicationId — com.whispawallet.app, with
+    // .signet on the signet flavor — and getPackageName() returns it. The
+    // alias CLASS lives under the Gradle `namespace`,
+    // com.thrilla_btc.thrilla, which is a different string entirely.
+    //
+    // Building the class from getPackageName() names a component that does
+    // not exist. setComponentEnabledSetting throws Unknown component, every
+    // call fails, and the user sees "Could not change the icon" with nothing
+    // to say why. build.gradle already records the identical trap for
+    // react-native-config's BuildConfig lookup.
+    const ns = (/namespace\s+"([^"]+)"/.exec(read('android/app/build.gradle') || '') || [])[1];
+    const konst = (/val aliasPackage = "([^"]+)"/.exec(MODULE) || [])[1];
+    ok('the alias package is the gradle namespace, not the applicationId',
+      !!ns && konst === ns,
+      `build.gradle namespace: ${ns}\n         StealthModule:          ${konst}`);
+    ok('and the class name is never built from getPackageName()',
+      !/packageName\s*\+\s*suffix/.test(MODULE),
+      'that is the applicationId, which the alias classes do not live under');
   }
 }
 

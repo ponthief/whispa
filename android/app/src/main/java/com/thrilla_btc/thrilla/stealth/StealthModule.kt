@@ -53,8 +53,36 @@ class StealthModule(
         "notes" to ".LauncherNotes"
     )
 
+    /**
+     * The package the alias CLASSES live in: the Gradle `namespace`, which is
+     * NOT the applicationId.
+     *
+     * This is the repo's oldest Android trap and it caught this file on its
+     * first build. `namespace` is com.thrilla_btc.thrilla and `applicationId`
+     * is com.whispawallet.app (com.whispawallet.app.signet on signet), so a
+     * component built from getPackageName() — the applicationId — names
+     * com.whispawallet.app.Launcher, which does not exist.
+     * setComponentEnabledSetting answers that with
+     * IllegalArgumentException: Unknown component, every call fails, and the
+     * user gets "Could not change the icon" with no clue why.
+     *
+     * app/build.gradle says the same thing about `build_config_package` and
+     * react-native-config: BuildConfig is generated under the NAMESPACE, not
+     * under the applicationId. Same divergence, same mistake.
+     *
+     * The two halves of a ComponentName are different things and both matter:
+     * the package is the INSTALLED package (the applicationId, which is what
+     * getPackageName returns and what differs per flavor), and the class is
+     * the fully-qualified alias (namespace + name, identical on both flavors).
+     *
+     * check:stealth pins this constant against `namespace` in build.gradle,
+     * because nothing else would notice them drifting apart until a user
+     * tried to turn stealth on.
+     */
+    private val aliasPackage = "com.thrilla_btc.thrilla"
+
     private fun component(suffix: String) =
-        ComponentName(reactContext.packageName, reactContext.packageName + suffix)
+        ComponentName(reactContext.packageName, aliasPackage + suffix)
 
     /**
      * Which alias is enabled right now, read from the PackageManager rather

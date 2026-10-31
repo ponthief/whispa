@@ -355,11 +355,30 @@ the two drifting until somebody tries to turn stealth on.
 **Mainnet and signet have the same launcher artwork**, which the feature made
 worth fixing: one `res` directory serves both flavors, so only the label
 differed (`WhiSPa` / `WhiSPa Signet`) and launchers truncate that. Signet now
-has its own `android/app/src/signet/res/mipmap-*/ic_launcher*.png` — the same
-icon with an amber disc in the top-right corner, chosen over lettering because
-at mdpi (48px) any text is mud. The decoy icons are deliberately NOT badged:
-a disguise that advertises which build it is would be a poor disguise, so two
-installs both wearing Calculator look identical on purpose.
+has its own `android/app/src/signet/res/mipmap-*/` — the same icon with an
+amber disc, chosen over lettering because at mdpi (48px) any text is mud.
+
+**Badging `ic_launcher.png` alone does nothing on any modern phone**, which is
+how this shipped invisible the first time. `mipmap-anydpi-v26/ic_launcher.xml`
+declares an ADAPTIVE icon — `@mipmap/ic_launcher_foreground` over
+`@color/ic_launcher_background` — and from API 26 the launcher draws that and
+ignores the legacy PNG entirely. The override was generated, built, installed
+and identical to mainnet. A flavor overriding the icon must override
+**`ic_launcher_foreground`** at every density, and `check:stealth` fails a
+flavor that overrides one without the other, or that ships a foreground
+byte-identical to main's.
+
+The background colour was the obvious alternative and is nearly useless here:
+the foreground artwork fills the safe zone, so the background shows as a thin
+rim at most. The badge goes **on the foreground**, and its placement is
+arithmetic rather than taste — an adaptive foreground is 108dp with only the
+central 72dp guaranteed, so a circular mask keeps radius 0.333 of the image
+from centre. The first attempt sat with its outer edge at 0.361 and would have
+been sliced off on a round-icon launcher; it is at 0.325 now.
+
+The decoy icons are deliberately NOT badged: a disguise that advertises which
+build it is would be a poor disguise, so two installs both wearing Calculator
+look identical on purpose.
 
 **The current icon is read from the PackageManager, never from app storage.**
 The enabled state is what the launcher obeys and it outlives this app's data,

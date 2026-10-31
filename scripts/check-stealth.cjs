@@ -132,6 +132,48 @@ console.log('every decoy icon exists at every density');
   }
 }
 
+// ── a flavor that overrides the launcher icon must override the ADAPTIVE one ─
+// On API 26+ — which is every device anyone is running — the launcher reads
+// mipmap-anydpi-v26/ic_launcher.xml and composites @mipmap/ic_launcher_foreground
+// over a background colour. The legacy ic_launcher.png is used only below
+// Android 8. So a flavor that badges ONLY the PNG has an override nothing will
+// ever display, which is exactly what shipped on 2026-10-31: the signet icon
+// was generated, built and installed, and looked identical to mainnet.
+console.log('a flavor that overrides the launcher icon overrides the adaptive one');
+{
+  const DENS = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
+  const adaptive = read('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml');
+  const usesForeground = !!adaptive && /ic_launcher_foreground/.test(adaptive);
+  ok('main declares an adaptive icon over ic_launcher_foreground', usesForeground);
+
+  const srcDir = path.join(ROOT, 'android/app/src');
+  const flavors = fs.existsSync(srcDir)
+    ? fs.readdirSync(srcDir).filter((f) => f !== 'main' && f !== 'debug')
+    : [];
+  for (const flavor of flavors) {
+    const dir = (d) => path.join(srcDir, flavor, 'res', `mipmap-${d}`);
+    const overridesLegacy = DENS.some((d) =>
+      fs.existsSync(path.join(dir(d), 'ic_launcher.png')));
+    if (!overridesLegacy) continue;
+    const missing = DENS.filter((d) =>
+      !fs.existsSync(path.join(dir(d), 'ic_launcher_foreground.png')));
+    ok(`${flavor} also overrides ic_launcher_foreground at every density`,
+      missing.length === 0,
+      `missing: ${missing.join(', ')} — on Android 8+ only the adaptive foreground is drawn, ` +
+      'so a badge on the legacy PNG alone is invisible');
+    // And it has to actually differ, or the override is a copy that says
+    // nothing — which looks identical and passes every existence check.
+    const same = DENS.filter((d) => {
+      const a = path.join(dir(d), 'ic_launcher_foreground.png');
+      const b = path.join(ROOT, 'android/app/src/main/res', `mipmap-${d}`, 'ic_launcher_foreground.png');
+      return fs.existsSync(a) && fs.existsSync(b) &&
+        fs.readFileSync(a).equals(fs.readFileSync(b));
+    });
+    ok(`${flavor}'s foreground actually differs from main's`,
+      same.length === 0, `identical at: ${same.join(', ')}`);
+  }
+}
+
 // ── the native module ───────────────────────────────────────────────────────
 console.log('the module can never leave the app with no icon');
 {

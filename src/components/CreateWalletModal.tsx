@@ -134,6 +134,24 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
         setError('Invalid recovery phrase — the checksum (last word) is incorrect.');
         return;
       }
+      // IMPORT IS FOR WHISPA WALLETS, so the passphrase is required here too
+      // (2026-11-03). It used to be exempt, on the reasoning that a wallet made
+      // elsewhere might not have one — but every WhiSPa wallet is generated
+      // through the branch below, which has always demanded a passphrase, so
+      // the exemption only ever admitted wallets this app did not make.
+      //
+      // It is also what the encrypted backup now rests on: the file is sealed
+      // with the wallet's passphrase, so a wallet without one cannot be backed
+      // up at all. Letting such a wallet in through import would create an
+      // account that silently cannot use the feature.
+      const importPpErr = validateNewWalletPassphrase(passphrase);
+      if (importPpErr) {
+        setError(
+          `${importPpErr} Every WhiSPa wallet has a passphrase — if you are ` +
+            `restoring a wallet made in another app, it cannot be imported here.`,
+        );
+        return;
+      }
       const height = Number(birthHeight);
       if (!birthHeight || !Number.isFinite(height) || height < 0) {
         setError('Enter the wallet birth height (block number) to import.');
@@ -157,9 +175,8 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
       }
       lastHeight = Math.floor(height);
     } else {
-      // New wallets require a passphrase (mixed into the seed, unrecoverable if
-      // forgotten). Import stays exempt so passphrase-less wallets can be
-      // restored.
+      // The passphrase is mixed into the seed and cannot be recovered if
+      // forgotten. Required on import too — see the note there.
       const ppErr = validateNewWalletPassphrase(passphrase);
       if (ppErr) {
         setError(ppErr);

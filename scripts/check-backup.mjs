@@ -304,6 +304,33 @@ console.log('a backup written before the KDF changed still opens');
     JSON.parse(await encryptBackup(payload, PW)).kdf.name === 'scrypt');
 }
 
+console.log('every WhiSPa wallet has a passphrase, including imported ones');
+{
+  // THE BACKUP DESIGN RESTS ON THIS. The file is sealed with the wallet's
+  // passphrase, and the readiness check proves that passphrase against the
+  // wallet — neither has anything to work with if a wallet can exist without
+  // one. Import was exempt until 2026-11-03; re-exempting it would not break a
+  // test anywhere else, it would just quietly create accounts that cannot back
+  // up and cannot be told why.
+  const paths = [
+    ['src/components/CreateWalletModal.tsx', 'the phone'],
+    ['src/views/WalletsView.vue', 'the web'],
+  ];
+  for (const [rel, who] of paths) {
+    const raw = readFileSync(new URL('../' + rel, import.meta.url), 'utf8');
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const calls = (code.match(/validateNewWalletPassphrase\(/g) || []).length;
+    // Two: one on the generate branch, one on the import branch. One means the
+    // import exemption is back.
+    ok(`${who} demands a passphrase on BOTH create and import`, calls >= 2,
+      `${rel} calls validateNewWalletPassphrase ${calls} time(s)`);
+  }
+  const KEYS = readFileSync(new URL('../src/services/spKeys.ts', import.meta.url), 'utf8');
+  ok('and spKeys does not still claim import is exempt',
+    !/Import\/recovery deliberately does NOT/.test(KEYS),
+    'a comment that contradicts the code is worse than no comment');
+}
+
 console.log('the web side types the phrase and never stores it');
 {
   const V = readFileSync(new URL('../src/views/ConfigView.vue', import.meta.url), 'utf8');

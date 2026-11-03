@@ -82,12 +82,22 @@ export function isValidMnemonic(m: string): boolean {
   return validateMnemonic(m.trim().toLowerCase(), wordlist);
 }
 
-// BIP-39 passphrase policy for NEW wallets. The passphrase is mandatory when
-// *generating* a wallet: it's mixed into the seed and — unlike the mnemonic —
-// cannot be recovered if forgotten. Import/recovery deliberately does NOT
-// enforce this, so wallets created without a passphrase (legacy or external)
-// can still be restored. The passphrase is used verbatim in derivation, so
-// validate the raw string (no trimming — every character is significant).
+// BIP-39 passphrase policy. Mandatory for every WhiSPa wallet: it is mixed
+// into the seed and — unlike the mnemonic — cannot be recovered if forgotten.
+//
+// ENFORCED ON IMPORT TOO, since 2026-11-03. It was exempt until then, on the
+// reasoning that a wallet made elsewhere might not have one; but every WhiSPa
+// wallet is generated through a path that has always demanded a passphrase, so
+// the exemption only ever admitted wallets this app did not make. Import is for
+// WhiSPa wallets.
+//
+// Two things now depend on that being true without exception. The encrypted
+// backup is sealed with the wallet's passphrase, so a wallet without one cannot
+// be backed up at all; and the backup's readiness check proves the passphrase
+// against the wallet, which has nothing to prove if there is none.
+//
+// The passphrase is used verbatim in derivation, so validate the raw string
+// (no trimming — every character is significant).
 export const PASSPHRASE_MIN_LENGTH = 12;
 
 export function validateNewWalletPassphrase(passphrase: string): string | null {

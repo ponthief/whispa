@@ -534,9 +534,9 @@ onMounted(async () => {
       <div class="card-header"><h2>Backup</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <p class="text-dim text-sm" style="margin:0">
-          Saves your transaction labels, SegWit address labels and pinned contacts —
-          what this browser knows and the server does not. Add your recovery phrase
-          below to make it a wallet backup as well.
+          Backs up your WhiSPa wallet: your transaction labels, SegWit address
+          labels and pinned contacts, plus the wallet itself if you add your
+          recovery phrase below.
         </p>
         <div class="alert" style="padding:10px;border-radius:6px">
           <p class="text-sm" style="margin:0">
@@ -563,16 +563,17 @@ onMounted(async () => {
         </div>
 
         <div class="field">
-          <label>Recovery phrase <span class="text-dim text-xs">(optional)</span></label>
+          <label>WhiSPa recovery phrase <span class="text-dim text-xs">(optional)</span></label>
           <textarea class="input" rows="2" v-model="bkPhrase"
-                    placeholder="Twelve words, separated by spaces"
+                    placeholder="Your WhiSPa wallet's twelve words"
                     autocomplete="off" spellcheck="false"></textarea>
           <!-- Typed, never stored. keyvault.js keeps derived keys only, so the
                browser has no phrase to read — and this deliberately does not
                start keeping one. -->
           <p class="text-dim text-xs" style="margin:6px 0 0">
             Not saved in this browser — it is written into the file and forgotten.
-            Leave it blank to back up labels only.
+            Leave it blank to back up labels only. This restores a WhiSPa wallet;
+            a wallet from another app cannot be backed up here.
           </p>
         </div>
 

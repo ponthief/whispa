@@ -494,13 +494,34 @@ one, while the passphrase has an enforced floor
 (`validateNewWalletPassphrase`: 12+ printable ASCII, letters and numbers) that
 a free-text backup password never had.
 
+**Every WhiSPa wallet has a passphrase, imported ones included** (2026-11-03,
+on the user's instruction). `validateNewWalletPassphrase` was enforced only
+when GENERATING a wallet; import was exempt, on the reasoning that a wallet
+made elsewhere might not have one. But every WhiSPa wallet is generated through
+a path that has always demanded one, so the exemption only ever admitted
+wallets this app did not make — and import is for WhiSPa wallets. Both clients
+now demand it on both branches, and say so when they refuse: *"Every WhiSPa
+wallet has a passphrase — if you are restoring a wallet made in another app, it
+cannot be imported here."*
+
+`check:backup` pins that, because the backup design RESTS on it: the file is
+sealed with the wallet's passphrase and the readiness check proves that
+passphrase against the wallet, and neither has anything to work with if a
+wallet can exist without one. Re-exempting import would break no other test —
+it would quietly create accounts that cannot back up, with nothing to say why.
+
+The cost, and it is the reason this was checked before changing: a legacy or
+externally-made passphrase-less wallet can no longer be imported at all. The
+refusal names that case rather than leaving somebody staring at a length rule.
+
 Two consequences are handled rather than left as traps. **An empty or weak
-passphrase is refused before anything is encrypted** — a wallet imported
-without one has nothing to encrypt with, the empty string is not a key, and the
-result would be a plaintext recovery phrase in a file that looks encrypted; the
-same validator the wallet uses is applied, on WRITE only, so files made under
-other rules still open. And **the passphrase is proven before the file is
-written**: when the password was separate, a typo was a nuisance; now a file
+passphrase is refused before anything is encrypted** — the empty string is not
+a key, and the result would be a plaintext recovery phrase in a file that looks
+encrypted. That should now be unreachable, and stays as the backstop, because
+"should be unreachable" is exactly the kind of claim that stops being true
+quietly. The same validator the wallet uses is applied, on WRITE only, so files
+made under other rules still open. And **the passphrase is proven before the
+file is written**: when the password was separate, a typo was a nuisance; now a file
 sealed with a mistyped string is a wallet nobody can ever reach, discovered at
 restore.
 

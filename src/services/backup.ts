@@ -50,7 +50,10 @@ import { secureRandomUnavailable, validateNewWalletPassphrase } from './spKeys';
 //
 //   * A wallet with NO passphrase has nothing to encrypt with. The empty string
 //     is not a key, and a file "encrypted" with it is a plaintext wallet. Such
-//     an export is refused outright rather than written.
+//     an export is refused outright rather than written. Since 2026-11-03 both
+//     clients also demand a passphrase on IMPORT, so this should now be
+//     unreachable — it stays as the backstop, because "should be unreachable"
+//     is exactly the kind of claim that stops being true quietly.
 //   * The passphrase must be PROVEN before the file is written — see
 //     verifySeedPassphrase. Mistype it and the file is sealed with a string
 //     that is not the passphrase, nobody finds out until a restore, and the

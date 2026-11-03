@@ -175,8 +175,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       <Group title="What this saves">
         <Block first>
           <Help>
-            Your recovery phrase, plus your transaction and SegWit address
-            labels. A reinstall loses the labels and nothing can rebuild them.
+            Your WhiSPa wallet: its recovery phrase, plus your transaction and
+            SegWit address labels. A reinstall loses the labels and nothing can
+            rebuild them.
           </Help>
         </Block>
         {/* The honest shape of the file, said where the decision is made.

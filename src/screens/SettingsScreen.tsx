@@ -5,6 +5,7 @@ import { useAuthStore } from '@stores/authStore';
 import { useNotifyStore } from '@stores/notifyStore';
 import AboutPage from './settings/AboutPage';
 import AccountPage from './settings/AccountPage';
+import BackupPage from './settings/BackupPage';
 import NotificationsPage from './settings/NotificationsPage';
 import ScanningPage from './settings/ScanningPage';
 import SecurityPage from './settings/SecurityPage';
@@ -26,6 +27,7 @@ import { Group, NavRow, Page } from './settings/ui';
 
 type PageKey =
   | 'account'
+  | 'backup'
   | 'security'
   | 'notifications'
   | 'scanning'
@@ -57,6 +59,7 @@ export default function SettingsScreen() {
 
   if (page === 'account') return <AccountPage onBack={back} />;
   if (page === 'security') return <SecurityPage onBack={back} />;
+  if (page === 'backup') return <BackupPage onBack={back} />;
   if (page === 'notifications') return <NotificationsPage onBack={back} />;
   if (page === 'scanning') return <ScanningPage onBack={back} />;
   if (page === 'wallet') return <WalletPage onBack={back} />;
@@ -116,6 +119,10 @@ export default function SettingsScreen() {
         <NavRow
           title="Wallet"
           onPress={() => setPage('wallet')}
+        />
+        <NavRow
+          title="Backup"
+          onPress={() => setPage('backup')}
         />
       </Group>
 

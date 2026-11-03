@@ -227,6 +227,71 @@ console.log('the web collector never reaches the key vault');
   delete globalThis.localStorage;
 }
 
+console.log('the phone collector reads labels and nothing else');
+{
+  const RN_RAW = readFileSync(new URL('../src/services/backupData.ts', import.meta.url), 'utf8');
+  const RN = RN_RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const imports = [...RN.matchAll(/from '\.\/(\w+)'/g)].map((m) => m[1]).sort();
+
+  ok('it imports only the label services',
+    JSON.stringify(imports) === JSON.stringify(['segwitLabels', 'txLabels']),
+    `imports: ${imports.join(', ')}`);
+  // The four that would turn a backup into a wallet. An import of any of them
+  // is the shape of the mistake, long before a payload is assembled.
+  for (const forbidden of ['seedVault', 'secureKeys', 'appPin', 'appLock']) {
+    ok(`it never imports ${forbidden}`, !imports.includes(forbidden));
+  }
+  ok('a restore merges rather than replaces',
+    /hasOwnProperty\.call\(/.test(RN),
+    'replacing would delete labels written since the backup, with nothing saying so');
+  ok('segwit labels merge per ADDRESS, not per wallet',
+    /for \(const \[addr, label\] of Object\.entries/.test(RN),
+    'taking a wallet map wholesale drops addresses labelled since the backup');
+
+  // The compatibility claim both files make in their comments: a backup taken
+  // on one client opens on the other. That only holds while the section names
+  // agree, and nothing else would notice them drifting.
+  const WEB2 = readFileSync(new URL('../src/stores/backupdata.js', import.meta.url), 'utf8');
+  const webSections = [...WEB2.matchAll(/^\s{2}(\w+): '/gm)].map((m) => m[1]).sort();
+  for (const shared of ['txLabels', 'segwitLabels']) {
+    ok(`both clients call it "${shared}"`,
+      webSections.includes(shared) && RN.includes(`sections.${shared}`));
+  }
+}
+
+console.log('the native file module moves text and knows nothing else');
+{
+  const KT_RAW = readFileSync(
+    new URL('../android/app/src/main/java/com/thrilla_btc/thrilla/backup/BackupFileModule.kt',
+      import.meta.url), 'utf8');
+  const KT = KT_RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  ok('it uses the Storage Access Framework', /ACTION_CREATE_DOCUMENT/.test(KT) && /ACTION_OPEN_DOCUMENT/.test(KT),
+    'a file path would mean asking a wallet for storage permission');
+  // The promise is cleared BEFORE it is settled, so a duplicated activity
+  // result cannot settle a promise that has since moved on — the same rule
+  // ZxingScannerModule documents.
+  for (const fn of ['finishSave', 'finishOpen']) {
+    const body = new RegExp(`private fun ${fn}[\\s\\S]*?\\n  }`).exec(KT)?.[0] || '';
+    const cleared = body.indexOf('pending = null');
+    const settled = Math.min(
+      ...['promise.resolve', 'promise.reject'].map((s) => {
+        const i = body.indexOf(s);
+        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+      }));
+    ok(`${fn} clears the pending promise before settling it`,
+      cleared >= 0 && cleared < settled);
+  }
+  ok('a cancelled picker resolves rather than rejects',
+    /RESULT_OK[\s\S]{0,200}promise\.resolve\(null\)/.test(KT),
+    'backing out of the system picker is not an error and must not read as one');
+  ok('reading is capped', /MAX_BYTES/.test(KT),
+    'picking a video by mistake would otherwise pull it through the bridge');
+  // It must never gain an opinion about the contents: the encryption happens
+  // in JavaScript before this is called.
+  ok('it does not touch crypto', !/Cipher|SecretKey|encrypt|decrypt/i.test(KT));
+}
+
 console.log(
   failures
     ? `\n${failures} check(s) failed`

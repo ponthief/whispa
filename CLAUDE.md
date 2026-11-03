@@ -476,6 +476,34 @@ mentioning `Math.random()` — the same trap `check:stealth` hit with
 the random salt alone changes the ciphertext; salt and nonce are compared
 separately now.
 
+**On the phone the file goes through the Storage Access Framework**
+(`backup/BackupFileModule.kt`): `ACTION_CREATE_DOCUMENT` to save,
+`ACTION_OPEN_DOCUMENT` to restore. No storage permission is asked for and the
+app writes nowhere the user cannot reach — the system picker is in front of
+them and this process gets a one-off URI for exactly the file they chose. On a
+wallet, "needs access to all your files" is a permission worth never asking
+for. Hand-written rather than an npm native dependency, like ApkInstaller and
+ZxingScanner, because it is two intents and two streams and a dependency is
+something F-Droid has to build.
+
+The module **moves a UTF-8 string and knows nothing else** — the encryption
+has already happened in JavaScript before it is called, and `check:backup`
+refuses it gaining any crypto. Opening filters on `*/*` rather than
+`application/json`: a backup that has been through Drive, a chat app or mail
+comes back as octet-stream or text/plain routinely, and filtering on the
+declared type hides the user's own file from them with nothing saying why. The
+content is validated in JavaScript, which is the only place that can really
+answer. Reads are capped so that picking a video by mistake fails at once
+instead of pulling it through the bridge. A cancelled picker **resolves**
+rather than rejecting, because backing out is not an error and must not read as
+one, and `pending` is cleared BEFORE the promise is settled so a duplicated
+activity result cannot settle one that has moved on — the rule
+`ZxingScannerModule` already documents.
+
+Both clients name the sections the same (`txLabels`, `segwitLabels`), so a
+backup taken on one opens on the other; `check:backup` pins that, since nothing
+else would notice the two drifting apart.
+
 Loading a service with sibling imports from a check needs
 `scripts/ts-resolve.mjs` (`--import`), because `src/` uses extensionless
 relative imports that Metro and Vite resolve and Node does not. The same

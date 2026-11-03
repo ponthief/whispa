@@ -11,6 +11,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.flipper.ReactNativeFlipper
 import com.facebook.soloader.SoLoader
+import com.thrilla_btc.thrilla.backup.BackupFilePackage
 import com.thrilla_btc.thrilla.scanner.ZxingScannerPackage
 import com.thrilla_btc.thrilla.stealth.StealthPackage
 import com.thrilla_btc.thrilla.updater.ApkInstallerPackage
@@ -34,6 +35,10 @@ class MainApplication : Application(), ReactApplication {
               // the same reason, and see stealth/StealthModule.kt for the one
               // rule it exists to enforce (never zero enabled aliases).
               add(StealthPackage())
+              // Saving and opening a backup file through the Storage Access
+              // Framework — see backup/BackupFileModule.kt for why that rather
+              // than a path, and why hand-written rather than a dependency.
+              add(BackupFilePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

@@ -1,16 +1,30 @@
 import React, { useCallback, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
-import { backupFilename, decryptBackup, encryptBackup } from '@services/backup';
-import { applyBackup, collectBackup, countItems } from '@services/backupData';
+import { useAuthStore } from '@stores/authStore';
+import * as api from '@services/api';
+import { deriveSilentPayment } from '@services/spKeys';
+import {
+  backupFilename,
+  decryptBackup,
+  encryptBackup,
+  verifySeedPassphrase,
+} from '@services/backup';
+import { applyBackup, collectBackup, countItems, seededWalletCount } from '@services/backupData';
 import { Block, Button, Field, Group, Help, Note, Page } from './ui';
 
-// A backup of what this phone knows and the server does not.
+// A backup of this wallet and what this phone knows about it.
 //
-// IT IS NOT A WALLET BACKUP, and the copy leads with that rather than letting
-// anyone infer it. The file holds transaction labels, SegWit address labels and
-// nothing else — no mnemonic, no keys, no passphrase. The coins come back from
-// the recovery phrase and from nothing in this file. See services/backup.ts for
-// why the file password is deliberately NOT the wallet's BIP-39 passphrase.
+// IT CARRIES THE RECOVERY PHRASE, and not the BIP-39 passphrase. That is the
+// keystore's own line: the phrase is already on this device (seedVault), the
+// passphrase deliberately is not, and a backup drawn on the same line is worth
+// no more to a thief than the phone. Restoring takes the file, the file's
+// password, AND the passphrase out of the owner's head.
+//
+// The passphrase prompt here is a READINESS CHECK, not storage. Nothing writes
+// it anywhere. It derives each wallet's address from phrase + passphrase and
+// compares, so somebody who has forgotten it finds out now rather than years
+// later with the phone gone — a mistyped passphrase otherwise derives a
+// perfectly valid, completely different, empty wallet, silently.
 
 type Native = {
   save(filename: string, text: string): Promise<string | null>;
@@ -32,6 +46,8 @@ function native(): Native {
 
 export default function BackupPage({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState('');
+  const [passphrase, setPassphrase] = useState('');
+  const inkey = useAuthStore((s) => s.inkey);
   const [busy, setBusy] = useState<null | 'export' | 'restore'>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState(false);
@@ -45,11 +61,51 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     setBusy('export');
     say(null);
     try {
-      const payload = await collectBackup(Platform.OS === 'ios' ? 'ios' : 'android');
+      const list = inkey ? await api.getSilntWallets(inkey) : [];
+      const wallets = (list || []).map((w: any) => ({
+        id: w.id,
+        title: w.title || 'Wallet',
+        network: w.network,
+        spAddress: w.sp_address || '',
+      }));
+      const payload = await collectBackup(
+        Platform.OS === 'ios' ? 'ios' : 'android',
+        wallets,
+      );
+      const seeded = seededWalletCount(payload);
       const total = countItems(payload);
-      if (!total) {
-        say('Nothing to back up yet — no labels on this phone.', true);
+      if (!total && !seeded) {
+        say('Nothing to back up yet — no wallet keys or labels on this phone.', true);
         return;
+      }
+
+      // BEFORE ENCRYPTING ANYTHING. A backup written against a passphrase its
+      // owner cannot reproduce is a file that looks like insurance and is not.
+      if (seeded) {
+        const checks = verifySeedPassphrase(
+          (payload.wallets || [])
+            .filter((w) => !!w.mnemonic)
+            .map((w) => ({
+              walletId: w.id,
+              title: w.title,
+              spAddress: w.spAddress,
+              mnemonic: w.mnemonic as string,
+              network: w.network,
+            })),
+          passphrase,
+          deriveSilentPayment,
+        );
+        const bad = checks.filter((c) => !c.ok);
+        if (bad.length) {
+          // Named, because with more than one wallet the answer "which one"
+          // is the difference between a typo and a different passphrase.
+          say(
+            `That passphrase does not match ${bad.map((b) => b.title).join(', ')}. ` +
+              'A backup you cannot restore is not a backup, so nothing was written.',
+            true,
+          );
+          return;
+        }
       }
       // The KDF runs for seconds on a phone. It yields every 20ms and reports
       // progress, so the screen counts up instead of freezing — the first
@@ -63,7 +119,8 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // failure and must not be reported as one.
       say(
         where
-          ? `Saved ${total} item${total === 1 ? '' : 's'}. Keep the file and its password together.`
+          ? `Saved ${seeded} wallet${seeded === 1 ? '' : 's'} and ${total} label${total === 1 ? '' : 's'}. ` +
+            'You will need this file, its password, and your wallet passphrase to restore.'
           : 'Cancelled.',
       );
     } catch (e: any) {
@@ -71,7 +128,13 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(null);
     }
-  }, [password]);
+    // inkey and passphrase BELONG here. Without them this closure keeps the
+    // values from first render — an empty passphrase for the life of the
+    // screen — and the readiness check would validate a string the user never
+    // typed. lint caught it; it is the same stale-closure shape CLAUDE.md
+    // records from the network check that passed for the case it existed to
+    // refuse.
+  }, [password, passphrase, inkey]);
 
   const onRestore = useCallback(async () => {
     setBusy('restore');
@@ -89,13 +152,15 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       const report = await applyBackup(payload as any);
       const added = Object.values(report).reduce((n, r) => n + r.added, 0);
       const kept = Object.values(report).reduce((n, r) => n + r.kept, 0);
+      const seeds = report.recoveryPhrases?.added || 0;
       // Reports what actually changed. "Restored" over a file whose every entry
       // was already here reads as though something happened.
       say(
         added
-          ? `Restored ${added} of ${total} item${total === 1 ? '' : 's'}.` +
+          ? (seeds ? `Restored ${seeds} recovery phrase${seeds === 1 ? '' : 's'}. ` : '') +
+            `Restored ${added - seeds} of ${total} label${total === 1 ? '' : 's'}.` +
             (kept ? ` ${kept} were already here and were left alone.` : '')
-          : `Nothing to add — all ${total} item${total === 1 ? '' : 's'} were already on this phone.`,
+          : `Nothing to add — everything in that file was already on this phone.`,
       );
     } catch (e: any) {
       say(e?.message || 'Could not read that backup.', true);
@@ -109,19 +174,28 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       <Group title="What this saves">
         <Block first>
           <Help>
-            Your transaction labels and SegWit address labels — what this phone
-            knows and the server does not. A reinstall loses all of it, and
-            nothing can rebuild it.
+            Your recovery phrase, plus your transaction and SegWit address
+            labels. A reinstall loses the labels and nothing can rebuild them.
           </Help>
         </Block>
-        {/* Stated here, not discovered at the worst moment. Somebody who
-            believes this file is their wallet will not write down the phrase. */}
+        {/* The honest shape of the file, said where the decision is made.
+            Somebody who thinks this file alone is their wallet will store it
+            carelessly; somebody who thinks it is useless will not keep it. */}
         <Block>
           <Note kind="info">
-            This is not a wallet backup. It holds no keys and no recovery phrase,
-            so it cannot bring your coins back — your recovery phrase does that,
-            and it is the only thing that can. Restoring needs the phrase and
-            this file.
+            This file holds your recovery phrase but NOT your passphrase.
+            Restoring takes three things: this file, its password, and your
+            wallet passphrase from memory. Keep the file somewhere you would be
+            comfortable keeping a spare key — and keep its password somewhere
+            else.
+          </Note>
+        </Block>
+        {/* Writing the phrase down stays the real backup. A file depends on a
+            device, a service and a password; twelve words on paper do not. */}
+        <Block>
+          <Note kind="info">
+            This does not replace writing your recovery phrase down. A file can
+            be lost with the account it sits in.
           </Note>
         </Block>
       </Group>
@@ -148,6 +222,27 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             <Help>
               Use a different password to your wallet's passphrase. Losing this
               one loses only the file — never your coins.
+            </Help>
+          </Block>
+          {/* Asked for, never stored. It is checked against each wallet's known
+              address so a forgotten passphrase surfaces here rather than during
+              a restore that silently builds a different, empty wallet. */}
+          <Block>
+            <Field
+              value={passphrase}
+              onChangeText={setPassphrase}
+              placeholder="Your wallet passphrase"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              action="Check"
+              onAction={onExport}
+              actionBusy={busy === 'export'}
+              actionDisabled={!!busy || !password}
+            />
+            <Help>
+              Checked against your wallet, never saved to the file. If it does
+              not match, nothing is written.
             </Help>
           </Block>
           <Block>

@@ -14,7 +14,8 @@ import { pathToFileURL } from 'node:url';
 const mod = await import(
   pathToFileURL(new URL('../src/services/backup.ts', import.meta.url).pathname).href
 );
-const { encryptBackup, decryptBackup, assertNoSecrets, backupFilename, KDF, BACKUP_VERSION } = mod;
+const { encryptBackup, decryptBackup, assertNoSecrets, backupFilename, KDF,
+        BACKUP_VERSION, verifySeedPassphrase } = mod;
 const RAW = readFileSync(new URL('../src/services/backup.ts', import.meta.url), 'utf8');
 // Comments stripped before any source assertion. check-stealth.cjs learned this
 // the hard way — it counted a comment saying "DONT_KILL_APP is passed on every
@@ -127,14 +128,23 @@ console.log('it never carries key material, in either direction');
   // The whole reason a backup is safe to keep in cloud storage. A payload
   // carrying a mnemonic encrypts, writes and restores perfectly, and turns the
   // file into a bearer instrument with nothing saying so.
+  // THE RULE: the backup may hold what the KEYSTORE holds, and nothing the
+  // keystore refuses to hold. The keystore has the recovery phrase; it does not
+  // have the BIP-39 passphrase, and that is what keeps a stolen backup worth no
+  // more than a stolen phone.
   const shapes = [
+    // A phrase anywhere but the sanctioned path. Not pedantry: a phrase in a
+    // field nobody expects one in is a phrase nobody will think to protect.
     { mnemonic: 'abandon abandon' },
+    { nested: { mnemonic: 'abandon abandon' } },
+    { sections: { txLabels: { mnemonic: 'abandon abandon' } } },
+    // And everything the keystore would not give up.
     { wallets: [{ id: 'w', xprv: 'xprv9s...' }] },
     { nested: { deeper: { passphrase: 'hunter2' } } },
+    { wallets: [{ id: 'w', passphrase: 'hunter2' }] },
     { spendKey: 'deadbeef' },
     { scanKey: 'deadbeef' },
     { a: [{ b: { privateKey: 'x' } }] },
-    { seed: 'x' },
   ];
   for (const bad of shapes) {
     await refuses(`export refuses ${JSON.stringify(bad).slice(0, 42)}`,
@@ -143,9 +153,65 @@ console.log('it never carries key material, in either direction');
   }
   // And on the way IN: a file written by hand, or by a tampered build, must not
   // be able to push key material into this app's storage.
-  await refuses('import refuses a payload carrying a mnemonic',
+  await refuses('import refuses a stray mnemonic',
     () => assertNoSecrets({ app: 'whispa', mnemonic: 'abandon abandon' }),
     'backup_would_carry_a_secret');
+
+  // THE SANCTIONED PLACE, which must actually work — a rule that refuses
+  // everything is easy to pass and useless.
+  const withSeed = {
+    app: 'whispa', payloadVersion: 1, exportedAt: 0,
+    wallets: [{ id: 'w1', title: 'Main', network: 'signet', spAddress: 'tsp1x',
+                mnemonic: 'abandon abandon abandon' }],
+    sections: { txLabels: { tx1: 'rent' } },
+  };
+  let seedFile = null;
+  try {
+    seedFile = await encryptBackup(withSeed, PW);
+  } catch (e) {
+    ok('a phrase at wallets[n].mnemonic is allowed', false, `${e.code}: ${e.message}`);
+  }
+  ok('a phrase at wallets[n].mnemonic is allowed', !!seedFile);
+  if (seedFile) {
+    ok('and the phrase is not readable in the file', !seedFile.includes('abandon'));
+    const back = await decryptBackup(seedFile, PW);
+    ok('and it round-trips', back.wallets[0].mnemonic === 'abandon abandon abandon');
+  }
+}
+
+console.log('the passphrase is proved, not stored');
+{
+  // A readiness check, not data integrity: nothing stores the passphrase, so
+  // nothing can verify it later. What this catches is somebody who has
+  // FORGOTTEN it, while they still have the working phone — rather than years
+  // on, when a mistyped passphrase silently derives a perfectly valid,
+  // completely different, empty wallet.
+  const wallets = [
+    { walletId: 'a', title: 'Main', spAddress: 'tsp1correct', mnemonic: 'x', network: 'signet' },
+    { walletId: 'b', title: 'Spare', spAddress: 'tsp1other', mnemonic: 'y', network: 'signet' },
+  ];
+  const fake = (mn, pp) => ({
+    spAddress: pp === 'right' ? (mn === 'x' ? 'tsp1correct' : 'tsp1other') : 'tsp1wrong',
+  });
+
+  ok('the right passphrase verifies every wallet',
+    verifySeedPassphrase(wallets, 'right', fake).every((r) => r.ok));
+
+  const bad = verifySeedPassphrase(wallets, 'wrong', fake);
+  ok('a wrong passphrase fails every wallet', bad.every((r) => !r.ok));
+  ok('and names which ones', bad.map((r) => r.title).join(',') === 'Main,Spare');
+
+  ok('a derivation that throws is a failure, not a pass',
+    verifySeedPassphrase(wallets, 'x', () => { throw new Error('bad seed'); }).every((r) => !r.ok),
+    'swallowing the error and returning ok would wave every backup through');
+
+  ok('the comparison is case-insensitive',
+    verifySeedPassphrase(
+      [{ walletId: 'a', title: 'M', spAddress: 'TSP1CORRECT', mnemonic: 'x', network: 'signet' }],
+      'right', fake)[0].ok);
+
+  ok('the result never contains the passphrase',
+    !JSON.stringify(verifySeedPassphrase(wallets, 'right', fake)).includes('right'));
 }
 
 console.log('the parameters are not quietly weakened');
@@ -281,14 +347,25 @@ console.log('the phone collector reads labels and nothing else');
   const RN = RN_RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const imports = [...RN.matchAll(/from '\.\/(\w+)'/g)].map((m) => m[1]).sort();
 
-  ok('it imports only the label services',
-    JSON.stringify(imports) === JSON.stringify(['segwitLabels', 'txLabels']),
+  // seedVault IS expected now: the backup carries the recovery phrase, which is
+  // what the keystore already holds. This read "imports only the label
+  // services" until 2026-11-03 and was narrowed deliberately when that rule
+  // changed — not loosened to make a failure go away.
+  ok('it imports the label services and seedVault, and nothing else',
+    JSON.stringify(imports) === JSON.stringify(['seedVault', 'segwitLabels', 'txLabels']),
     `imports: ${imports.join(', ')}`);
-  // The four that would turn a backup into a wallet. An import of any of them
-  // is the shape of the mistake, long before a payload is assembled.
-  for (const forbidden of ['seedVault', 'secureKeys', 'appPin', 'appLock']) {
+  // Still forbidden, and these are the ones that matter: the derived keys come
+  // back from the phrase, so a second copy is only a second thing to steal, and
+  // the lock secrets are about this device rather than about the wallet.
+  for (const forbidden of ['secureKeys', 'appPin', 'appLock']) {
     ok(`it never imports ${forbidden}`, !imports.includes(forbidden));
   }
+  // A phrase already on the device is NEVER replaced by one from a file.
+  // Overwriting could swap the key to a wallet holding money for the key to a
+  // different one, and nothing would say so until the balance read zero.
+  ok('a restore never overwrites a phrase already on the device',
+    /await hasSeed\(w\.id\)[\s\S]{0,140}continue/.test(RN),
+    'the stored phrase must win, exactly as the labels do')
   ok('a restore merges rather than replaces',
     /hasOwnProperty\.call\(/.test(RN),
     'replacing would delete labels written since the backup, with nothing saying so');

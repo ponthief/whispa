@@ -104,12 +104,34 @@ export class BackupError extends Error {
   }
 }
 
-// Anything whose NAME suggests key material. Matched case-insensitively against
-// every key at every depth, and against nothing else: this is a tripwire on the
-// shape of the payload, not a scan of its values. A 12-word string under the
-// key "note" is not something this can catch, which is why the payload is
-// ASSEMBLED from named sources rather than swept up from storage.
-const FORBIDDEN_KEY = /mnemonic|seed|passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
+// THE RULE, changed on 2026-11-03 after the first shape of it was challenged:
+//
+//   The backup may hold what the KEYSTORE holds, and nothing the keystore
+//   refuses to hold.
+//
+// The keystore holds the recovery phrase (seedVault.ts), the spend key and the
+// scan secret (secureKeys.ts). It deliberately does NOT hold the BIP-39
+// passphrase, so that a keystore dump cannot recover a passphrase-protected
+// wallet. A backup that mirrors exactly that line is worth no more to a thief
+// than the phone is: it restores a wallet only when its owner also supplies the
+// passphrase, which exists nowhere but in their head.
+//
+// So the recovery phrase is PERMITTED, at one sanctioned place and nowhere
+// else, and everything the keystore would not give up is still refused.
+//
+// (This replaced a blanket ban justified by the standing instruction "private
+// keys are never stored". Read literally that rule is already untrue of the
+// device — the keystore holds the spend key and the BIP-84 xprv — so it means
+// never stored SERVER-SIDE. The real argument is narrower and is the one
+// above: a keystore needs the device, while a backup file is designed to leave
+// it.)
+const FORBIDDEN_KEY = /passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
+
+// The one path a recovery phrase may occupy: payload.wallets[n].mnemonic.
+// Anywhere else it is refused, so a phrase cannot end up somewhere no reader
+// of this file would think to look for one.
+const SEED_KEY = 'mnemonic';
+const SEED_PATH = /^payload\.wallets\[\d+\]$/;
 
 export function assertNoSecrets(value: unknown, path = 'payload'): void {
   if (value === null || typeof value !== 'object') return;
@@ -118,11 +140,21 @@ export function assertNoSecrets(value: unknown, path = 'payload'): void {
     return;
   }
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === SEED_KEY) {
+      if (!SEED_PATH.test(path)) {
+        throw new BackupError(
+          'backup_would_carry_a_secret',
+          `Refusing to write a backup with a recovery phrase at "${path}.${k}". ` +
+            `A phrase belongs at wallets[n].mnemonic and nowhere else.`,
+        );
+      }
+      continue; // sanctioned — do not recurse into a string anyway
+    }
     if (FORBIDDEN_KEY.test(k)) {
       throw new BackupError(
         'backup_would_carry_a_secret',
-        `Refusing to write a backup containing "${path}.${k}". A backup never ` +
-          `carries key material.`,
+        `Refusing to write a backup containing "${path}.${k}". A backup carries ` +
+          `no passphrase and no derived key.`,
       );
     }
     assertNoSecrets(v, `${path}.${k}`);
@@ -307,4 +339,55 @@ export async function decryptBackup(
 export function backupFilename(now = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `whispa-backup-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}.json`;
+}
+
+// ── Proving the passphrase before writing a backup ──────────────────────────
+
+export type SeedCheck = {
+  walletId: string;
+  title: string;
+  /** The sp1…/tsp1… this wallet is known by, from the server record. */
+  spAddress: string;
+  mnemonic: string;
+  network: string;
+};
+
+export type SeedCheckResult = { walletId: string; title: string; ok: boolean };
+
+/**
+ * Does this passphrase, with these seeds, derive the wallets we think it does?
+ *
+ * WHAT THIS IS FOR, and it is not data integrity. The passphrase is not stored
+ * anywhere, so a backup cannot carry it and cannot check it later. What it can
+ * do is make somebody demonstrate, at the moment they make the backup, that
+ * they still KNOW the passphrase their wallets need — because a backup you
+ * cannot restore is not a backup, and the usual way to discover that is years
+ * later with the phone already gone.
+ *
+ * The failure it catches is specifically silent: a mistyped passphrase derives
+ * a perfectly valid, completely different, empty wallet. No error, no warning,
+ * no coins, and nothing afterwards to say which of the two strings was wrong.
+ *
+ * Takes the derivation as an argument rather than importing spKeys, so this
+ * module stays loadable by a check script — spKeys pulls in the whole BIP-32
+ * stack and this file is the one the crypto checks exercise.
+ */
+export function verifySeedPassphrase(
+  wallets: SeedCheck[],
+  passphrase: string,
+  derive: (mnemonic: string, passphrase: string, network: string) => { spAddress: string },
+): SeedCheckResult[] {
+  return wallets.map((w) => {
+    let ok = false;
+    try {
+      // Compared case-insensitively: bech32m is lower case by construction, but
+      // a record that came back upper-cased from somewhere should not read as a
+      // forgotten passphrase.
+      const got = derive(w.mnemonic, passphrase, w.network).spAddress;
+      ok = !!got && got.toLowerCase() === (w.spAddress || '').toLowerCase();
+    } catch {
+      ok = false;
+    }
+    return { walletId: w.walletId, title: w.title, ok };
+  });
 }

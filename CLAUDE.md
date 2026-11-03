@@ -417,12 +417,56 @@ crypto, and each client supplies its own collector because the two store this
 differently — the web in `localStorage` under `thrilla_*_v1`, the phone in the
 platform keychain under named services.
 
-**It holds no key material, and that was asked and confirmed before building.**
-No mnemonic, no xprv, no spend or scan key, no passphrase. A file that restores
-the coins is a bearer instrument — whoever has it and the password has the
-money — and the standing instruction is "Private keys are never stored". So a
-restore needs the recovery phrase AND this file, and the Settings copy leads
-with that rather than letting anyone infer a wallet backup.
+**The rule is: the backup may hold what the KEYSTORE holds, and nothing the
+keystore refuses to hold.** The keystore has the recovery phrase
+(`seedVault.ts`), the spend key and the scan secret (`secureKeys.ts`). It
+deliberately does NOT have the BIP-39 passphrase. So the backup carries the
+**recovery phrase** and **not the passphrase**, and restoring takes the file,
+the file's password, and the passphrase out of the owner's head — the same
+two-factor shape the device already has. A stolen backup is worth no more than
+a stolen phone.
+
+This replaced a blanket ban (2026-11-03, same day), and the correction is
+worth keeping. The ban was justified here by the standing instruction *"Private
+keys are never stored"* — but the user pointed out the seed phrase is already
+on the device, and they were right: read literally that rule is untrue of the
+device, since the keystore holds the spend key and the BIP-84 xprv. It means
+never stored SERVER-SIDE. The real argument is narrower: a keystore is
+hardware-backed and needs the device, while a backup file is *designed to
+leave* — it lands in Drive or in email, and its only protection is a password a
+human chose. That argument supports keeping the passphrase out; it never
+supported keeping the phrase out, which the phone was holding anyway.
+
+The derived keys stay out regardless: they come back from the phrase, so a
+second copy is only a second thing to steal.
+
+`assertNoSecrets` enforces this precisely rather than bluntly — a phrase is
+allowed at **`wallets[n].mnemonic` and nowhere else**, because a phrase in a
+field no reader expects one in is a phrase nobody will think to protect, and
+`passphrase`, `xprv`, `spendKey`, `scanKey` and friends are refused at every
+depth. `check:backup` exercises both directions, including that a phrase at
+the sanctioned path actually works: a rule that refuses everything is easy to
+pass and useless.
+
+**A restore never overwrites a phrase already on the device.** The stored one
+wins, exactly as the labels do, and for a much more serious reason: replacing
+it could swap the key to a wallet holding money for the key to a different one,
+with nothing to say so until the balance read zero.
+
+**The passphrase prompt at export is a READINESS CHECK, not storage.** Nothing
+writes it. It derives each wallet's address from phrase + passphrase and
+compares against the record, and refuses the backup when they disagree — naming
+which wallet, since with more than one the answer is the difference between a
+typo and a different passphrase. What it catches is somebody who has FORGOTTEN
+the passphrase, while they still hold a working phone, instead of years later:
+a mistyped passphrase derives a perfectly valid, completely different, empty
+wallet, with no error and nothing afterwards to say which string was wrong. A
+derivation that throws counts as a failure, never a pass — swallowing it would
+wave every backup through.
+
+The Settings copy says all three of these: that the file holds the phrase, that
+it does not hold the passphrase, and that it does not replace writing the
+phrase down, since a file can be lost with the account it sits in.
 
 `assertNoSecrets` walks the payload on the way out **and on the way back in**,
 refusing any key whose NAME looks like key material. It is a tripwire on the

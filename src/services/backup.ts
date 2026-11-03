@@ -3,7 +3,7 @@ import { scryptAsync } from '@noble/hashes/scrypt';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
 import { base64 } from '@scure/base';
-import { secureRandomUnavailable } from './spKeys';
+import { secureRandomUnavailable, validateNewWalletPassphrase } from './spKeys';
 
 // An encrypted backup of everything a reinstall loses and nothing can rebuild.
 //
@@ -26,17 +26,36 @@ import { secureRandomUnavailable } from './spKeys';
 // encrypts, writes and restores perfectly well, and nothing says the file is
 // now worth stealing.
 //
-// THE PASSWORD IS NOT THE WALLET'S PASSPHRASE, and that was a deliberate
-// decision (2026-11-03) against the first shape of the request. The BIP-39
-// passphrase is the one factor that is not on the device — seedVault.ts
-// excludes it precisely so a keystore dump cannot recover a passphrase-
-// protected wallet. A file encrypted with it would be an OFFLINE ORACLE for
-// that passphrase: whoever holds the file grinds guesses at whatever rate the
-// KDF allows, and a successful decrypt confirms the guess. Pair that with the
-// device, whose keystore does hold the mnemonic, and cracking the passphrase
-// yields the wallet. It would also leave wallets imported without a passphrase
-// — explicitly supported — with nothing to encrypt with, and make one forgotten
-// string lose both the wallet and its backup.
+// THE FILE IS ENCRYPTED WITH THE WALLET'S BIP-39 PASSPHRASE (2026-11-03, on
+// the user's instruction, after the trade was put to them twice).
+//
+// KNOW WHAT THIS FILE IS. It contains the recovery phrase and it opens with the
+// passphrase, so the file plus that one string IS the wallet — no phone needed.
+// Both clients say so where the backup is made. Treat it like the written
+// phrase, not like a document that is fine in cloud storage.
+//
+// THE ARGUMENT AGAINST, recorded because it did not stop being true: this
+// collapses two independent secrets into one. With a separate password, an
+// attacker who cracks the file gets a phrase that is still useless without the
+// passphrase; here, cracking the passphrase yields both. And the file is an
+// OFFLINE ORACLE for it — guesses run at whatever rate the KDF allows and a
+// successful decrypt confirms the hit.
+//
+// WHAT WAS WEIGHED ON THE OTHER SIDE, and it is a fair point: three secrets is
+// a lot, and the usual way people cope is by weakening one. The passphrase has
+// an enforced floor (validateNewWalletPassphrase: 12+ printable ASCII); a
+// free-text backup password had none.
+//
+// TWO CONSEQUENCES THIS FILE HANDLES RATHER THAN LEAVES AS TRAPS:
+//
+//   * A wallet with NO passphrase has nothing to encrypt with. The empty string
+//     is not a key, and a file "encrypted" with it is a plaintext wallet. Such
+//     an export is refused outright rather than written.
+//   * The passphrase must be PROVEN before the file is written — see
+//     verifySeedPassphrase. Mistype it and the file is sealed with a string
+//     that is not the passphrase, nobody finds out until a restore, and the
+//     wallet inside is unreachable for ever. When the file password was
+//     separate that was a nuisance; now it is the whole wallet.
 
 export const BACKUP_FORMAT = 'whispa.backup';
 export const BACKUP_VERSION = 1;
@@ -188,7 +207,7 @@ async function kdfKey(
   onProgress?: KdfProgress,
 ): Promise<Uint8Array> {
   if (!password) {
-    throw new BackupError('backup_no_password', 'A backup needs a password.');
+    throw new BackupError('backup_no_password', 'A backup needs a passphrase.');
   }
   const pw = enc.encode(password);
   const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress };
@@ -218,6 +237,23 @@ export async function encryptBackup(
   // then notices has written the secret to memory and, a moment later, to disk.
   assertNoSecrets(payload);
 
+  // THE EMPTY-PASSPHRASE CASE, refused rather than written. A wallet imported
+  // without a BIP-39 passphrase has nothing to encrypt this file with, and the
+  // empty string is not a key: the result would be a plaintext recovery phrase
+  // in a file that looks encrypted, which is the worst of both. The same floor
+  // the wallet itself enforces is applied here, so "a" is refused too.
+  //
+  // Checked on WRITE only. A file made under different rules must still open,
+  // or this check would strand backups rather than protect them.
+  const weak = validateNewWalletPassphrase(password || '');
+  if (weak) {
+    throw new BackupError(
+      'backup_passphrase_too_weak',
+      `${weak} This file is encrypted with your wallet passphrase, so a wallet ` +
+        `without one cannot be backed up this way.`,
+    );
+  }
+
   // The salt and the nonce are the two values that MUST come from a real
   // CSPRNG. A predictable salt turns the KDF into a lookup, and a repeated
   // nonce under one password breaks XChaCha20-Poly1305 outright. spKeys guards
@@ -238,6 +274,10 @@ export async function encryptBackup(
     kdf: { ...KDF, salt: base64.encode(salt) },
     cipher: 'xchacha20poly1305' as const,
     nonce: base64.encode(nonce),
+    // Recorded so a restore can ask for the right thing by name, and so a file
+    // from the brief period of separate backup passwords is still identifiable.
+    // Authenticated as part of the header, so it cannot be relabelled.
+    keySource: 'wallet-passphrase' as const,
   };
 
   const key = await kdfKey(password, salt, KDF, onProgress);

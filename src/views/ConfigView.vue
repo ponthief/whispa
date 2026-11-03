@@ -9,8 +9,16 @@ const BIP353_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 const confirmForget = ref(false)
 const myWalletIds = ref([])
 
-// ── Backup of device-only data ──────────────────────────────────────────────
-const bkPassword = ref('')
+// ── Backup ──────────────────────────────────────────────────────────────────
+// The browser has no recovery phrase of its own (keyvault.js stores derived
+// keys only), so the phrase is TYPED here, verified against the wallet's own
+// address, written into the file, and never persisted in this browser.
+//
+// The file is encrypted with the WALLET PASSPHRASE, on the user's instruction.
+// That makes the file plus that one string the whole wallet — see the warning
+// rendered below, and the long note at the top of services/backup.ts.
+const bkPassphrase = ref('')
+const bkPhrase = ref('')
 const bkBusy = ref(null)
 const bkMsg = ref('')
 const bkErr = ref(false)
@@ -25,19 +33,58 @@ async function doExport() {
   bkBusy.value = 'export'
   bkSay('')
   try {
-    const { encryptBackup, backupFilename } = await import('@/services/backup')
-    const { collectBackup, describeBackup } = await import('@/stores/backupdata')
-    const payload = collectBackup()
+    const { encryptBackup, backupFilename, verifySeedPassphrase } = await import('@/services/backup')
+    const { collectBackup, describeBackup, seededWalletCount } = await import('@/stores/backupdata')
+    const { deriveSilentPayment, isValidMnemonic } = await import('@/services/spKeys')
+
+    // The phrase, if one was typed, is checked for being a phrase at all before
+    // anything derives from it — "not a valid recovery phrase" is a far more
+    // useful answer than "that passphrase does not match".
+    const phrase = (bkPhrase.value || '').trim().toLowerCase()
+    let wallets = []
+    if (phrase) {
+      if (!isValidMnemonic(phrase)) {
+        bkSay('That recovery phrase is not valid — check the words and their order.', true)
+        return
+      }
+      const list = await api.getSilntWallets(auth.inkey)
+      wallets = (list || []).map(w => ({
+        id: w.id, title: w.title || 'Wallet', network: w.network,
+        spAddress: w.sp_address || '', mnemonic: phrase,
+      }))
+      // Only the wallets this phrase actually derives. A phrase belongs to one
+      // wallet; attaching it to every row would claim ownership of wallets it
+      // has nothing to do with.
+      const checks = verifySeedPassphrase(
+        wallets.map(w => ({
+          walletId: w.id, title: w.title, spAddress: w.spAddress,
+          mnemonic: w.mnemonic, network: w.network,
+        })),
+        bkPassphrase.value,
+        deriveSilentPayment,
+      )
+      const good = new Set(checks.filter(c => c.ok).map(c => c.walletId))
+      if (!good.size) {
+        bkSay(
+          'That phrase and passphrase do not match any wallet on this account. ' +
+          'Nothing was written.', true)
+        return
+      }
+      wallets = wallets.filter(w => good.has(w.id))
+    }
+
+    const payload = collectBackup(wallets)
     const parts = describeBackup(payload)
+    const seeded = seededWalletCount(payload)
     const total = parts.reduce((n, p) => n + p.count, 0)
-    if (!total) {
-      bkSay('Nothing to back up yet — no labels or pins on this browser.', true)
+    if (!total && !seeded) {
+      bkSay('Nothing to back up yet — no labels, pins or recovery phrase given.', true)
       return
     }
     // The KDF yields every 20ms and reports progress, so the tab stays
     // responsive and the page counts up rather than looking wedged.
     bkSay('Encrypting… 0%')
-    const text = await encryptBackup(payload, bkPassword.value,
+    const text = await encryptBackup(payload, bkPassphrase.value,
       (f) => bkSay(`Encrypting… ${Math.round(f * 100)}%`))
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const a = document.createElement('a')
@@ -47,7 +94,11 @@ async function doExport() {
     // Revoked, or the blob is held for the life of the tab — and this one is a
     // decrypted-adjacent artifact we would rather not leave lying around.
     URL.revokeObjectURL(url)
-    bkSay(`Saved ${total} item${total === 1 ? '' : 's'}. Keep the file and its password together.`)
+    bkSay(
+      seeded
+        ? `Saved ${seeded} wallet and ${total} label${total === 1 ? '' : 's'}. ` +
+          'This file plus your passphrase is your wallet — guard it like the written phrase.'
+        : `Saved ${total} label${total === 1 ? '' : 's'}.`)
   } catch (e) {
     bkSay(e?.message || 'Could not write the backup.', true)
   } finally {
@@ -60,8 +111,8 @@ async function onPickBackup(ev) {
   // Cleared immediately so picking the SAME file twice still fires a change.
   ev.target.value = ''
   if (!file) return
-  if (!bkPassword.value) {
-    bkSay('Enter the backup file\'s password first, then choose the file.', true)
+  if (!bkPassphrase.value) {
+    bkSay('Enter your wallet passphrase first, then choose the file.', true)
     return
   }
   bkBusy.value = 'restore'
@@ -69,20 +120,43 @@ async function onPickBackup(ev) {
   try {
     const { decryptBackup } = await import('@/services/backup')
     const { applyBackup, describeBackup } = await import('@/stores/backupdata')
+    const { deriveSilentPayment } = await import('@/services/spKeys')
     bkSay('Opening… 0%')
-    const payload = await decryptBackup(await file.text(), bkPassword.value,
+    const payload = await decryptBackup(await file.text(), bkPassphrase.value,
       (f) => bkSay(`Opening… ${Math.round(f * 100)}%`))
     const report = applyBackup(payload)
     const added = Object.values(report).reduce((n, r) => n + r.added, 0)
     const kept = Object.values(report).reduce((n, r) => n + r.kept, 0)
     const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
+
+    // THE PHRASE IS NOT STORED; it is USED. The browser keeps derived keys, not
+    // words (keyvault.js), so the useful thing a restore can do with a phrase is
+    // what Recover Keys does — re-derive this wallet's keys and refill the
+    // vault, so the browser can scan and spend again. The passphrase needed for
+    // that is the one that just opened the file.
+    //
+    // Only for wallets with no keys here already: re-deriving over a working
+    // vault entry would be pointless at best, and at worst would overwrite the
+    // keys of a wallet with a phrase that belongs to a different one.
+    let recovered = 0
+    for (const w of payload.wallets || []) {
+      if (!w?.id || !w.mnemonic) continue
+      if (auth.hasWalletKeys(w.id)) continue
+      try {
+        const k = deriveSilentPayment(w.mnemonic, bkPassphrase.value, w.network)
+        if (w.spAddress && k.spAddress.toLowerCase() !== w.spAddress.toLowerCase()) continue
+        await auth.storeWalletKeys(w.id, k.scanSecret, k.spendKey, k.refundAddress, k.sweepAccount)
+        recovered++
+      } catch { /* a wallet that will not derive is reported by the count, not by a crash */ }
+    }
     // Reports what actually changed. "Restored" over a file whose every entry
     // was already present reads as if something happened.
     bkSay(
-      added
+      (recovered ? `Restored keys for ${recovered} wallet${recovered === 1 ? '' : 's'}. ` : '') +
+      (added
         ? `Restored ${added} of ${total} item${total === 1 ? '' : 's'}.` +
           (kept ? ` ${kept} were already here and were left alone.` : '')
-        : `Nothing to add — all ${total} item${total === 1 ? '' : 's'} were already on this browser.`,
+        : `No labels to add — all ${total} were already on this browser.`),
     )
   } catch (e) {
     bkSay(e?.message || 'Could not read that backup.', true)
@@ -452,44 +526,61 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Backup of device-only data. NOT a wallet backup, and the copy leads
-         with that: the labels and notes here exist nowhere else, but the coins
-         come back from the recovery phrase and from nothing in this file. -->
+    <!-- Backup. The copy leads with what the file IS, because it is encrypted
+         with the wallet passphrase and carries the recovery phrase: that file
+         plus that one string is the wallet, with no device needed. Somebody who
+         reads this as "just my labels" will store it carelessly. -->
     <div class="card" style="margin-top:20px">
       <div class="card-header"><h2>Backup</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <p class="text-dim text-sm" style="margin:0">
-          Saves what this browser knows and the server does not — your transaction
-          labels, SegWit address labels and pinned contacts. A reinstall loses all
-          of it, and nothing can rebuild it.
+          Saves your transaction labels, SegWit address labels and pinned contacts —
+          what this browser knows and the server does not. Add your recovery phrase
+          below to make it a wallet backup as well.
         </p>
         <div class="alert" style="padding:10px;border-radius:6px">
           <p class="text-sm" style="margin:0">
-            <strong>This is not a wallet backup.</strong> It holds no keys and no
-            recovery phrase, so it cannot restore your coins — your recovery phrase
-            does that, and it is the only thing that can. Restoring takes the phrase
-            <em>and</em> this file.
+            <strong>Guard this file like your recovery phrase.</strong> It is
+            encrypted with your wallet passphrase, so anyone who has both the file
+            and your passphrase has your coins — no device needed. It is not
+            something to leave lying in cloud storage.
           </p>
         </div>
 
         <!-- Export -->
         <div class="field">
-          <label>Backup password</label>
-          <input class="input" type="password" v-model="bkPassword"
-                 placeholder="Choose a password for the file" autocomplete="new-password" />
-          <!-- Not the wallet's passphrase, and it says so where the choice is
-               being made. A file encrypted with the BIP-39 passphrase would be
-               an offline oracle for the one secret that is not on the device. -->
+          <label>Wallet passphrase</label>
+          <input class="input" type="password" v-model="bkPassphrase"
+                 placeholder="Your wallet passphrase" autocomplete="current-password" />
+          <!-- One secret, by the user's decision (2026-11-03). The trade is
+               recorded at the top of services/backup.ts: it collapses two
+               independent secrets into one, and that one is attackable offline
+               from the file itself. -->
           <p class="text-dim text-xs" style="margin:6px 0 0">
-            Use a different password to your wallet's passphrase. If you lose this
-            one the file cannot be opened — but your coins are unaffected.
+            This both encrypts the file and is checked against your wallet. Lose it
+            and the file cannot be opened by anyone, including you.
           </p>
         </div>
+
+        <div class="field">
+          <label>Recovery phrase <span class="text-dim text-xs">(optional)</span></label>
+          <textarea class="input" rows="2" v-model="bkPhrase"
+                    placeholder="Twelve words, separated by spaces"
+                    autocomplete="off" spellcheck="false"></textarea>
+          <!-- Typed, never stored. keyvault.js keeps derived keys only, so the
+               browser has no phrase to read — and this deliberately does not
+               start keeping one. -->
+          <p class="text-dim text-xs" style="margin:6px 0 0">
+            Not saved in this browser — it is written into the file and forgotten.
+            Leave it blank to back up labels only.
+          </p>
+        </div>
+
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" :disabled="bkBusy || !bkPassword" @click="doExport">
+          <button class="btn btn-primary btn-sm" :disabled="bkBusy || !bkPassphrase" @click="doExport">
             {{ bkBusy === 'export' ? '…' : '↓ Download backup' }}
           </button>
-          <button class="btn btn-ghost btn-sm" :disabled="bkBusy" @click="bkFile?.click()">
+          <button class="btn btn-ghost btn-sm" :disabled="bkBusy || !bkPassphrase" @click="bkFile?.click()">
             ↑ Restore from file
           </button>
           <input ref="bkFile" type="file" accept="application/json,.json"

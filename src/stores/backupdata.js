@@ -10,7 +10,19 @@
 // NEVER ON THIS LIST, and check:backup asserts it:
 //   thrilla_vault        the IndexedDB key vault — the wallet's actual keys
 //   thrilla_kdf_salt_v1  the salt those keys are wrapped with
-// A backup carrying either is a backup that spends money.
+//
+// THE VAULT STAYS OUT EVEN THOUGH THE BACKUP NOW CARRIES A RECOVERY PHRASE,
+// and the distinction is the point. The vault holds scanSecret and spendKey,
+// and a spendKey SPENDS WITH NO PASSPHRASE — so a file containing one would be
+// the coins outright, where a file containing a phrase still needs the
+// passphrase. The phrase also regenerates everything in the vault, so copying
+// the vault adds nothing but a second thing to steal.
+//
+// The browser has no recovery phrase of its own: keyvault.js stores
+// { scanSecret, spendKey, refundAddress, sweepAccount } and never the words.
+// So the phrase is TYPED at export, verified, and written to the file — the
+// browser gains no new stored secret, which is why this does not mirror the
+// phone's collector.
 
 // section name -> localStorage key
 export const BACKUP_KEYS = {
@@ -41,8 +53,14 @@ function readJson(key) {
   }
 }
 
-/** The payload for services/backup.ts to encrypt. */
-export function collectBackup() {
+/**
+ * The payload for services/backup.ts to encrypt.
+ *
+ * `wallets` is supplied by the caller rather than read from storage, because
+ * the phrase in it was typed into the export form and deliberately never
+ * persisted here. Each entry is { id, title, network, spAddress, mnemonic }.
+ */
+export function collectBackup(wallets = []) {
   const sections = {};
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
     const v = readJson(key);

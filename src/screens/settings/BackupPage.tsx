@@ -14,17 +14,16 @@ import { Block, Button, Field, Group, Help, Note, Page } from './ui';
 
 // A backup of this wallet and what this phone knows about it.
 //
-// IT CARRIES THE RECOVERY PHRASE, and not the BIP-39 passphrase. That is the
-// keystore's own line: the phrase is already on this device (seedVault), the
-// passphrase deliberately is not, and a backup drawn on the same line is worth
-// no more to a thief than the phone. Restoring takes the file, the file's
-// password, AND the passphrase out of the owner's head.
+// IT CARRIES THE RECOVERY PHRASE, and it is ENCRYPTED WITH THE WALLET
+// PASSPHRASE — one secret, on the user's instruction (2026-11-03). So this file
+// plus that one string is the wallet, with no device needed. The copy says so
+// where the backup is made; the trade is argued at the top of
+// services/backup.ts and was put to the user twice.
 //
-// The passphrase prompt here is a READINESS CHECK, not storage. Nothing writes
-// it anywhere. It derives each wallet's address from phrase + passphrase and
-// compares, so somebody who has forgotten it finds out now rather than years
-// later with the phone gone — a mistyped passphrase otherwise derives a
-// perfectly valid, completely different, empty wallet, silently.
+// The passphrase is still never WRITTEN into the file, and it is verified
+// before anything is encrypted — now the only thing standing between the user
+// and a file sealed with a string they mistyped, which nobody would discover
+// until a restore, by which point the wallet inside is unreachable.
 
 type Native = {
   save(filename: string, text: string): Promise<string | null>;
@@ -45,7 +44,9 @@ function native(): Native {
 }
 
 export default function BackupPage({ onBack }: { onBack: () => void }) {
-  const [password, setPassword] = useState('');
+  // ONE SECRET. The wallet passphrase both encrypts the file and is checked
+  // against the wallet, by the user's decision (2026-11-03). See the note at the
+  // top of services/backup.ts for what that costs.
   const [passphrase, setPassphrase] = useState('');
   const inkey = useAuthStore((s) => s.inkey);
   const [busy, setBusy] = useState<null | 'export' | 'restore'>(null);
@@ -112,7 +113,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // version blocked the JS thread and read as a hang, with the native
       // spinner still turning because only JavaScript had stopped.
       say('Encrypting… 0%');
-      const text = await encryptBackup(payload, password, (f) =>
+      const text = await encryptBackup(payload, passphrase, (f) =>
         say(`Encrypting… ${Math.round(f * 100)}%`));
       const where = await native().save(backupFilename(), text);
       // null is the user backing out of the system picker, which is not a
@@ -120,7 +121,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       say(
         where
           ? `Saved ${seeded} wallet${seeded === 1 ? '' : 's'} and ${total} label${total === 1 ? '' : 's'}. ` +
-            'You will need this file, its password, and your wallet passphrase to restore.'
+            'This file plus your passphrase is your wallet — guard it like the written phrase.'
           : 'Cancelled.',
       );
     } catch (e: any) {
@@ -134,7 +135,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     // typed. lint caught it; it is the same stale-closure shape CLAUDE.md
     // records from the network check that passed for the case it existed to
     // refuse.
-  }, [password, passphrase, inkey]);
+  }, [passphrase, inkey]);
 
   const onRestore = useCallback(async () => {
     setBusy('restore');
@@ -146,7 +147,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         return;
       }
       say('Opening… 0%');
-      const payload = await decryptBackup(text, password, (f) =>
+      const payload = await decryptBackup(text, passphrase, (f) =>
         say(`Opening… ${Math.round(f * 100)}%`));
       const total = countItems(payload as any);
       const report = await applyBackup(payload as any);
@@ -167,7 +168,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(null);
     }
-  }, [password]);
+  }, [passphrase]);
 
   return (
     <Page title="Backup" onBack={onBack}>
@@ -183,11 +184,10 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             carelessly; somebody who thinks it is useless will not keep it. */}
         <Block>
           <Note kind="info">
-            This file holds your recovery phrase but NOT your passphrase.
-            Restoring takes three things: this file, its password, and your
-            wallet passphrase from memory. Keep the file somewhere you would be
-            comfortable keeping a spare key — and keep its password somewhere
-            else.
+            Guard this file like your recovery phrase. It holds the phrase and
+            is encrypted with your wallet passphrase, so anyone with both the
+            file and that passphrase has your coins — no phone needed. It is not
+            something to leave lying in cloud storage.
           </Note>
         </Block>
         {/* Writing the phrase down stays the real backup. A file depends on a
@@ -204,45 +204,23 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         <Group title="Backup file">
           <Block first>
             <Field
-              value={password}
-              onChangeText={setPassword}
-              placeholder="A password for the file"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              action="Save"
-              onAction={onExport}
-              actionBusy={busy === 'export'}
-              actionDisabled={!!busy || !password}
-            />
-            {/* Said where the choice is made, because the wrong choice here is
-                the one that matters: a file encrypted with the wallet's
-                passphrase would be an offline oracle for the one secret that
-                is not on the device. */}
-            <Help>
-              Use a different password to your wallet's passphrase. Losing this
-              one loses only the file — never your coins.
-            </Help>
-          </Block>
-          {/* Asked for, never stored. It is checked against each wallet's known
-              address so a forgotten passphrase surfaces here rather than during
-              a restore that silently builds a different, empty wallet. */}
-          <Block>
-            <Field
               value={passphrase}
               onChangeText={setPassphrase}
               placeholder="Your wallet passphrase"
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              action="Check"
+              action="Save"
               onAction={onExport}
               actionBusy={busy === 'export'}
-              actionDisabled={!!busy || !password}
+              actionDisabled={!!busy || !passphrase}
             />
+            {/* One field, because one secret. It encrypts the file AND is
+                checked against the wallet before anything is written. */}
             <Help>
-              Checked against your wallet, never saved to the file. If it does
-              not match, nothing is written.
+              This encrypts the file and is checked against your wallet. It is
+              never written into the file. Lose it and nobody can open the
+              backup, including you.
             </Help>
           </Block>
           <Block>
@@ -251,7 +229,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               kind="secondary"
               onPress={onRestore}
               busy={busy === 'restore'}
-              disabled={!!busy || !password}
+              disabled={!!busy || !passphrase}
             />
           </Block>
           {msg ? (

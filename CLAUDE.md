@@ -476,17 +476,64 @@ list rather than sweeping its storage. The web list is `BACKUP_KEYS`, and
 `thrilla_vault` and `thrilla_kdf_salt_v1` are excluded by name with the reason
 written beside them — a sweep would have taken both.
 
-**The password is NOT the wallet's BIP-39 passphrase**, which is how the
-feature was first asked for. The passphrase is the one factor that is not on
-the device; `seedVault.ts` excludes it precisely so a keystore dump cannot
-recover a passphrase-protected wallet. A file encrypted with it is an **offline
-oracle** for it: whoever holds the file grinds guesses at whatever rate the KDF
-allows, and a correct decrypt confirms the guess. Pair that file with the phone,
-whose keystore does hold the mnemonic, and cracking the passphrase yields the
-wallet. It would also leave wallets imported without a passphrase — explicitly
-supported — with nothing to encrypt with, and make one forgotten string lose
-both the wallet and its backup. `check:backup` refuses the passphrase helpers
-appearing in that file at all.
+**The file is encrypted with the wallet's BIP-39 passphrase** (2026-11-03, on
+the user's instruction, after the trade was put to them twice).
+
+**Know what the file is**: it contains the recovery phrase and opens with the
+passphrase, so the file plus that one string IS the wallet — no device needed.
+Both clients say exactly that where the backup is made, and call it something
+to guard like the written phrase rather than to leave in cloud storage.
+
+The argument against, kept because it did not stop being true: this collapses
+two independent secrets into one. With a separate password, cracking the file
+yields a phrase still useless without the passphrase; here it yields both, and
+the file is an **offline oracle** for the passphrase — guesses run at whatever
+rate the KDF allows and a correct decrypt confirms the hit. What was weighed
+against it, and it is fair: three secrets is a lot and people cope by weakening
+one, while the passphrase has an enforced floor
+(`validateNewWalletPassphrase`: 12+ printable ASCII, letters and numbers) that
+a free-text backup password never had.
+
+Two consequences are handled rather than left as traps. **An empty or weak
+passphrase is refused before anything is encrypted** — a wallet imported
+without one has nothing to encrypt with, the empty string is not a key, and the
+result would be a plaintext recovery phrase in a file that looks encrypted; the
+same validator the wallet uses is applied, on WRITE only, so files made under
+other rules still open. And **the passphrase is proven before the file is
+written**: when the password was separate, a typo was a nuisance; now a file
+sealed with a mistyped string is a wallet nobody can ever reach, discovered at
+restore.
+
+The header records `keySource`, authenticated with the rest of it, so a restore
+knows what to ask for and a file from the brief separate-password period is
+still identifiable.
+
+**The passphrase is still never written into the file.** `check:backup` pins
+that, the refusal of a weak one, and `keySource` — the old rule "the passphrase
+is not used as the file password" was inverted deliberately, and replaced with
+stricter checks rather than deleted.
+
+**The web side types the phrase and never stores it.** `keyvault.js` keeps
+`{ scanSecret, spendKey, refundAddress, sweepAccount }` and no words, so the
+browser has no phrase to read — and this deliberately does not start keeping
+one. The export asks for it, validates it with `isValidMnemonic` first ("not a
+valid phrase" beats "that passphrase does not match"), derives each wallet's
+address to find which wallets the phrase actually owns, and includes only
+those: attaching one phrase to every row would claim wallets it has nothing to
+do with.
+
+**The vault stays out of the backup even so**, and the distinction is the
+point: a `spendKey` SPENDS WITH NO PASSPHRASE, so a file carrying one would be
+the coins outright, where a file carrying a phrase still needs the passphrase.
+The phrase regenerates everything in the vault anyway, so copying it would add
+only a second thing to steal.
+
+**A web restore re-derives rather than stores.** It uses the phrase and the
+passphrase that just opened the file to rebuild the wallet's keys into the
+vault — what Recover Keys does — and only for wallets with no keys here
+already. It refuses when the derived address does not match the wallet's own,
+because overwriting one wallet's keys with another wallet's phrase is
+unrecoverable.
 
 **scrypt N=2^14, r=8, p=1** — the scrypt paper's own "interactive" parameters,
 16 MiB.

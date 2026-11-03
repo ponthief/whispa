@@ -44,7 +44,7 @@ const refuses = async (name, fn, code) => {
   }
 };
 
-const PW = 'a backup password';
+const PW = 'a backup passphrase 42';
 const payload = {
   app: 'whispa',
   payloadVersion: 1,
@@ -120,7 +120,15 @@ console.log('it refuses what it cannot honestly open');
     'backup_version');
 
   await refuses('a file that is not JSON', () => decryptBackup('not json', PW), 'backup_not_json');
-  await refuses('an empty password', () => encryptBackup(payload, ''), 'backup_no_password');
+  // An empty or weak passphrase is refused BEFORE anything is encrypted. This
+  // is the case that would otherwise write a recovery phrase into a file that
+  // only looks encrypted.
+  await refuses('an empty passphrase', () => encryptBackup(payload, ''),
+    'backup_passphrase_too_weak');
+  await refuses('a short passphrase', () => encryptBackup(payload, 'short'),
+    'backup_passphrase_too_weak');
+  await refuses('a non-ASCII passphrase', () => encryptBackup(payload, 'paßphrase-long-enough'),
+    'backup_passphrase_too_weak');
 }
 
 console.log('it never carries key material, in either direction');
@@ -238,8 +246,17 @@ console.log('the parameters are not quietly weakened');
   // The wallet's own passphrase must never become the file password: it is the
   // one factor not on the device, and a file encrypted with it is an offline
   // oracle for it. See the header of services/backup.ts.
-  ok('the BIP-39 passphrase is not used as the file password',
-    !/validateNewWalletPassphrase|walletPassphrase|bip39Passphrase/.test(SRC));
+  // THIS RULE WAS INVERTED ON 2026-11-03, on the user's instruction, and the
+  // replacement is stricter rather than absent. The file is now encrypted with
+  // the wallet passphrase, so what has to hold is: that passphrase is never
+  // WRITTEN into the file, an empty or weak one is refused outright, and the
+  // file records which secret opens it.
+  ok('the file password is held to the wallet passphrase rules',
+    /validateNewWalletPassphrase\(password/.test(SRC),
+    'an empty passphrase is not a key — a file sealed with "" is a plaintext wallet');
+  ok('and the file says which secret opens it',
+    /keySource/.test(SRC),
+    'a restore has to know what to ask for, and older files used a separate password');
   // The KDF runs for seconds on a phone. Synchronously it froze the app and
   // read as a hang — reported as "never finishes, keeps spinning", with the
   // native spinner still turning because only JavaScript had stopped.
@@ -285,6 +302,30 @@ console.log('a backup written before the KDF changed still opens');
     JSON.stringify(reopened) === JSON.stringify(payload));
   ok('and this build no longer WRITES argon2id',
     JSON.parse(await encryptBackup(payload, PW)).kdf.name === 'scrypt');
+}
+
+console.log('the web side types the phrase and never stores it');
+{
+  const V = readFileSync(new URL('../src/views/ConfigView.vue', import.meta.url), 'utf8');
+  // The browser has no phrase of its own — keyvault.js keeps derived keys only
+  // — so the export asks for one. It must NOT start persisting it.
+  ok('the export asks for a recovery phrase', /bkPhrase/.test(V));
+  ok('and the browser never stores it',
+    !/localStorage\.setItem\([^)]*[Pp]hrase/.test(V) && !/vaultStore\([^)]*bkPhrase/.test(V),
+    'a typed phrase that gets persisted is a new secret in IndexedDB');
+  ok('the phrase is validated before anything derives from it',
+    /isValidMnemonic/.test(V),
+    '"not a valid phrase" beats "that passphrase does not match"');
+  ok('only wallets the phrase actually derives are included',
+    /good\.has\(w\.id\)/.test(V),
+    'attaching one phrase to every wallet row claims wallets it does not own');
+  // A restore re-derives into the vault rather than storing words, and only
+  // where there are no keys already.
+  ok('a restore re-derives keys rather than storing the phrase',
+    /storeWalletKeys\(/.test(V) && /auth\.hasWalletKeys\(w\.id\)/.test(V));
+  ok('and refuses a phrase that derives a different wallet',
+    /k\.spAddress\.toLowerCase\(\) !== w\.spAddress\.toLowerCase\(\)/.test(V),
+    'overwriting one wallet keys with another wallet phrase is unrecoverable');
 }
 
 console.log('the web collector never reaches the key vault');

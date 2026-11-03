@@ -51,10 +51,13 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         say('Nothing to back up yet — no labels on this phone.', true);
         return;
       }
-      // Argon2id at 19 MiB takes a few seconds on a phone, on the JS thread.
-      // Said before it happens, so the screen does not just sit there.
-      say('Encrypting…');
-      const text = encryptBackup(payload, password);
+      // The KDF runs for seconds on a phone. It yields every 20ms and reports
+      // progress, so the screen counts up instead of freezing — the first
+      // version blocked the JS thread and read as a hang, with the native
+      // spinner still turning because only JavaScript had stopped.
+      say('Encrypting… 0%');
+      const text = await encryptBackup(payload, password, (f) =>
+        say(`Encrypting… ${Math.round(f * 100)}%`));
       const where = await native().save(backupFilename(), text);
       // null is the user backing out of the system picker, which is not a
       // failure and must not be reported as one.
@@ -79,8 +82,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         say('Cancelled.');
         return;
       }
-      say('Opening…');
-      const payload = decryptBackup(text, password);
+      say('Opening… 0%');
+      const payload = await decryptBackup(text, password, (f) =>
+        say(`Opening… ${Math.round(f * 100)}%`));
       const total = countItems(payload as any);
       const report = await applyBackup(payload as any);
       const added = Object.values(report).reduce((n, r) => n + r.added, 0);

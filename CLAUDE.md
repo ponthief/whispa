@@ -444,13 +444,38 @@ supported — with nothing to encrypt with, and make one forgotten string lose
 both the wallet and its backup. `check:backup` refuses the passphrase helpers
 appearing in that file at all.
 
-**Argon2id m=19456 KiB, t=2, p=1** — OWASP's recommended minimum, not the 64
-MiB configuration. This is pure JavaScript on Hermes, where it is several times
-slower than the ~0.8s it takes on V8, and 64 MiB is both a long wait and an
-allocation a low-end phone may not have. The parameters are written INTO each
-file, so raising them later strands no existing backup; they are pinned in the
-source only for what this build WRITES, and `check:backup` refuses a reduction
-because weakening the KDF is invisible — the file still round-trips.
+**scrypt N=2^14, r=8, p=1** — the scrypt paper's own "interactive" parameters,
+16 MiB.
+
+It shipped as **Argon2id m=19456, t=2** and that was wrong, reported the same
+day as an export that *"never finishes, keeps spinning"*. It had not hung:
+Argon2 was still running. Argon2 is built on BLAKE2b, which is 64-bit
+arithmetic, and Hermes has no JIT and emulates every 64-bit operation with
+pairs of 32-bit ones. scrypt is PBKDF2-SHA256 and Salsa20/8, 32-bit throughout,
+and measures **10x faster while using less memory** — 16 MiB against 19.
+Argon2id is the better primitive on paper and this is a knowing trade: a key
+derivation nobody will wait for is one people turn off.
+
+**The lesson is which machine the benchmark ran on.** Argon2id was chosen on a
+V8 benchmark in a container with no Hermes in it. A KDF's cost is the entire
+point of a KDF, so measuring it on the wrong engine measured nothing. If these
+parameters change again, the number that decides it comes off a phone.
+
+**The KDF is async and reports progress**, and that is not cosmetic either. It
+runs for seconds on a phone and synchronously it froze the JS thread — which is
+exactly what the report described, the native spinner still turning because
+only JavaScript had stopped. `asyncTick` yields every 20ms and both screens
+count up.
+
+**argon2id stays READABLE for ever.** A file names its own KDF in its header,
+so every backup written before the switch still opens — including the one that
+had already been made when this was found. Turning somebody's existing backup
+into a file nothing can read is the one outcome a backup feature may never
+produce, and `check:backup` builds an argon2id file and opens it to prove it.
+The parameters live in each file, so raising them later strands nothing; they
+are pinned in the source only for what this build WRITES, and `check:backup`
+refuses a reduction because weakening the KDF is invisible — the file still
+round-trips.
 
 **XChaCha20-Poly1305, with the header as associated data.** The X variant for
 its 24-byte nonce, which is what makes a random nonce per file safe when one

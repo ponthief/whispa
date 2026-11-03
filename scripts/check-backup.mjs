@@ -31,9 +31,12 @@ const ok = (name, cond, detail = '') => {
     failures++;
   }
 };
-const refuses = (name, fn, code) => {
+// ASYNC, because encrypt and decrypt are. A non-awaited rejection here would
+// resolve as "it succeeded" and report a refusal that is not there — a check
+// that silently stops checking.
+const refuses = async (name, fn, code) => {
   try {
-    fn();
+    await fn();
     ok(name, false, 'it succeeded — the refusal is not there');
   } catch (e) {
     ok(name, e.code === code, `expected ${code}, got ${e.code}: ${e.message}`);
@@ -52,13 +55,13 @@ const payload = {
 
 console.log('it round-trips, and the file gives nothing away');
 {
-  const file = encryptBackup(payload, PW);
+  const file = await encryptBackup(payload, PW);
   // Guarded, so a build where encrypt and decrypt disagree — mismatched AAD,
   // say — reports a failed check rather than a stack trace that reads as if
   // the CHECK were the broken thing.
   let restored = null;
   try {
-    restored = decryptBackup(file, PW);
+    restored = await decryptBackup(file, PW);
   } catch (e) {
     ok('a backup restores at all', false, `${e.code}: ${e.message}`);
   }
@@ -79,8 +82,8 @@ console.log('it round-trips, and the file gives nothing away');
   // the ciphertext differs anyway — and the test passes while nonce reuse under
   // one password has broken confidentiality outright. Verified by pinning the
   // nonce and watching this exact assertion stay green.
-  const a = JSON.parse(encryptBackup(payload, PW));
-  const b = JSON.parse(encryptBackup(payload, PW));
+  const a = JSON.parse(await encryptBackup(payload, PW));
+  const b = JSON.parse(await encryptBackup(payload, PW));
   ok('every export gets a fresh salt', a.kdf.salt !== b.kdf.salt);
   ok('every export gets a fresh nonce', a.nonce !== b.nonce,
     'a repeated XChaCha20 nonce under one password is a total break, and it ' +
@@ -91,14 +94,14 @@ console.log('it round-trips, and the file gives nothing away');
 
 console.log('it refuses what it cannot honestly open');
 {
-  const file = encryptBackup(payload, PW);
-  refuses('a wrong password', () => decryptBackup(file, 'wrong'), 'backup_wrong_password');
+  const file = await encryptBackup(payload, PW);
+  await refuses('a wrong password', () => decryptBackup(file, 'wrong'), 'backup_wrong_password');
 
   const flipped = JSON.parse(file);
   const b = [...flipped.ct];
   b[10] = b[10] === 'A' ? 'B' : 'A';
   flipped.ct = b.join('');
-  refuses('a tampered ciphertext', () => decryptBackup(JSON.stringify(flipped), PW),
+  await refuses('a tampered ciphertext', () => decryptBackup(JSON.stringify(flipped), PW),
     'backup_wrong_password');
 
   // THE ONE THAT NEEDS THE AAD. Without the header authenticated, an attacker
@@ -107,16 +110,16 @@ console.log('it refuses what it cannot honestly open');
   const weakened = JSON.parse(file);
   weakened.kdf.m = 8;
   weakened.kdf.t = 1;
-  refuses('a header edited to weaken the KDF', () => decryptBackup(JSON.stringify(weakened), PW),
+  await refuses('a header edited to weaken the KDF', () => decryptBackup(JSON.stringify(weakened), PW),
     'backup_wrong_password');
 
   const newer = JSON.parse(file);
   newer.version = BACKUP_VERSION + 1;
-  refuses('a backup from a newer version', () => decryptBackup(JSON.stringify(newer), PW),
+  await refuses('a backup from a newer version', () => decryptBackup(JSON.stringify(newer), PW),
     'backup_version');
 
-  refuses('a file that is not JSON', () => decryptBackup('not json', PW), 'backup_not_json');
-  refuses('an empty password', () => encryptBackup(payload, ''), 'backup_no_password');
+  await refuses('a file that is not JSON', () => decryptBackup('not json', PW), 'backup_not_json');
+  await refuses('an empty password', () => encryptBackup(payload, ''), 'backup_no_password');
 }
 
 console.log('it never carries key material, in either direction');
@@ -134,13 +137,13 @@ console.log('it never carries key material, in either direction');
     { seed: 'x' },
   ];
   for (const bad of shapes) {
-    refuses(`export refuses ${JSON.stringify(bad).slice(0, 42)}`,
+    await refuses(`export refuses ${JSON.stringify(bad).slice(0, 42)}`,
       () => encryptBackup({ app: 'whispa', payloadVersion: 1, exportedAt: 0, ...bad }, PW),
       'backup_would_carry_a_secret');
   }
   // And on the way IN: a file written by hand, or by a tampered build, must not
   // be able to push key material into this app's storage.
-  refuses('import refuses a payload carrying a mnemonic',
+  await refuses('import refuses a payload carrying a mnemonic',
     () => assertNoSecrets({ app: 'whispa', mnemonic: 'abandon abandon' }),
     'backup_would_carry_a_secret');
 }
@@ -151,9 +154,9 @@ console.log('the parameters are not quietly weakened');
   // whatever its own file says, so lowering these strands nobody — it just
   // silently makes every new backup easier to crack, and every test still
   // passes.
-  ok('argon2id, not a plain hash', KDF.name === 'argon2id');
-  ok(`memory is at least 19456 KiB (is ${KDF.m})`, KDF.m >= 19456);
-  ok(`time cost is at least 2 (is ${KDF.t})`, KDF.t >= 2);
+  ok('a memory-hard KDF, not a plain hash', KDF.name === 'scrypt');
+  ok(`N is at least 2^14 (is 2^${Math.log2(KDF.N)})`, KDF.N >= 1 << 14);
+  ok(`r is at least 8 (is ${KDF.r})`, KDF.r >= 8);
   ok(`the derived key is 32 bytes (is ${KDF.dkLen})`, KDF.dkLen === 32);
   ok('the cipher is an AEAD',
     /xchacha20poly1305/.test(SRC),
@@ -171,6 +174,51 @@ console.log('the parameters are not quietly weakened');
   // oracle for it. See the header of services/backup.ts.
   ok('the BIP-39 passphrase is not used as the file password',
     !/validateNewWalletPassphrase|walletPassphrase|bip39Passphrase/.test(SRC));
+  // The KDF runs for seconds on a phone. Synchronously it froze the app and
+  // read as a hang — reported as "never finishes, keeps spinning", with the
+  // native spinner still turning because only JavaScript had stopped.
+  ok('the KDF is async and yields',
+    /scryptAsync/.test(SRC) && /asyncTick/.test(SRC),
+    'a synchronous KDF blocks the JS thread and reads as a crash');
+  ok('and it reports progress', /onProgress/.test(SRC));
+}
+
+console.log('a backup written before the KDF changed still opens');
+{
+  // THE RULE THIS PROTECTS: a backup feature may never turn somebody's existing
+  // file into one nothing can read. argon2id is no longer written, and must
+  // stay readable for as long as files written with it exist — which is
+  // forever, because they are sitting in people's cloud storage.
+  const legacy = JSON.parse(await encryptBackup(payload, PW));
+  // Rebuild the same file as an argon2id one, the way the old build wrote it.
+  const { argon2idAsync } = await import('@noble/hashes/argon2');
+  const { xchacha20poly1305 } = await import('@noble/ciphers/chacha');
+  const { base64 } = await import('@scure/base');
+  const { utf8ToBytes } = await import('@noble/hashes/utils');
+  const salt = base64.decode(legacy.kdf.salt);
+  const nonce = base64.decode(legacy.nonce);
+  const header = {
+    format: legacy.format,
+    version: legacy.version,
+    kdf: { name: 'argon2id', t: 2, m: 19456, p: 1, dkLen: 32, salt: legacy.kdf.salt },
+    cipher: 'xchacha20poly1305',
+    nonce: legacy.nonce,
+  };
+  const key = await argon2idAsync(utf8ToBytes(PW), salt, { t: 2, m: 19456, p: 1, dkLen: 32 });
+  const ct = xchacha20poly1305(key, nonce, utf8ToBytes(JSON.stringify(header)))
+    .encrypt(utf8ToBytes(JSON.stringify(payload)));
+  const argonFile = JSON.stringify({ ...header, ct: base64.encode(ct) });
+
+  let reopened = null;
+  try {
+    reopened = await decryptBackup(argonFile, PW);
+  } catch (e) {
+    ok('an argon2id backup still opens', false, `${e.code}: ${e.message}`);
+  }
+  ok('an argon2id backup still opens and is unchanged',
+    JSON.stringify(reopened) === JSON.stringify(payload));
+  ok('and this build no longer WRITES argon2id',
+    JSON.parse(await encryptBackup(payload, PW)).kdf.name === 'scrypt');
 }
 
 console.log('the web collector never reaches the key vault');

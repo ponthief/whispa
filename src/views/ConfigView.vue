@@ -34,10 +34,11 @@ async function doExport() {
       bkSay('Nothing to back up yet — no labels or pins on this browser.', true)
       return
     }
-    // Argon2id at 19 MiB blocks the main thread for about a second here. Said
-    // before it happens rather than leaving the page looking wedged.
-    bkSay('Encrypting…')
-    const text = encryptBackup(payload, bkPassword.value)
+    // The KDF yields every 20ms and reports progress, so the tab stays
+    // responsive and the page counts up rather than looking wedged.
+    bkSay('Encrypting… 0%')
+    const text = await encryptBackup(payload, bkPassword.value,
+      (f) => bkSay(`Encrypting… ${Math.round(f * 100)}%`))
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
@@ -68,7 +69,9 @@ async function onPickBackup(ev) {
   try {
     const { decryptBackup } = await import('@/services/backup')
     const { applyBackup, describeBackup } = await import('@/stores/backupdata')
-    const payload = decryptBackup(await file.text(), bkPassword.value)
+    bkSay('Opening… 0%')
+    const payload = await decryptBackup(await file.text(), bkPassword.value,
+      (f) => bkSay(`Opening… ${Math.round(f * 100)}%`))
     const report = applyBackup(payload)
     const added = Object.values(report).reduce((n, r) => n + r.added, 0)
     const kept = Object.values(report).reduce((n, r) => n + r.kept, 0)

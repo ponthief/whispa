@@ -1,4 +1,5 @@
-import { argon2id } from '@noble/hashes/argon2';
+import { argon2idAsync } from '@noble/hashes/argon2';
+import { scryptAsync } from '@noble/hashes/scrypt';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
 import { base64 } from '@scure/base';
@@ -40,18 +41,38 @@ import { secureRandomUnavailable } from './spKeys';
 export const BACKUP_FORMAT = 'whispa.backup';
 export const BACKUP_VERSION = 1;
 
-// Argon2id at OWASP's recommended minimum. NOT the 64 MiB configuration: this
-// runs in pure JavaScript on Hermes, where it is several times slower than the
-// ~0.8s it takes on V8 at these parameters, and 64 MiB is both a long wait and
-// an allocation a low-end phone may not have to spare. Memory-hardness is the
-// property being bought; t=2 at 19 MiB keeps it while staying usable.
+// scrypt, N=2^14 r=8 p=1 — the scrypt paper's own "interactive" parameters,
+// 16 MiB of memory.
 //
-// The parameters are written INTO the file, so raising them later does not
-// strand older backups — a restore uses whatever its own header says. They are
-// pinned here only for what this build WRITES, and check:backup refuses a
-// reduction, because weakening the KDF is invisible in every test: the file
-// still round-trips.
-export const KDF = { name: 'argon2id' as const, t: 2, m: 19456, p: 1, dkLen: 32 };
+// THIS REPLACED ARGON2ID ON 2026-11-03, AFTER IT SHIPPED, because on a real
+// phone it was unusable: the user reported an export that "never finishes, keeps
+// spinning", and it had not hung — Argon2 was simply still running. Argon2 is
+// built on BLAKE2b, which is 64-bit arithmetic, and Hermes has no JIT and
+// emulates every 64-bit operation with pairs of 32-bit ones. scrypt is
+// PBKDF2-SHA256 and Salsa20/8, which are 32-bit throughout, and it measures 10x
+// faster than the argon2id parameters that shipped while using LESS memory
+// (16 MiB against 19).
+//
+// Argon2id is the better primitive on paper and this is a real trade. It is
+// made knowingly: a key derivation nobody will wait for is one people turn off,
+// and these are standard, well-reviewed scrypt parameters rather than a number
+// invented to make a progress bar look good.
+//
+// THE LESSON: the benchmark that chose argon2id ran on V8, in this container,
+// because there was no Hermes here to run. A KDF is one of the few things whose
+// cost is the entire point, so measuring it on the wrong engine measured
+// nothing. If these are ever changed again, the number that matters comes off a
+// phone.
+export const KDF = { name: 'scrypt' as const, N: 1 << 14, r: 8, p: 1, dkLen: 32 };
+
+// What this build can still READ. A file names its own KDF in its header, so
+// every backup written before this change keeps opening — including the one
+// the user had already made. Dropping argon2id here would have turned their
+// backup into a file nothing can read, which is the one outcome a backup
+// feature may never produce.
+const READABLE_KDFS = ['scrypt', 'argon2id'];
+
+export type KdfProgress = (fraction: number) => void;
 
 const SALT_BYTES = 16;
 // XChaCha20-Poly1305 takes a 24-byte nonce — large enough that a random one per
@@ -117,16 +138,38 @@ export function assertNoSecrets(value: unknown, path = 'payload'): void {
 const enc = { encode: utf8ToBytes };
 const dec = { decode: bytesToUtf8 };
 
-function kdfKey(password: string, salt: Uint8Array, params: typeof KDF): Uint8Array {
+/**
+ * The file's key, from its password and its OWN stated parameters.
+ *
+ * ASYNC, and that is not cosmetic. Either KDF takes seconds on a phone and runs
+ * on the JS thread; the synchronous version froze the whole app, which is what
+ * "never finishes, keeps spinning" was — the spinner is native and kept
+ * animating while JavaScript could not run. `asyncTick` yields every 20ms, so
+ * the screen stays alive and `onProgress` can say how far along it is. A wait
+ * somebody can see the end of is a different thing from a wait that looks like
+ * a crash.
+ */
+async function kdfKey(
+  password: string,
+  salt: Uint8Array,
+  spec: any,
+  onProgress?: KdfProgress,
+): Promise<Uint8Array> {
   if (!password) {
     throw new BackupError('backup_no_password', 'A backup needs a password.');
   }
-  return argon2id(enc.encode(password), salt, {
-    t: params.t,
-    m: params.m,
-    p: params.p,
-    dkLen: params.dkLen,
-  });
+  const pw = enc.encode(password);
+  const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress };
+
+  if (spec.name === 'scrypt') {
+    return scryptAsync(pw, salt, { N: spec.N, r: spec.r, p: spec.p, ...opts });
+  }
+  // Only reached by a file written before 2026-11-03. Kept so those still open;
+  // nothing writes argon2id any more.
+  if (spec.name === 'argon2id') {
+    return argon2idAsync(pw, salt, { t: spec.t, m: spec.m, p: spec.p, ...opts });
+  }
+  throw new BackupError('backup_unknown_crypto', 'That backup uses encryption this app does not know.');
 }
 
 /**
@@ -134,7 +177,11 @@ function kdfKey(password: string, salt: Uint8Array, params: typeof KDF): Uint8Ar
  * holding it can see what it is, what encrypted it and that it is not the
  * wallet — without being able to read a byte of the contents.
  */
-export function encryptBackup(payload: BackupPayload, password: string): string {
+export async function encryptBackup(
+  payload: BackupPayload,
+  password: string,
+  onProgress?: KdfProgress,
+): Promise<string> {
   // Before anything else. An export that has already encrypted a secret and
   // then notices has written the secret to memory and, a moment later, to disk.
   assertNoSecrets(payload);
@@ -161,7 +208,7 @@ export function encryptBackup(payload: BackupPayload, password: string): string 
     nonce: base64.encode(nonce),
   };
 
-  const key = kdfKey(password, salt, KDF);
+  const key = await kdfKey(password, salt, KDF, onProgress);
   // The header is the AEAD's associated data, so the KDF parameters and the
   // version are authenticated too. Without that an attacker could edit the
   // stated parameters; the decrypt would fail, but it would fail having spent
@@ -173,7 +220,11 @@ export function encryptBackup(payload: BackupPayload, password: string): string 
   return JSON.stringify({ ...header, ct: base64.encode(ct) }, null, 2) + '\n';
 }
 
-export function decryptBackup(text: string, password: string): BackupPayload {
+export async function decryptBackup(
+  text: string,
+  password: string,
+  onProgress?: KdfProgress,
+): Promise<BackupPayload> {
   let env: any;
   try {
     env = JSON.parse(text);
@@ -193,7 +244,11 @@ export function decryptBackup(text: string, password: string): BackupPayload {
         `${env.version}, this app reads ${BACKUP_VERSION}). Update the app and try again.`,
     );
   }
-  if (env.cipher !== 'xchacha20poly1305' || env.kdf?.name !== KDF.name) {
+  // Readable, not identical. A file carries the KDF it was written with, so a
+  // backup made before the switch away from argon2id still opens here — turning
+  // somebody's existing backup into an unreadable file is the one thing this
+  // feature must never do.
+  if (env.cipher !== 'xchacha20poly1305' || !READABLE_KDFS.includes(env.kdf?.name)) {
     throw new BackupError('backup_unknown_crypto', 'That backup uses encryption this app does not know.');
   }
 
@@ -209,10 +264,11 @@ export function decryptBackup(text: string, password: string): BackupPayload {
     throw new BackupError('backup_damaged', 'That backup file is damaged.');
   }
 
-  // Taken from the FILE, not from this build's constants: a backup written when
-  // the parameters were lower must still open. The header is authenticated
-  // below, so these cannot be altered without the decrypt failing.
-  const key = kdfKey(password, salt, { ...KDF, t: k.t, m: k.m, p: k.p });
+  // Taken from the FILE, not from this build's constants: a backup written with
+  // other parameters, or another KDF entirely, must still open. The header is
+  // authenticated below, so none of it can be altered without the decrypt
+  // failing.
+  const key = await kdfKey(password, salt, k, onProgress);
 
   const { ct: _ct, ...header } = env;
   const aad = enc.encode(JSON.stringify(header));

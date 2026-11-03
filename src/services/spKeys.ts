@@ -55,7 +55,7 @@ function toHex(u8: Uint8Array): string {
 // seed must NEVER come from Math.random(), so detect that exact case and refuse.
 // Returns false on release builds, on-device dev, and in the browser — all of
 // which have a real CSPRNG — so it never false-positives.
-function secureRandomUnavailable(): boolean {
+export function secureRandomUnavailable(): boolean {
   const g = globalThis as any;
   if (g.expo?.modules?.ExpoCrypto?.getRandomValues) return false; // Expo secure path
   if ('RN$Bridgeless' in g && g.RN$Bridgeless === true) return false; // new arch: no remote-debug fallback

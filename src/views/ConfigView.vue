@@ -9,6 +9,85 @@ const BIP353_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 const confirmForget = ref(false)
 const myWalletIds = ref([])
 
+// ── Backup of device-only data ──────────────────────────────────────────────
+const bkPassword = ref('')
+const bkBusy = ref(null)
+const bkMsg = ref('')
+const bkErr = ref(false)
+const bkFile = ref(null)
+
+function bkSay(msg, isError = false) {
+  bkMsg.value = msg
+  bkErr.value = isError
+}
+
+async function doExport() {
+  bkBusy.value = 'export'
+  bkSay('')
+  try {
+    const { encryptBackup, backupFilename } = await import('@/services/backup')
+    const { collectBackup, describeBackup } = await import('@/stores/backupdata')
+    const payload = collectBackup()
+    const parts = describeBackup(payload)
+    const total = parts.reduce((n, p) => n + p.count, 0)
+    if (!total) {
+      bkSay('Nothing to back up yet — no labels or pins on this browser.', true)
+      return
+    }
+    // Argon2id at 19 MiB blocks the main thread for about a second here. Said
+    // before it happens rather than leaving the page looking wedged.
+    bkSay('Encrypting…')
+    const text = encryptBackup(payload, bkPassword.value)
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = backupFilename()
+    a.click()
+    // Revoked, or the blob is held for the life of the tab — and this one is a
+    // decrypted-adjacent artifact we would rather not leave lying around.
+    URL.revokeObjectURL(url)
+    bkSay(`Saved ${total} item${total === 1 ? '' : 's'}. Keep the file and its password together.`)
+  } catch (e) {
+    bkSay(e?.message || 'Could not write the backup.', true)
+  } finally {
+    bkBusy.value = null
+  }
+}
+
+async function onPickBackup(ev) {
+  const file = ev.target.files && ev.target.files[0]
+  // Cleared immediately so picking the SAME file twice still fires a change.
+  ev.target.value = ''
+  if (!file) return
+  if (!bkPassword.value) {
+    bkSay('Enter the backup file\'s password first, then choose the file.', true)
+    return
+  }
+  bkBusy.value = 'restore'
+  bkSay('Opening…')
+  try {
+    const { decryptBackup } = await import('@/services/backup')
+    const { applyBackup, describeBackup } = await import('@/stores/backupdata')
+    const payload = decryptBackup(await file.text(), bkPassword.value)
+    const report = applyBackup(payload)
+    const added = Object.values(report).reduce((n, r) => n + r.added, 0)
+    const kept = Object.values(report).reduce((n, r) => n + r.kept, 0)
+    const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
+    // Reports what actually changed. "Restored" over a file whose every entry
+    // was already present reads as if something happened.
+    bkSay(
+      added
+        ? `Restored ${added} of ${total} item${total === 1 ? '' : 's'}.` +
+          (kept ? ` ${kept} were already here and were left alone.` : '')
+        : `Nothing to add — all ${total} item${total === 1 ? '' : 's'} were already on this browser.`,
+    )
+  } catch (e) {
+    bkSay(e?.message || 'Could not read that backup.', true)
+  } finally {
+    bkBusy.value = null
+  }
+}
+
 async function loadMyWalletIds() {
   try {
     const wallets = await api.getSilntWallets(auth.inkey)
@@ -367,6 +446,55 @@ onMounted(async () => {
           a secure link to set a new one — the safest way to change it, especially
           if you think someone may know your current password.
         </p>
+      </div>
+    </div>
+
+    <!-- Backup of device-only data. NOT a wallet backup, and the copy leads
+         with that: the labels and notes here exist nowhere else, but the coins
+         come back from the recovery phrase and from nothing in this file. -->
+    <div class="card" style="margin-top:20px">
+      <div class="card-header"><h2>Backup</h2></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <p class="text-dim text-sm" style="margin:0">
+          Saves what this browser knows and the server does not — your transaction
+          labels, SegWit address labels and pinned contacts. A reinstall loses all
+          of it, and nothing can rebuild it.
+        </p>
+        <div class="alert" style="padding:10px;border-radius:6px">
+          <p class="text-sm" style="margin:0">
+            <strong>This is not a wallet backup.</strong> It holds no keys and no
+            recovery phrase, so it cannot restore your coins — your recovery phrase
+            does that, and it is the only thing that can. Restoring takes the phrase
+            <em>and</em> this file.
+          </p>
+        </div>
+
+        <!-- Export -->
+        <div class="field">
+          <label>Backup password</label>
+          <input class="input" type="password" v-model="bkPassword"
+                 placeholder="Choose a password for the file" autocomplete="new-password" />
+          <!-- Not the wallet's passphrase, and it says so where the choice is
+               being made. A file encrypted with the BIP-39 passphrase would be
+               an offline oracle for the one secret that is not on the device. -->
+          <p class="text-dim text-xs" style="margin:6px 0 0">
+            Use a different password to your wallet's passphrase. If you lose this
+            one the file cannot be opened — but your coins are unaffected.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" :disabled="bkBusy || !bkPassword" @click="doExport">
+            {{ bkBusy === 'export' ? '…' : '↓ Download backup' }}
+          </button>
+          <button class="btn btn-ghost btn-sm" :disabled="bkBusy" @click="bkFile?.click()">
+            ↑ Restore from file
+          </button>
+          <input ref="bkFile" type="file" accept="application/json,.json"
+                 style="display:none" @change="onPickBackup" />
+        </div>
+
+        <p v-if="bkMsg" class="text-sm" :style="bkErr ? 'color:var(--red)' : 'color:var(--green)'"
+           style="margin:0">{{ bkMsg }}</p>
       </div>
     </div>
 

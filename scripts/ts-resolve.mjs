@@ -1,51 +1,36 @@
-// Let the check runners import the app's own .ts modules, the way the app does.
+// Lets a check script `import` an app service directly.
 //
-// Three things Metro and Vite do that Node's ESM loader does not:
+// src/ uses extensionless relative imports ('./spKeys') because Metro and Vite
+// both resolve them. Node's ESM loader does not, so a service that imports a
+// sibling cannot be loaded by a check script the way scripts/check-sp-signing
+// loads spSign.ts — that one works only because spSign happens to import no
+// siblings at all.
 //
-//   * resolve './btcAddress' to './btcAddress.ts'
-//   * resolve the tsconfig path aliases — '@/x', '@services/x', '@stores/x'
-//   * resolve 'react-native-config', which has no Node build at all
+// Registered with:
+//   node --experimental-strip-types --import ./scripts/ts-resolve.mjs <script>
 //
-// Writing './btcAddress.ts' in the source, or dropping the aliases, to suit a
-// test script would be the tail wagging the dog. The last one is a stub: it
-// stands in for the native module that hands the app its build-time env, and a
-// runner that needs a real value must pass it in rather than read Config.
-//
-// Keep this honest — a shim that diverges from what the bundlers do turns a
-// passing runner into a lie. It maps, it does not implement.
+// Resolution only; it adds no transform. --experimental-strip-types still does
+// the TypeScript erasure, which is why app code must avoid syntax that erasure
+// cannot handle (parameter properties, enums) if a check is to reach it.
+import { register } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
-const ROOT = new URL('../', import.meta.url);
-
-const ALIASES = [
-  ['@services/', 'src/services/'],
-  ['@stores/', 'src/stores/'],
-  ['@/', 'src/'],
-];
-
-const STUBS = {
-  'react-native-config': new URL('./stubs/react-native-config.mjs', import.meta.url).href,
-};
-
-export async function resolve(specifier, context, next) {
-  if (STUBS[specifier]) return next(STUBS[specifier], context);
-
-  for (const [prefix, target] of ALIASES) {
-    if (specifier.startsWith(prefix)) {
-      const url = new URL(target + specifier.slice(prefix.length), ROOT).href;
-      try {
-        return await next(url + '.ts', context);
-      } catch {
-        return next(url, context);
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`
+      import { existsSync } from 'node:fs';
+      import { fileURLToPath } from 'node:url';
+      export async function resolve(specifier, context, next) {
+        if (specifier.startsWith('.') && !/\\.[cm]?[jt]sx?$/.test(specifier)) {
+          const url = new URL(specifier, context.parentURL);
+          for (const ext of ['.ts', '.tsx', '.js', '.mjs']) {
+            if (existsSync(fileURLToPath(url.href + ext))) {
+              return next(specifier + ext, context);
+            }
+          }
+        }
+        return next(specifier, context);
       }
-    }
-  }
-
-  if (specifier.startsWith('.') && !/\.[cm]?[jt]sx?$/.test(specifier)) {
-    try {
-      return await next(specifier + '.ts', context);
-    } catch {
-      // Fall through: not a .ts file, so let Node report what it actually is.
-    }
-  }
-  return next(specifier, context);
-}
+    `),
+  pathToFileURL('./'),
+);

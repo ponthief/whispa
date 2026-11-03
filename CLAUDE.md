@@ -89,6 +89,7 @@ npm run check:terms         # one terms version, in two repos, behind one tick b
 npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
 npm run check:stealth       # one launcher icon always enabled, and the UI says what it hides
+npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -406,6 +407,81 @@ Android only. `stealthAvailable()` asks `NativeModules.StealthModule` rather
 than a build flag, for the reason `push.ts` gives about its own module, and the
 section does not render without it — a switch storing a preference nothing can
 honour is the worse failure.
+
+## The backup is not a wallet backup
+
+Added 2026-11-03. Settings → Backup writes an encrypted file holding the
+**device-only** data a reinstall loses and nothing can rebuild: transaction
+labels, SegWit address labels, pinned contacts. `services/backup.ts` does the
+crypto, and each client supplies its own collector because the two store this
+differently — the web in `localStorage` under `thrilla_*_v1`, the phone in the
+platform keychain under named services.
+
+**It holds no key material, and that was asked and confirmed before building.**
+No mnemonic, no xprv, no spend or scan key, no passphrase. A file that restores
+the coins is a bearer instrument — whoever has it and the password has the
+money — and the standing instruction is "Private keys are never stored". So a
+restore needs the recovery phrase AND this file, and the Settings copy leads
+with that rather than letting anyone infer a wallet backup.
+
+`assertNoSecrets` walks the payload on the way out **and on the way back in**,
+refusing any key whose NAME looks like key material. It is a tripwire on the
+payload's shape, not a scan of its values: a seed stored under the key `notes`
+would pass, which is exactly why each client ASSEMBLES its payload from a named
+list rather than sweeping its storage. The web list is `BACKUP_KEYS`, and
+`thrilla_vault` and `thrilla_kdf_salt_v1` are excluded by name with the reason
+written beside them — a sweep would have taken both.
+
+**The password is NOT the wallet's BIP-39 passphrase**, which is how the
+feature was first asked for. The passphrase is the one factor that is not on
+the device; `seedVault.ts` excludes it precisely so a keystore dump cannot
+recover a passphrase-protected wallet. A file encrypted with it is an **offline
+oracle** for it: whoever holds the file grinds guesses at whatever rate the KDF
+allows, and a correct decrypt confirms the guess. Pair that file with the phone,
+whose keystore does hold the mnemonic, and cracking the passphrase yields the
+wallet. It would also leave wallets imported without a passphrase — explicitly
+supported — with nothing to encrypt with, and make one forgotten string lose
+both the wallet and its backup. `check:backup` refuses the passphrase helpers
+appearing in that file at all.
+
+**Argon2id m=19456 KiB, t=2, p=1** — OWASP's recommended minimum, not the 64
+MiB configuration. This is pure JavaScript on Hermes, where it is several times
+slower than the ~0.8s it takes on V8, and 64 MiB is both a long wait and an
+allocation a low-end phone may not have. The parameters are written INTO each
+file, so raising them later strands no existing backup; they are pinned in the
+source only for what this build WRITES, and `check:backup` refuses a reduction
+because weakening the KDF is invisible — the file still round-trips.
+
+**XChaCha20-Poly1305, with the header as associated data.** The X variant for
+its 24-byte nonce, which is what makes a random nonce per file safe when one
+password is reused across exports; a repeated nonce under one key is a total
+break. The header is authenticated so the stated KDF cost cannot be edited —
+without that a doctored file and a mistyped password would be indistinguishable.
+A wrong password and a tampered file give **one message**, because Poly1305
+fails identically either way and naming which would be a guess printed as fact.
+
+**A restore MERGES.** Replacing would delete every label written since the
+backup was taken, silently and permanently; where both sides hold the same key
+the existing value wins, being the more recent. The screen reports what actually
+changed, because "Restored" over a file whose every entry was already present
+reads as though something happened.
+
+`check:backup` EXERCISES all of this rather than reading it, because every
+failure here produces a file that looks perfectly fine: a weakened KDF still
+round-trips, a payload carrying a mnemonic still restores, a forgeable header
+still opens with the right password. Its own first run failed on a comment
+mentioning `Math.random()` — the same trap `check:stealth` hit with
+`DONT_KILL_APP` — so it strips comments before any source assertion. And its
+"two exports differ" test originally passed with a hard-coded nonce, because
+the random salt alone changes the ciphertext; salt and nonce are compared
+separately now.
+
+Loading a service with sibling imports from a check needs
+`scripts/ts-resolve.mjs` (`--import`), because `src/` uses extensionless
+relative imports that Metro and Vite resolve and Node does not. The same
+constraint bans TypeScript that erasure cannot remove — `BackupError` declares
+and assigns its `code` rather than using a `constructor(public code)` parameter
+property, which `--experimental-strip-types` refuses outright.
 
 ## The signup form had a bot check that was decorative
 

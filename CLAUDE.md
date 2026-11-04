@@ -705,12 +705,80 @@ registration. Not a signature. A caller posting straight at the API sends
 whatever it likes, exactly as it can skip the box. The number is for
 record-keeping, not enforcement.
 
-Two gaps left open deliberately, both recorded rather than papered over. The
+One gap is still open deliberately and recorded rather than papered over: the
 **mobile app has no terms screen**, so a client with no `Origin` header may
 omit the version; that is a follow-up, not a decision that app users agree to
-nothing. And `register-start` has **no rate limiter** — `scan_rate_limiter.py`
-and `invite_rate_limiter.py` are the pattern it should follow, and Turnstile is
-not a substitute for one on an endpoint that sends mail.
+nothing.
+
+### The rate limiter, and the account creation that was not ours
+
+`register-start` had **no rate limiter** until 2026-11-04. It got one
+(`helpers/register_rate_limiter.py`) after ten LNbits accounts appeared on a
+live instance with no email address and some with random-character usernames.
+
+**Those did not come through this endpoint**, and establishing that first is
+the reason the fix went where it did. `silnt.pending_registrations` has
+`email` as its PRIMARY KEY and `confirm_registration` always sets one on the
+`Account`, so this path cannot produce an email-less account; and every siLNt
+endpoint hangs off `require_trusted_device` → `require_invoice_key`, so an
+account with no wallet has no key and cannot reach the extension at all. They
+came through **LNbits core's own signup**, which is a second public door
+beside this one and which the extension cannot gate. The working path logs
+`Email-verified account created: …`, so grepping for an account id is what
+tells the two apart.
+
+The awkward part is specific: `start_registration` 403s unless
+`AuthMethods.username_and_password` is allowed, and core's own register
+endpoint is gated on the **same** flag — so closing core's door by auth method
+closes ours too. What separates them is LNbits' "allow new accounts" setting,
+which gates core's auth *view* while WhiSPa calls `create_account` directly as
+a `lnbits.core.crud` import. Verify that on the running version before
+changing it: mainnet onboarding is mobile-app only, so breaking signup there
+costs more than junk accounts do.
+
+The limiter is three limits, each for a different attack, following
+`scan_rate_limiter.py` and `invite_rate_limiter.py` — in-memory, so the
+counters reset on restart, which during an incident clears the attacker's
+along with everyone else's.
+
+**Per IP per hour** bounds one source. **Per email address** is a cooldown, so
+a rotating-IP caller cannot mail-bomb one inbox — the vector
+`invite_rate_limiter` already guards, and the mail is the part of this
+endpoint that reaches outside, sent to an address the caller chooses through
+the shared SMTP server. **Global per hour** is the backstop and the only one
+that cannot be forged: `get_client_ip` trusts `X-Forwarded-For` when present
+(correctly — behind Caddy, `request.client.host` is Caddy, and a per-IP limit
+built on that would be a per-*instance* limit that locks out every user while
+stopping nobody), and that header is client-settable, so if LNbits is ever
+reachable without the proxy a fresh value per request defeats the per-IP limit
+completely. A limiter one header defeats is the maths question all over again.
+
+Know what the global limit costs, because it is a real trade: it is a way to
+**close signups**. Burn the hourly budget and nobody registers until the
+window slides, which on mainnet is an outage. It is set far above any honest
+rate for that reason. If the instance outgrows it, raise it; do not remove it.
+
+**It is checked FIRST** — before Turnstile, before the field validation,
+before the uniqueness lookups. Turnstile is a call to somebody else's service
+and the uniqueness lookup is the membership oracle; a local counter is cheaper
+than both and is what a flood should hit. Placed after them it would protect
+the cheap part and leave the expensive and the interesting parts open, which
+is the same argument `turnstile.py` makes about its own position.
+
+**One refusal message for all three**, with which-limit in the log instead.
+The per-email limit keys on an address the caller does not own, so a
+distinguishable 429 would answer "did somebody start registering this address
+in the last minute?" — a small oracle on an endpoint whose whole story is
+about not answering those.
+
+And the per-address cooldown is stamped **after the send**, not at the top: a
+verification email nobody received must not refuse the retry that would
+deliver one.
+
+Note what this does *not* do. Turnstile still bounds only the browser case —
+`enforce` defaults to `"browser"` and a script omits the `Origin` header — and
+that stays deliberate, because `RegisterScreen.tsx` renders no widget. The
+limiter is what bounds the rest.
 
 ## F-Droid, and the two proprietary blobs in the APK
 

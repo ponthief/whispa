@@ -410,151 +410,132 @@ honour is the worse failure.
 
 ## The backup is not a wallet backup
 
-Added 2026-11-03. Settings → Backup writes an encrypted file holding the
-**device-only** data a reinstall loses and nothing can rebuild: transaction
-labels, SegWit address labels, pinned contacts. `services/backup.ts` does the
-crypto, and each client supplies its own collector because the two store this
-differently — the web in `localStorage` under `thrilla_*_v1`, the phone in the
-platform keychain under named services.
+Added 2026-11-03, and its scope was cut back on 2026-11-04 after the user put
+the objection that made it necessary: *"if user deletes app or wallet, the
+utxos and tnxs are removed from the backend. restoring them in the app won't
+restore them on the server."*
 
-**The rule is: the backup may hold what the KEYSTORE holds, and nothing the
-keystore refuses to hold.** The keystore has the recovery phrase
-(`seedVault.ts`), the spend key and the scan secret (`secureKeys.ts`). It
-deliberately does NOT have the BIP-39 passphrase. So the backup carries the
-**recovery phrase** and **not the passphrase**, and restoring takes the file,
-the file's password, and the passphrase out of the owner's head — the same
-two-factor shape the device already has. A stolen backup is worth no more than
-a stolen phone.
+**What it is for, and the screens say it in the first line**: a phone that is
+**lost, stolen or reinstalled**. Those three take the device-only data with
+them and nothing can rebuild it — transaction labels, SegWit address labels,
+pinned contacts. `services/backup.ts` does the crypto; each client supplies its
+own collector because the two store this differently — the web in
+`localStorage` under `thrilla_*_v1`, the phone in the platform keychain under
+named services.
 
-This replaced a blanket ban (2026-11-03, same day), and the correction is
-worth keeping. The ban was justified here by the standing instruction *"Private
-keys are never stored"* — but the user pointed out the seed phrase is already
-on the device, and they were right: read literally that rule is untrue of the
-device, since the keystore holds the spend key and the BIP-84 xprv. It means
-never stored SERVER-SIDE. The real argument is narrower: a keystore is
-hardware-backed and needs the device, while a backup file is *designed to
-leave* — it lands in Drive or in email, and its only protection is a password a
-human chose. That argument supports keeping the passphrase out; it never
-supported keeping the phrase out, which the phone was holding anyway.
+**What it does NOT do, and this is what the objection established.** There is
+no transactions table: `silnt.utxos` is the only coin store and the history is
+a view over it. Of its columns, `amount`, `priv_key_tweak`, `pub_key`,
+`utxo_state`, `timestamp` and `spent_in_txid` are a cache of the chain, which
+`insert_utxos_for_wallet` rewrites on every scan. So the coins and the history
+**do come back** after a delete — import the phrase, rescan, the chain is the
+authority. Only three columns are original user data: `label`, `frozen` and
+`freeze_reason`, plus the address labels behind
+`PUT /wallet/{id}/addresses/{addressId}/label`. **Those are what a wallet
+delete actually destroys and none of them is in the backup** — a real gap, and
+the one place this feature could still usefully grow.
 
-The derived keys stay out regardless: they come back from the phrase, so a
-second copy is only a second thing to steal.
+**The file carries no key material at all.** Not the recovery phrase, not the
+passphrase, not an xprv, spend key or scan key. `assertNoSecrets` walks the
+payload on the way out **and** on the way back in, refusing any key whose NAME
+looks like key material at any depth.
 
-`assertNoSecrets` enforces this precisely rather than bluntly — a phrase is
-allowed at **`wallets[n].mnemonic` and nowhere else**, because a phrase in a
-field no reader expects one in is a phrase nobody will think to protect, and
-`passphrase`, `xprv`, `spendKey`, `scanKey` and friends are refused at every
-depth. `check:backup` exercises both directions, including that a phrase at
-the sanctioned path actually works: a rule that refuses everything is easy to
-pass and useless.
+That is a blanket rule again. For one day (2026-11-03) a phrase was permitted
+at `wallets[n].mnemonic`, so the file could bring a wallet back as well as its
+labels; **sealing the file with the phrase removed the reason for it.** A copy
+inside is redundant — whoever opens the file typed the phrase to do so — while
+being the single thing that made the file a bearer instrument. The day's
+argument for carrying it is still correct about the device (the keystore does
+hold the phrase, and "private keys are never stored" means never stored
+SERVER-SIDE) and it simply stopped applying.
 
-**A restore never overwrites a phrase already on the device.** The stored one
-wins, exactly as the labels do, and for a much more serious reason: replacing
-it could swap the key to a wallet holding money for the key to a different one,
-with nothing to say so until the balance read zero.
+It remains a tripwire on the payload's **shape**, not a scan of its values: a
+seed under the key `notes` would pass, which is exactly why each client
+ASSEMBLES its payload from a named list rather than sweeping its storage. The
+web list is `BACKUP_KEYS`, and `thrilla_vault` and `thrilla_kdf_salt_v1` are
+excluded by name with the reason beside them — a sweep would have taken both.
 
-**The passphrase prompt at export is a READINESS CHECK, not storage.** Nothing
-writes it. It derives each wallet's address from phrase + passphrase and
-compares against the record, and refuses the backup when they disagree — naming
-which wallet, since with more than one the answer is the difference between a
-typo and a different passphrase. What it catches is somebody who has FORGOTTEN
-the passphrase, while they still hold a working phone, instead of years later:
-a mistyped passphrase derives a perfectly valid, completely different, empty
-wallet, with no error and nothing afterwards to say which string was wrong. A
-derivation that throws counts as a failure, never a pass — swallowing it would
-wave every backup through.
+**The file is encrypted with the wallet's recovery phrase** (2026-11-04, on the
+user's instruction). Three things follow, each an improvement on the wallet
+passphrase it replaced:
 
-The Settings copy says all three of these: that the file holds the phrase, that
-it does not hold the passphrase, and that it does not replace writing the
-phrase down, since a file can be lost with the account it sits in.
+- **A phrase has a checksum.** `isValidMnemonic` refuses a mistyped one before
+  anything is encrypted. The passphrase scheme needed a whole derivation check
+  (`verifySeedPassphrase`, now deleted) to close the same trap, because a
+  mistyped passphrase derives a perfectly valid, completely different, empty
+  wallet with no error at all.
+- **The file is not a bearer instrument.** It holds no phrase, so cracking it
+  yields labels. Under the one-day design the file plus one string was the
+  wallet, with no device needed — and it was an **offline oracle** for the
+  passphrase, the objection recorded then and now moot.
+- **It adds no secret its owner was not already keeping.** Whoever has the
+  phrase can restore the wallet regardless.
 
-`assertNoSecrets` walks the payload on the way out **and on the way back in**,
-refusing any key whose NAME looks like key material. It is a tripwire on the
-payload's shape, not a scan of its values: a seed stored under the key `notes`
-would pass, which is exactly why each client ASSEMBLES its payload from a named
-list rather than sweeping its storage. The web list is `BACKUP_KEYS`, and
-`thrilla_vault` and `thrilla_kdf_salt_v1` are excluded by name with the reason
-written beside them — a sweep would have taken both.
+**The phrase is normalised before it becomes a key** (`normalizeBackupKey`:
+lower case, single spaces) and that is the whole of cross-client
+compatibility. Without it the same twelve words typed with different capitals
+or spacing give different keys, each client writes files the other cannot
+open, and the only symptom is "wrong recovery phrase" on a file that is
+perfectly good. No Unicode normalisation: that would make the key depend on
+`String.prototype.normalize` behaving identically on Hermes and in a browser,
+which is the same class of engine difference that made argon2id unusable here.
+The BIP-39 English wordlist is lower-case ASCII, so nothing is lost.
 
-**The file is encrypted with the wallet's BIP-39 passphrase** (2026-11-03, on
-the user's instruction, after the trade was put to them twice).
+**A file from the one-day passphrase scheme still opens**, with its secret used
+**verbatim** — a passphrase's every character is significant and lower-casing
+one would turn an existing backup into a file nothing can read, which is the
+outcome this feature may never produce. `keySource` is in the header,
+authenticated with it, so a restore can tell the two apart; when a legacy file
+fails, the error names the scheme instead of reading as a corrupt file.
 
-**Know what the file is**: it contains the recovery phrase and opens with the
-passphrase, so the file plus that one string IS the wallet — no device needed.
-Both clients say exactly that where the backup is made, and call it something
-to guard like the written phrase rather than to leave in cloud storage.
+**The screens name ONE secret.** The BIP-39 passphrase is not mentioned on
+either of them (2026-11-04, on the user's instruction): it belongs to importing
+a wallet, which is a different screen and a different job, and naming it here
+was what made this one hard to follow. `check:backup` pins the absence of the
+word in template and JSX text, having stripped comments first — the same trap
+`check:stealth` hit with `DONT_KILL_APP`. The copy is three statements in
+order: when to use it, that the coins are not in it, and then **the red one** —
+*keep your recovery phrase somewhere safe; it opens this backup and it is the
+only way to restore your wallet.* Red because the phrase is now the single
+point of failure for both, and it is the one thing this app can never recover
+for anybody.
 
-The argument against, kept because it did not stop being true: this collapses
-two independent secrets into one. With a separate password, cracking the file
-yields a phrase still useless without the passphrase; here it yields both, and
-the file is an **offline oracle** for the passphrase — guesses run at whatever
-rate the KDF allows and a correct decrypt confirms the hit. What was weighed
-against it, and it is fair: three secrets is a lot and people cope by weakening
-one, while the passphrase has an enforced floor
-(`validateNewWalletPassphrase`: 12+ printable ASCII, letters and numbers) that
-a free-text backup password never had.
+Know the gap that leaves: **restoring a wallet still needs the passphrase too**,
+since `validateNewWalletPassphrase` is enforced on create and import alike. The
+import screen is where that is asked for and said; this screen does not repeat
+it.
 
-**Every WhiSPa wallet has a passphrase, imported ones included** (2026-11-03,
-on the user's instruction). `validateNewWalletPassphrase` was enforced only
-when GENERATING a wallet; import was exempt, on the reasoning that a wallet
-made elsewhere might not have one. But every WhiSPa wallet is generated through
-a path that has always demanded one, so the exemption only ever admitted
-wallets this app did not make — and import is for WhiSPa wallets. Both clients
-now demand it on both branches, and say so when they refuse: *"Every WhiSPa
-wallet has a passphrase — if you are restoring a wallet made in another app, it
-cannot be imported here."*
+**A restore re-keys by sp_address, never by the id in the file.** This is the
+bug the objection surfaced. `wallet_id = urlsafe_short_hash()` at create time,
+so deleting a wallet and adding the same seed back gives a new id (see "A
+wallet id does not survive a reinstall"), and `segwitLabels` is keyed
+`walletId -> address -> label`. A restore that trusted the file's id would
+file a whole wallet's labels under an id nothing references: no error, no
+missing file, just labels that never appear again. So the payload carries
+`wallets[n] = { id, title, network, spAddress }` and `remapWalletIds` matches
+the two sides on the address, which the same seed and passphrase always
+derive. `txLabels` needs none of this — a txid is a fact about the chain.
 
-`check:backup` pins that, because the backup design RESTS on it: the file is
-sealed with the wallet's passphrase and the readiness check proves that
-passphrase against the wallet, and neither has anything to work with if a
-wallet can exist without one. Re-exempting import would break no other test —
-it would quietly create accounts that cannot back up, with nothing to say why.
+A backed-up wallet with **no live match is left under its original id** rather
+than dropped: the common case is restoring before the wallet is added back, and
+an app reinstall (as opposed to a wallet delete) preserves the id anyway, so
+the labels attach by themselves.
 
-The cost, and it is the reason this was checked before changing: a legacy or
-externally-made passphrase-less wallet can no longer be imported at all. The
-refusal names that case rather than leaving somebody staring at a length rule.
+**The two clients are interchangeable, and that took more than matching
+names.** The web's `collectBackup` accepted a wallet list and dropped it on the
+floor, so no web backup ever carried one; and its `applyBackup` merged
+`segwitLabels` ONE level deep, so a wallet the backup also knew about counted
+as "already here" and every address labelled since was silently discarded. The
+phone had always merged per address. Both are fixed, `check:backup` exercises
+the nested merge rather than reading for it, and a section the other client has
+nowhere to put — the web's `swapTxids` and `bitmailPins` — is **reported by
+name**, never dropped silently and never an error.
 
-Two consequences are handled rather than left as traps. **An empty or weak
-passphrase is refused before anything is encrypted** — the empty string is not
-a key, and the result would be a plaintext recovery phrase in a file that looks
-encrypted. That should now be unreachable, and stays as the backstop, because
-"should be unreachable" is exactly the kind of claim that stops being true
-quietly. The same validator the wallet uses is applied, on WRITE only, so files
-made under other rules still open. And **the passphrase is proven before the
-file is written**: when the password was separate, a typo was a nuisance; now a file
-sealed with a mistyped string is a wallet nobody can ever reach, discovered at
-restore.
-
-The header records `keySource`, authenticated with the rest of it, so a restore
-knows what to ask for and a file from the brief separate-password period is
-still identifiable.
-
-**The passphrase is still never written into the file.** `check:backup` pins
-that, the refusal of a weak one, and `keySource` — the old rule "the passphrase
-is not used as the file password" was inverted deliberately, and replaced with
-stricter checks rather than deleted.
-
-**The web side types the phrase and never stores it.** `keyvault.js` keeps
-`{ scanSecret, spendKey, refundAddress, sweepAccount }` and no words, so the
-browser has no phrase to read — and this deliberately does not start keeping
-one. The export asks for it, validates it with `isValidMnemonic` first ("not a
-valid phrase" beats "that passphrase does not match"), derives each wallet's
-address to find which wallets the phrase actually owns, and includes only
-those: attaching one phrase to every row would claim wallets it has nothing to
-do with.
-
-**The vault stays out of the backup even so**, and the distinction is the
-point: a `spendKey` SPENDS WITH NO PASSPHRASE, so a file carrying one would be
-the coins outright, where a file carrying a phrase still needs the passphrase.
-The phrase regenerates everything in the vault anyway, so copying it would add
-only a second thing to steal.
-
-**A web restore re-derives rather than stores.** It uses the phrase and the
-passphrase that just opened the file to rebuild the wallet's keys into the
-vault — what Recover Keys does — and only for wallets with no keys here
-already. It refuses when the derived address does not match the wallet's own,
-because overwriting one wallet's keys with another wallet's phrase is
-unrecoverable.
+**A restore MERGES.** Replacing would delete every label written since the
+backup was taken, silently and permanently; where both sides hold the same key
+the existing value wins, being the more recent. The screen reports what
+actually changed, because "Restored" over a file whose every entry was already
+present reads as though something happened.
 
 **scrypt N=2^14, r=8, p=1** — the scrypt paper's own "interactive" parameters,
 16 MiB.
@@ -591,27 +572,13 @@ round-trips.
 
 **XChaCha20-Poly1305, with the header as associated data.** The X variant for
 its 24-byte nonce, which is what makes a random nonce per file safe when one
-password is reused across exports; a repeated nonce under one key is a total
-break. The header is authenticated so the stated KDF cost cannot be edited —
-without that a doctored file and a mistyped password would be indistinguishable.
-A wrong password and a tampered file give **one message**, because Poly1305
-fails identically either way and naming which would be a guess printed as fact.
-
-**A restore MERGES.** Replacing would delete every label written since the
-backup was taken, silently and permanently; where both sides hold the same key
-the existing value wins, being the more recent. The screen reports what actually
-changed, because "Restored" over a file whose every entry was already present
-reads as though something happened.
-
-`check:backup` EXERCISES all of this rather than reading it, because every
-failure here produces a file that looks perfectly fine: a weakened KDF still
-round-trips, a payload carrying a mnemonic still restores, a forgeable header
-still opens with the right password. Its own first run failed on a comment
-mentioning `Math.random()` — the same trap `check:stealth` hit with
-`DONT_KILL_APP` — so it strips comments before any source assertion. And its
-"two exports differ" test originally passed with a hard-coded nonce, because
-the random salt alone changes the ciphertext; salt and nonce are compared
-separately now.
+key is reused across exports; a repeated nonce under one key is a total break.
+The header is authenticated so the stated KDF cost cannot be edited — without
+that a doctored file and a mistyped phrase would be indistinguishable. A wrong
+phrase and a tampered file give **one message**, because Poly1305 fails
+identically either way and naming which would be a guess printed as fact. (The
+legacy-file wording above branches on the *header*, which is authenticated and
+read before any of this, not on how the failure went.)
 
 **On the phone the file goes through the Storage Access Framework**
 (`backup/BackupFileModule.kt`): `ACTION_CREATE_DOCUMENT` to save,
@@ -637,16 +604,31 @@ one, and `pending` is cleared BEFORE the promise is settled so a duplicated
 activity result cannot settle one that has moved on — the rule
 `ZxingScannerModule` already documents.
 
-Both clients name the sections the same (`txLabels`, `segwitLabels`), so a
-backup taken on one opens on the other; `check:backup` pins that, since nothing
-else would notice the two drifting apart.
+`check:backup` EXERCISES all of this rather than reading it, because every
+failure here produces a file that looks perfectly fine: a weakened KDF still
+round-trips, a payload carrying a mnemonic still restores, a forgeable header
+still opens with the right key, and labels filed under a dead wallet id are
+indistinguishable from a backup that held nothing. Its own first run failed on
+a comment mentioning `Math.random()` — the same trap `check:stealth` hit with
+`DONT_KILL_APP` — so it strips comments before any source assertion. And its
+"two exports differ" test originally passed with a hard-coded nonce, because
+the random salt alone changes the ciphertext; salt and nonce are compared
+separately now.
+
+The phone's collector cannot be imported by a check — its label services reach
+for the platform keychain — so that half is pinned source-side while the web's
+is exercised end to end. The rules they pin are the same ones.
 
 Loading a service with sibling imports from a check needs
 `scripts/ts-resolve.mjs` (`--import`), because `src/` uses extensionless
-relative imports that Metro and Vite resolve and Node does not. The same
-constraint bans TypeScript that erasure cannot remove — `BackupError` declares
-and assigns its `code` rather than using a `constructor(public code)` parameter
-property, which `--experimental-strip-types` refuses outright.
+relative imports that Metro and Vite resolve and Node does not. It also maps
+the web's `@/…` alias onto `src/`, which Vite resolves through its own config —
+without that, a store importing `@/services/backup` is unreachable from a
+check, and the alternative is writing one file in the tree differently from its
+neighbours to suit the harness. The same constraint bans TypeScript that
+erasure cannot remove — `BackupError` declares and assigns its `code` rather
+than using a `constructor(public code)` parameter property, which
+`--experimental-strip-types` refuses outright.
 
 ## The signup form had a bot check that was decorative
 

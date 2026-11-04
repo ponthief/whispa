@@ -91,10 +91,11 @@ export function isValidMnemonic(m: string): boolean {
 // the exemption only ever admitted wallets this app did not make. Import is for
 // WhiSPa wallets.
 //
-// Two things now depend on that being true without exception. The encrypted
-// backup is sealed with the wallet's passphrase, so a wallet without one cannot
-// be backed up at all; and the backup's readiness check proves the passphrase
-// against the wallet, which has nothing to prove if there is none.
+// (The encrypted backup used to depend on this: for one day it was sealed with
+// the wallet's passphrase. Since 2026-11-04 it is sealed with the recovery
+// phrase and holds no key material, so it no longer rests on this rule either
+// way. The rule stands on its own — import is for WhiSPa wallets, and every
+// WhiSPa wallet has a passphrase.)
 //
 // The passphrase is used verbatim in derivation, so validate the raw string
 // (no trimming — every character is significant).

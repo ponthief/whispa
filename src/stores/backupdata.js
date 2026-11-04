@@ -1,3 +1,5 @@
+import { remapWalletIds } from '@/services/backup'
+
 // What the web app puts in a backup, and what it will take back out.
 //
 // AN EXPLICIT LIST, not a sweep of localStorage. Sweeping every `thrilla_*`
@@ -11,18 +13,18 @@
 //   thrilla_vault        the IndexedDB key vault — the wallet's actual keys
 //   thrilla_kdf_salt_v1  the salt those keys are wrapped with
 //
-// THE VAULT STAYS OUT EVEN THOUGH THE BACKUP NOW CARRIES A RECOVERY PHRASE,
-// and the distinction is the point. The vault holds scanSecret and spendKey,
-// and a spendKey SPENDS WITH NO PASSPHRASE — so a file containing one would be
-// the coins outright, where a file containing a phrase still needs the
-// passphrase. The phrase also regenerates everything in the vault, so copying
-// the vault adds nothing but a second thing to steal.
+// NO KEY MATERIAL AT ALL, including the recovery phrase (2026-11-04). The file
+// is sealed WITH the phrase, so a copy inside would be redundant — whoever
+// opens it typed the phrase to do so — and is the one thing that would make
+// the file worth stealing by itself. The browser never had a phrase to put in
+// anyway: keyvault.js stores { scanSecret, spendKey, refundAddress,
+// sweepAccount } and never the words.
 //
-// The browser has no recovery phrase of its own: keyvault.js stores
-// { scanSecret, spendKey, refundAddress, sweepAccount } and never the words.
-// So the phrase is TYPED at export, verified, and written to the file — the
-// browser gains no new stored secret, which is why this does not mirror the
-// phone's collector.
+// SAME SHAPE AS THE PHONE (services/backupData.ts). Section names and the
+// `wallets` list match exactly, so a file written here restores there and the
+// other way round. The two clients' sections are not identical — swapTxids and
+// bitmailPins have no phone equivalent — and a section the other side does not
+// know is reported rather than dropped silently.
 
 // section name -> localStorage key
 export const BACKUP_KEYS = {
@@ -30,7 +32,11 @@ export const BACKUP_KEYS = {
   swapTxids: 'thrilla_swap_txids_v1',
   segwitLabels: 'thrilla_segwit_labels_v1',
   bitmailPins: 'thrilla_bitmail_pins_v1',
-};
+}
+
+// The one section that is two levels deep (walletId -> address -> label) and
+// therefore the one that needs both a nested merge and a wallet-id remap.
+const NESTED_BY_WALLET = 'segwitLabels'
 
 // Keys that exist and are deliberately left out, with the reason. Listed rather
 // than merely absent so that "is this missing on purpose?" has an answer.
@@ -40,39 +46,49 @@ export const BACKUP_EXCLUDED = {
   thrilla_pending_sends_v1: 'in-flight sends; stale rows would show payments that already landed',
   thrilla_plain_sends_v1: 'same',
   thrilla_tango_commit_v1: 'a live round on THIS device; it cannot be moved to another',
-};
+}
 
 function readJson(key) {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const v = JSON.parse(raw);
-    return v && typeof v === 'object' ? v : null;
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? v : null
   } catch {
-    return null;
+    return null
   }
 }
 
 /**
  * The payload for services/backup.ts to encrypt.
  *
- * `wallets` is supplied by the caller rather than read from storage, because
- * the phrase in it was typed into the export form and deliberately never
- * persisted here. Each entry is { id, title, network, spAddress, mnemonic }.
+ * `wallets` comes from the caller — the account's wallet list — and holds
+ * references only: { id, title, network, spAddress }. It is what lets a
+ * restore recognise a wallet that has been deleted and re-added under a new
+ * id. Nothing in it is secret.
  */
 export function collectBackup(wallets = []) {
-  const sections = {};
+  const sections = {}
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
-    const v = readJson(key);
-    if (v && Object.keys(v).length) sections[name] = v;
+    const v = readJson(key)
+    if (v && Object.keys(v).length) sections[name] = v
   }
+  const refs = (wallets || [])
+    .filter(w => w && w.id)
+    .map(w => ({
+      id: w.id,
+      title: w.title || 'Wallet',
+      network: w.network || '',
+      spAddress: w.spAddress || '',
+    }))
   return {
     app: 'whispa',
     payloadVersion: 1,
     exportedAt: Date.now(),
     source: 'web',
     sections,
-  };
+    ...(refs.length ? { wallets: refs } : {}),
+  }
 }
 
 /**
@@ -84,41 +100,85 @@ export function collectBackup(wallets = []) {
  * have a value for the same key the EXISTING one wins, because it is the more
  * recent of the two and the user can see it.
  *
+ * `live` is the account's wallets NOW, used to re-point SegWit labels at a
+ * wallet that came back with a different id. See remapWalletIds.
+ *
  * Returns what it did, per section, so the screen can report it rather than
  * saying "restored" over an empty file.
  */
-export function applyBackup(payload) {
-  const report = {};
-  const sections = (payload && payload.sections) || {};
+export function applyBackup(payload, live = []) {
+  const report = {}
+  const sections = (payload && payload.sections) || {}
+  const remap = remapWalletIds(payload && payload.wallets, live)
+
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
-    const incoming = sections[name];
-    if (!incoming || typeof incoming !== 'object') continue;
-    const existing = readJson(key) || {};
-    let added = 0;
-    let kept = 0;
-    for (const [k, v] of Object.entries(incoming)) {
-      if (Object.prototype.hasOwnProperty.call(existing, k)) kept++;
-      else {
-        existing[k] = v;
-        added++;
+    const incoming = sections[name]
+    if (!incoming || typeof incoming !== 'object') continue
+    const existing = readJson(key) || {}
+    let added = 0
+    let kept = 0
+
+    if (name === NESTED_BY_WALLET) {
+      // Merged at the ADDRESS level, not the wallet level. Merging whole
+      // wallets would drop every address labelled since the backup inside a
+      // wallet the backup also knows about — which is what this did until
+      // 2026-11-04, and the phone never did.
+      for (const [walletId, addrs] of Object.entries(incoming)) {
+        if (!addrs || typeof addrs !== 'object') continue
+        const target = remap[walletId] || walletId
+        const mine = existing[target] || (existing[target] = {})
+        for (const [addr, label] of Object.entries(addrs)) {
+          if (Object.prototype.hasOwnProperty.call(mine, addr)) kept++
+          else {
+            mine[addr] = label
+            added++
+          }
+        }
+      }
+    } else {
+      for (const [k, v] of Object.entries(incoming)) {
+        if (Object.prototype.hasOwnProperty.call(existing, k)) kept++
+        else {
+          existing[k] = v
+          added++
+        }
       }
     }
+
     try {
-      localStorage.setItem(key, JSON.stringify(existing));
+      localStorage.setItem(key, JSON.stringify(existing))
     } catch {
-      report[name] = { added: 0, kept, failed: true };
-      continue;
+      report[name] = { added: 0, kept, failed: true }
+      continue
     }
-    report[name] = { added, kept, failed: false };
+    report[name] = { added, kept, failed: false }
   }
-  return report;
+
+  const known = Object.keys(BACKUP_KEYS)
+  return {
+    sections: report,
+    skipped: Object.keys(sections).filter(s => !known.includes(s)),
+    remapped: Object.keys(remap).length,
+  }
 }
 
-/** Rough count of what a payload would restore, for the confirmation step. */
+/**
+ * Leaf entries per section, for the "restored N of M" line.
+ *
+ * Counts one level down when a section's values are objects, so segwitLabels
+ * counts labels rather than wallets and a flat section counts its own keys.
+ * The phone's countItems does the same arithmetic, so the two clients report
+ * the same figure for the same file.
+ */
 export function describeBackup(payload) {
-  const sections = (payload && payload.sections) || {};
-  return Object.entries(sections).map(([name, v]) => ({
-    name,
-    count: v && typeof v === 'object' ? Object.keys(v).length : 0,
-  }));
+  const sections = (payload && payload.sections) || {}
+  return Object.entries(sections).map(([name, v]) => {
+    let count = 0
+    if (v && typeof v === 'object') {
+      for (const inner of Object.values(v)) {
+        count += inner && typeof inner === 'object' ? Object.keys(inner).length : 1
+      }
+    }
+    return { name, count }
+  })
 }

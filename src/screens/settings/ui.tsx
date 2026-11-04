@@ -366,6 +366,27 @@ export function Field({
 
 // Tinted rather than bare coloured text. A sentence in red under a switch reads
 // as part of the description; a tinted band reads as a thing that just happened.
+/**
+ * A multi-line input on its own line.
+ *
+ * `Field` puts its input in a row beside a button, which is right for one
+ * short value and wrong for a twelve-word recovery phrase: the words wrap into
+ * a column two or three characters wide. This is the same input styling with
+ * the row and the button taken away, so the caller renders its own buttons
+ * below.
+ */
+export function TextArea(props: TextInputProps) {
+  return (
+    <TextInput
+      multiline
+      textAlignVertical="top"
+      {...props}
+      style={styles.textArea}
+      placeholderTextColor={colors.faint}
+    />
+  );
+}
+
 export function Note({
   kind,
   children,
@@ -552,6 +573,24 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   fieldBtn: { paddingHorizontal: space.lg },
+
+  textArea: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: space.md,
+    paddingVertical: 10,
+    marginTop: space.md,
+    minHeight: 76,
+    fontFamily: type.value.fontFamily,
+    fontSize: 15,
+    // Stated rather than inherited. A TextInput, like a <button>, does not take
+    // the surrounding text colour on every platform, and the failure is a field
+    // whose text is invisible against the surface — the same shape as the
+    // wallet card's unreadable balance tabs recorded in CLAUDE.md.
+    color: colors.text,
+  },
 
   note: {
     borderRadius: radius.sm,

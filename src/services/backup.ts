@@ -3,65 +3,89 @@ import { scryptAsync } from '@noble/hashes/scrypt';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
 import { base64 } from '@scure/base';
-import { secureRandomUnavailable, validateNewWalletPassphrase } from './spKeys';
+import { isValidMnemonic, secureRandomUnavailable } from './spKeys';
 
-// An encrypted backup of everything a reinstall loses and nothing can rebuild.
+// An encrypted backup of what a lost, stolen or reinstalled phone takes with
+// it — and nothing else.
 //
-// WHAT IS IN IT: device-only data. Transaction labels, SegWit address labels,
-// wallet names and the handful of preferences that live on the device. That is
-// the whole of what vanishes when somebody reinstalls, and none of it exists
-// anywhere else — txLabels.ts and segwitLabels.ts are device-only ON PURPOSE,
-// because a server-side map of txid or address to "who I gave it to" is exactly
-// the deanonymisation risk this wallet exists to avoid.
+// WHAT IT IS FOR, and this is the whole scope: the phone is lost, it is
+// stolen, or the app is reinstalled. In all three the device-only data goes
+// and nothing can rebuild it — transaction labels, SegWit address labels,
+// pinned contacts. The COINS do not need this file: they are on the chain and
+// a rescan finds them again from the recovery phrase. What the chain does not
+// hold is which payment was which.
 //
-// WHAT IS DELIBERATELY NOT IN IT: key material. No mnemonic, no xprv, no spend
-// or scan key, no BIP-39 passphrase. CLAUDE.md's standing instruction is
-// "Private keys are never stored", and a file that restores the coins is a
-// bearer instrument — whoever holds it and the password has the money. The
-// recovery phrase stays the thing the user wrote down, and restoring a wallet
-// takes the phrase AND this file.
+// WHAT IS IN IT: those labels, plus a short list of the wallets they belong to
+// ({ id, title, network, spAddress }) so a restore can match them up again. A
+// wallet id does not survive being deleted and re-added — see CLAUDE.md, "A
+// wallet id does not survive a reinstall" — so the SegWit labels, which are
+// keyed by wallet id, would otherwise come back attached to an id nothing
+// references. The sp_address is the stable name, because the same seed and
+// passphrase always derive it.
 //
-// `assertNoSecrets` enforces that by walking the payload rather than trusting
-// the caller, because the failure is silent: a backup carrying a mnemonic
-// encrypts, writes and restores perfectly well, and nothing says the file is
-// now worth stealing.
+// WHAT IS NOT IN IT: key material of any kind. No recovery phrase, no
+// passphrase, no xprv, no spend or scan key. `assertNoSecrets` walks the
+// payload on the way out AND on the way back in, because the failure is
+// silent: a backup carrying a phrase encrypts, writes and restores perfectly
+// well, and nothing afterwards says the file is now worth stealing.
 //
-// THE FILE IS ENCRYPTED WITH THE WALLET'S BIP-39 PASSPHRASE (2026-11-03, on
-// the user's instruction, after the trade was put to them twice).
+// THE FILE IS ENCRYPTED WITH THE WALLET'S RECOVERY PHRASE (2026-11-04, on the
+// user's instruction). Three things follow, and each is an improvement on the
+// wallet passphrase it replaced:
 //
-// KNOW WHAT THIS FILE IS. It contains the recovery phrase and it opens with the
-// passphrase, so the file plus that one string IS the wallet — no phone needed.
-// Both clients say so where the backup is made. Treat it like the written
-// phrase, not like a document that is fine in cloud storage.
+//   * A phrase has a CHECKSUM. isValidMnemonic refuses a mistyped one before
+//     anything is encrypted, so the trap that the passphrase scheme needed a
+//     whole derivation check to close — a file sealed with a string its owner
+//     cannot reproduce, discovered years later with the phone already gone —
+//     is closed by BIP-39 instead.
+//   * The file is no longer a BEARER INSTRUMENT. It holds no phrase, so
+//     cracking it yields labels. Under the previous design the file plus one
+//     string was the wallet, with no device needed.
+//   * It needs no secret its owner is not already required to keep. Whoever
+//     has the phrase can restore the wallet regardless; sealing the file with
+//     it adds no new thing to remember and no new thing to lose.
 //
-// THE ARGUMENT AGAINST, recorded because it did not stop being true: this
-// collapses two independent secrets into one. With a separate password, an
-// attacker who cracks the file gets a phrase that is still useless without the
-// passphrase; here, cracking the passphrase yields both. And the file is an
-// OFFLINE ORACLE for it — guesses run at whatever rate the KDF allows and a
-// successful decrypt confirms the hit.
+// The phrase is NORMALISED before it becomes a key (normalizeBackupKey), and
+// that is what makes a file written in the browser open on the phone and the
+// other way round. Without it the same twelve words typed with different
+// capitals or spacing would give different keys, each client would happily
+// write files the other could not open, and the only symptom would be "wrong
+// recovery phrase" on a file that is perfectly good.
 //
-// WHAT WAS WEIGHED ON THE OTHER SIDE, and it is a fair point: three secrets is
-// a lot, and the usual way people cope is by weakening one. The passphrase has
-// an enforced floor (validateNewWalletPassphrase: 12+ printable ASCII); a
-// free-text backup password had none.
-//
-// TWO CONSEQUENCES THIS FILE HANDLES RATHER THAN LEAVES AS TRAPS:
-//
-//   * A wallet with NO passphrase has nothing to encrypt with. The empty string
-//     is not a key, and a file "encrypted" with it is a plaintext wallet. Such
-//     an export is refused outright rather than written. Since 2026-11-03 both
-//     clients also demand a passphrase on IMPORT, so this should now be
-//     unreachable — it stays as the backstop, because "should be unreachable"
-//     is exactly the kind of claim that stops being true quietly.
-//   * The passphrase must be PROVEN before the file is written — see
-//     verifySeedPassphrase. Mistype it and the file is sealed with a string
-//     that is not the passphrase, nobody finds out until a restore, and the
-//     wallet inside is unreachable for ever. When the file password was
-//     separate that was a nuisance; now it is the whole wallet.
+// WHAT THIS FILE DOES NOT RESTORE, stated here because both screens state it
+// to the user: the wallet. That comes back by importing the recovery phrase,
+// and the coins come back by scanning the chain. Nor does it restore what the
+// SERVER holds — a deleted wallet's coin labels and freeze flags live in
+// silnt.utxos and go with it.
 
 export const BACKUP_FORMAT = 'whispa.backup';
 export const BACKUP_VERSION = 1;
+
+// What the file says it is sealed with. Recorded in the header and
+// authenticated with it, so it cannot be relabelled.
+export const KEY_SOURCE = 'recovery-phrase';
+
+// Files from the one day the backup was sealed with the wallet's BIP-39
+// passphrase (2026-11-03 to 2026-11-04). They still open — the secret goes
+// into the same field — and they are deliberately NOT normalised, because a
+// passphrase is used verbatim in derivation and lower-casing one would turn a
+// readable backup into a file nothing can open. That is the outcome this
+// feature may never produce, which is also why argon2id stays readable.
+const LEGACY_KEY_SOURCE = 'wallet-passphrase';
+
+/**
+ * The exact string a recovery phrase becomes before the KDF sees it.
+ *
+ * Both clients go through encryptBackup/decryptBackup rather than normalising
+ * for themselves, so the two cannot drift. Lower case and single spaces: the
+ * BIP-39 English wordlist is lower-case ASCII, so this is lossless for a valid
+ * phrase. No Unicode normalisation, which would make the key depend on
+ * String.prototype.normalize behaving identically on Hermes and in a browser —
+ * the same kind of engine difference that made argon2id unusable here.
+ */
+export function normalizeBackupKey(phrase: string): string {
+  return (phrase || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 // scrypt, N=2^14 r=8 p=1 — the scrypt paper's own "interactive" parameters,
 // 16 MiB of memory.
@@ -126,34 +150,22 @@ export class BackupError extends Error {
   }
 }
 
-// THE RULE, changed on 2026-11-03 after the first shape of it was challenged:
+// THE RULE: a backup carries NO key material, at any depth, under any name
+// this code can recognise.
 //
-//   The backup may hold what the KEYSTORE holds, and nothing the keystore
-//   refuses to hold.
+// For one day (2026-11-03) a phrase was permitted at wallets[n].mnemonic, so
+// that the file could bring a wallet back as well as its labels. That is gone,
+// and sealing the file WITH the phrase is what removed the reason for it: a
+// copy inside is redundant, because anyone who can open the file already typed
+// the phrase to do so — while being the single thing that turned the file into
+// a bearer instrument.
 //
-// The keystore holds the recovery phrase (seedVault.ts), the spend key and the
-// scan secret (secureKeys.ts). It deliberately does NOT hold the BIP-39
-// passphrase, so that a keystore dump cannot recover a passphrase-protected
-// wallet. A backup that mirrors exactly that line is worth no more to a thief
-// than the phone is: it restores a wallet only when its owner also supplies the
-// passphrase, which exists nowhere but in their head.
-//
-// So the recovery phrase is PERMITTED, at one sanctioned place and nowhere
-// else, and everything the keystore would not give up is still refused.
-//
-// (This replaced a blanket ban justified by the standing instruction "private
-// keys are never stored". Read literally that rule is already untrue of the
-// device — the keystore holds the spend key and the BIP-84 xprv — so it means
-// never stored SERVER-SIDE. The real argument is narrower and is the one
-// above: a keystore needs the device, while a backup file is designed to leave
-// it.)
-const FORBIDDEN_KEY = /passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
-
-// The one path a recovery phrase may occupy: payload.wallets[n].mnemonic.
-// Anywhere else it is refused, so a phrase cannot end up somewhere no reader
-// of this file would think to look for one.
-const SEED_KEY = 'mnemonic';
-const SEED_PATH = /^payload\.wallets\[\d+\]$/;
+// This is a tripwire on the payload's SHAPE, not a scan of its values. A
+// phrase stored under the key `notes` would pass, which is exactly why each
+// client ASSEMBLES its payload from a named list rather than sweeping its own
+// storage.
+const FORBIDDEN_KEY =
+  /mnemonic|seed[_ -]?phrase|recovery[_ -]?phrase|passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
 
 export function assertNoSecrets(value: unknown, path = 'payload'): void {
   if (value === null || typeof value !== 'object') return;
@@ -162,21 +174,11 @@ export function assertNoSecrets(value: unknown, path = 'payload'): void {
     return;
   }
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (k === SEED_KEY) {
-      if (!SEED_PATH.test(path)) {
-        throw new BackupError(
-          'backup_would_carry_a_secret',
-          `Refusing to write a backup with a recovery phrase at "${path}.${k}". ` +
-            `A phrase belongs at wallets[n].mnemonic and nowhere else.`,
-        );
-      }
-      continue; // sanctioned — do not recurse into a string anyway
-    }
     if (FORBIDDEN_KEY.test(k)) {
       throw new BackupError(
         'backup_would_carry_a_secret',
-        `Refusing to write a backup containing "${path}.${k}". A backup carries ` +
-          `no passphrase and no derived key.`,
+        `Refusing a backup containing "${path}.${k}". A backup carries labels ` +
+          `and the wallets they belong to — no phrase, no passphrase, no key.`,
       );
     }
     assertNoSecrets(v, `${path}.${k}`);
@@ -210,7 +212,7 @@ async function kdfKey(
   onProgress?: KdfProgress,
 ): Promise<Uint8Array> {
   if (!password) {
-    throw new BackupError('backup_no_password', 'A backup needs a passphrase.');
+    throw new BackupError('backup_no_password', 'A backup needs your recovery phrase.');
   }
   const pw = enc.encode(password);
   const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress };
@@ -240,20 +242,20 @@ export async function encryptBackup(
   // then notices has written the secret to memory and, a moment later, to disk.
   assertNoSecrets(payload);
 
-  // THE EMPTY-PASSPHRASE CASE, refused rather than written. A wallet imported
-  // without a BIP-39 passphrase has nothing to encrypt this file with, and the
-  // empty string is not a key: the result would be a plaintext recovery phrase
-  // in a file that looks encrypted, which is the worst of both. The same floor
-  // the wallet itself enforces is applied here, so "a" is refused too.
+  // THE KEY IS A RECOVERY PHRASE, AND BIP-39 CAN SAY SO. A phrase carries a
+  // checksum, so a typo is caught here — before a file is written that its
+  // owner can never open, which under the previous scheme could only be caught
+  // by deriving a wallet from it. The empty string falls out of the same check
+  // rather than needing one of its own.
   //
   // Checked on WRITE only. A file made under different rules must still open,
-  // or this check would strand backups rather than protect them.
-  const weak = validateNewWalletPassphrase(password || '');
-  if (weak) {
+  // or this would strand backups rather than protect them.
+  const secret = normalizeBackupKey(password);
+  if (!isValidMnemonic(secret)) {
     throw new BackupError(
-      'backup_passphrase_too_weak',
-      `${weak} This file is encrypted with your wallet passphrase, so a wallet ` +
-        `without one cannot be backed up this way.`,
+      'backup_key_not_a_phrase',
+      'That is not a valid recovery phrase — check the words and their order. ' +
+        'Your backup is encrypted with your recovery phrase.',
     );
   }
 
@@ -277,13 +279,13 @@ export async function encryptBackup(
     kdf: { ...KDF, salt: base64.encode(salt) },
     cipher: 'xchacha20poly1305' as const,
     nonce: base64.encode(nonce),
-    // Recorded so a restore can ask for the right thing by name, and so a file
-    // from the brief period of separate backup passwords is still identifiable.
-    // Authenticated as part of the header, so it cannot be relabelled.
-    keySource: 'wallet-passphrase' as const,
+    // Recorded so a restore knows what this file was sealed with, and so one
+    // from either earlier scheme is still identifiable. Authenticated as part
+    // of the header, so it cannot be relabelled.
+    keySource: KEY_SOURCE,
   };
 
-  const key = await kdfKey(password, salt, KDF, onProgress);
+  const key = await kdfKey(secret, salt, KDF, onProgress);
   // The header is the AEAD's associated data, so the KDF parameters and the
   // version are authenticated too. Without that an attacker could edit the
   // stated parameters; the decrypt would fail, but it would fail having spent
@@ -339,11 +341,18 @@ export async function decryptBackup(
     throw new BackupError('backup_damaged', 'That backup file is damaged.');
   }
 
-  // Taken from the FILE, not from this build's constants: a backup written with
-  // other parameters, or another KDF entirely, must still open. The header is
-  // authenticated below, so none of it can be altered without the decrypt
-  // failing.
-  const key = await kdfKey(password, salt, k, onProgress);
+  // A recovery-phrase file gets the normalised key; a file from the one-day
+  // passphrase scheme gets the string VERBATIM, because every character of a
+  // BIP-39 passphrase is significant and lower-casing one would make an
+  // existing backup unopenable.
+  const legacy = env.keySource === LEGACY_KEY_SOURCE;
+  const secret = legacy ? password : normalizeBackupKey(password);
+
+  // KDF parameters taken from the FILE, not from this build's constants: a
+  // backup written with other parameters, or another KDF entirely, must still
+  // open. The header is authenticated below, so none of it can be altered
+  // without the decrypt failing.
+  const key = await kdfKey(secret, salt, k, onProgress);
 
   const { ct: _ct, ...header } = env;
   const aad = enc.encode(JSON.stringify(header));
@@ -351,12 +360,17 @@ export async function decryptBackup(
   try {
     plain = xchacha20poly1305(key, nonce, aad).decrypt(ct);
   } catch {
-    // ONE MESSAGE for a wrong password and for a tampered file, because the
-    // code cannot tell them apart: Poly1305 fails identically either way, and
-    // claiming to know which would be a guess printed as a fact.
+    // STILL ONE MESSAGE for a wrong secret and for a tampered file: Poly1305
+    // fails identically either way and naming which would be a guess printed
+    // as a fact. The branch below is on the HEADER, which is authenticated and
+    // was read before any of this — not on how the failure went.
     throw new BackupError(
       'backup_wrong_password',
-      'Wrong password, or the file has been altered.',
+      legacy
+        ? 'That backup was written by an earlier version of WhiSPa, which did ' +
+          'not seal files with your recovery phrase. Enter the secret you used ' +
+          'when you saved it, or save a fresh backup from this version.'
+        : 'Wrong recovery phrase, or the file has been altered.',
     );
   }
 
@@ -384,53 +398,49 @@ export function backupFilename(now = new Date()): string {
   return `whispa-backup-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}.json`;
 }
 
-// ── Proving the passphrase before writing a backup ──────────────────────────
+// ── Matching a backed-up wallet to a live one ───────────────────────────────
 
-export type SeedCheck = {
-  walletId: string;
+/** What the payload records about each wallet. No key material. */
+export type BackupWalletRef = {
+  id: string;
   title: string;
+  network: string;
   /** The sp1…/tsp1… this wallet is known by, from the server record. */
   spAddress: string;
-  mnemonic: string;
-  network: string;
 };
 
-export type SeedCheckResult = { walletId: string; title: string; ok: boolean };
-
 /**
- * Does this passphrase, with these seeds, derive the wallets we think it does?
+ * backed-up wallet id -> the id that wallet has NOW.
  *
- * WHAT THIS IS FOR, and it is not data integrity. The passphrase is not stored
- * anywhere, so a backup cannot carry it and cannot check it later. What it can
- * do is make somebody demonstrate, at the moment they make the backup, that
- * they still KNOW the passphrase their wallets need — because a backup you
- * cannot restore is not a backup, and the usual way to discover that is years
- * later with the phone already gone.
+ * WHY THIS EXISTS. `wallet_id = urlsafe_short_hash()` at create time, so
+ * deleting a wallet and adding the same seed back gives a NEW id for the same
+ * wallet (CLAUDE.md, "A wallet id does not survive a reinstall"). SegWit
+ * labels are keyed walletId -> address -> label, so a restore that trusted the
+ * id in the file would write a whole wallet's labels under an id nothing
+ * references: no error, no missing file, just labels that never appear again.
  *
- * The failure it catches is specifically silent: a mistyped passphrase derives
- * a perfectly valid, completely different, empty wallet. No error, no warning,
- * no coins, and nothing afterwards to say which of the two strings was wrong.
+ * The sp_address is the stable name — the same seed and passphrase always
+ * derive it, on either client and after any number of reinstalls — so that is
+ * what the two sides are matched on.
  *
- * Takes the derivation as an argument rather than importing spKeys, so this
- * module stays loadable by a check script — spKeys pulls in the whole BIP-32
- * stack and this file is the one the crypto checks exercise.
+ * A wallet with no live match is left under its ORIGINAL id rather than
+ * dropped. The common case for that is restoring before adding the wallet
+ * back, and the labels then attach by themselves if it returns with the same
+ * id (which an app reinstall, as opposed to a wallet delete, does preserve).
  */
-export function verifySeedPassphrase(
-  wallets: SeedCheck[],
-  passphrase: string,
-  derive: (mnemonic: string, passphrase: string, network: string) => { spAddress: string },
-): SeedCheckResult[] {
-  return wallets.map((w) => {
-    let ok = false;
-    try {
-      // Compared case-insensitively: bech32m is lower case by construction, but
-      // a record that came back upper-cased from somewhere should not read as a
-      // forgotten passphrase.
-      const got = derive(w.mnemonic, passphrase, w.network).spAddress;
-      ok = !!got && got.toLowerCase() === (w.spAddress || '').toLowerCase();
-    } catch {
-      ok = false;
-    }
-    return { walletId: w.walletId, title: w.title, ok };
-  });
+export function remapWalletIds(
+  backedUp: BackupWalletRef[] | undefined,
+  live: { id: string; spAddress: string }[] | undefined,
+): Record<string, string> {
+  const byAddress = new Map<string, string>();
+  for (const w of live || []) {
+    if (w?.spAddress && w.id) byAddress.set(w.spAddress.toLowerCase(), w.id);
+  }
+  const out: Record<string, string> = {};
+  for (const w of backedUp || []) {
+    if (!w?.id || !w.spAddress) continue;
+    const now = byAddress.get(w.spAddress.toLowerCase());
+    if (now && now !== w.id) out[w.id] = now;
+  }
+  return out;
 }

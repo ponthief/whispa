@@ -1,4 +1,5 @@
-import { hasSeed, readSeed, saveSeed } from './seedVault';
+import { remapWalletIds } from './backup';
+import type { BackupWalletRef } from './backup';
 import { loadSegwitLabels, persistSegwitLabels } from './segwitLabels';
 import { loadTxLabels, persistTxLabels } from './txLabels';
 
@@ -6,10 +7,11 @@ import { loadTxLabels, persistTxLabels } from './txLabels';
 //
 // The web's half is stores/backupdata.js, and the two produce the SAME payload
 // shape on purpose: `sections.txLabels` and `sections.segwitLabels` mean the
-// same thing in both files, so a backup taken on one opens on the other. The
-// collectors differ because the storage does — the web keeps this in
-// localStorage, the phone in the platform keychain under named services, which
-// is what lets the duress wipe erase labels alongside the keys.
+// same thing in both files, and `wallets` is the same list of references, so a
+// backup taken on one opens and restores on the other. The collectors differ
+// because the storage does — the web keeps this in localStorage, the phone in
+// the platform keychain under named services, which is what lets the duress
+// wipe erase labels alongside the keys.
 //
 // NAMED SOURCES, never a sweep. Each section is read through the service that
 // owns it, so a future store holding something secret cannot be hoovered into
@@ -17,33 +19,23 @@ import { loadTxLabels, persistTxLabels } from './txLabels';
 // cannot see a seed stored under an innocent name, which is why nothing here
 // enumerates storage.
 //
-// THE RECOVERY PHRASE IS BACKED UP (2026-11-03). It is already on this device
-// — seedVault keeps it in the keychain so it can be shown again — so a backup
-// that omitted it was protecting nothing the phone was not already holding,
-// while leaving the file unable to do the one thing people want a backup for.
-// The line it keeps is the keystore's own: the phrase goes in, the BIP-39
-// PASSPHRASE does not. Restoring then needs the file, the file's password and
-// the passphrase out of the owner's head, which is the same two-factor shape
-// the device has. See services/backup.ts.
+// NO KEY MATERIAL, and since 2026-11-04 not even the recovery phrase. The file
+// is sealed WITH the phrase, so a copy inside it would be redundant — whoever
+// opens the file has already typed it — and it is the single thing that would
+// make the file worth stealing on its own. Restoring a wallet is what Import
+// is for; this restores what the chain cannot.
 //
-// STILL NOT BACKED UP: the derived keys (secureKeys) — they come back from the
-// phrase, and a second copy is a second thing to steal; the app lock sentinel
-// and PINs (appLock, appPin), which are about this device and not the wallet;
-// and tangoCommit, because a live round's record belongs to the device that
-// joined it and cannot be moved.
+// A SECTION THIS CLIENT DOES NOT KNOW is reported, not dropped and not an
+// error. The web backs up swap txids and BitMail pins, which have no phone
+// equivalent; a file carrying them must still restore its labels here, and the
+// screen says what it passed over rather than quietly counting it as restored.
 
-export type BackupWallet = {
-  id: string;
-  title: string;
-  network: string;
-  spAddress: string;
-  /** Present only when this device holds the phrase. */
-  mnemonic?: string;
-};
+export type BackupWallet = BackupWalletRef;
 
 export type BackupSections = {
   txLabels?: Record<string, string>;
   segwitLabels?: Record<string, Record<string, string>>;
+  [k: string]: unknown;
 };
 
 export type BackupPayloadShape = {
@@ -52,13 +44,16 @@ export type BackupPayloadShape = {
   exportedAt: number;
   source: 'android' | 'ios' | 'web';
   sections: BackupSections;
-  /** wallets[n].mnemonic is the ONE place a phrase may sit; backup.ts enforces it. */
+  /** Wallet references, so a restore can match labels to a re-added wallet. */
   wallets?: BackupWallet[];
 };
 
+/** The sections this client can actually put back. */
+const KNOWN_SECTIONS = ['txLabels', 'segwitLabels'];
+
 export async function collectBackup(
   source: 'android' | 'ios' = 'android',
-  wallets: { id: string; title: string; network: string; spAddress: string }[] = [],
+  wallets: BackupWallet[] = [],
 ): Promise<BackupPayloadShape> {
   const [txLabels, segwitLabels] = await Promise.all([
     loadTxLabels(),
@@ -67,14 +62,18 @@ export async function collectBackup(
   const sections: BackupSections = {};
   if (txLabels && Object.keys(txLabels).length) sections.txLabels = txLabels;
   if (segwitLabels && Object.keys(segwitLabels).length) sections.segwitLabels = segwitLabels;
-  // A wallet whose phrase is not on this device is still worth recording — its
-  // labels and its address are — but it goes in WITHOUT a mnemonic, and the
-  // screen says which, so nobody discovers the gap at restore time.
-  const out: BackupWallet[] = [];
-  for (const w of wallets) {
-    const phrase = await readSeed(w.id);
-    out.push(phrase ? { ...w, mnemonic: phrase } : { ...w });
-  }
+
+  // Recorded for every wallet on the account, whether or not it has labels:
+  // the list is how a restore recognises a wallet that has been deleted and
+  // re-added under a new id, and a wallet with nothing in it today may be the
+  // one that matches tomorrow. Id, title, network and sp_address — the
+  // sp_address is the stable name and the other three are for the report.
+  const out: BackupWallet[] = wallets.map((w) => ({
+    id: w.id,
+    title: w.title,
+    network: w.network,
+    spAddress: w.spAddress,
+  }));
 
   return {
     app: 'whispa',
@@ -84,11 +83,6 @@ export async function collectBackup(
     sections,
     ...(out.length ? { wallets: out } : {}),
   };
-}
-
-/** How many of the backed-up wallets carry a recovery phrase. */
-export function seededWalletCount(payload: BackupPayloadShape): number {
-  return (payload?.wallets || []).filter((w) => !!w.mnemonic).length;
 }
 
 export type RestoreReport = { added: number; kept: number };
@@ -101,14 +95,29 @@ export type RestoreReport = { added: number; kept: number };
  * work and nothing would say it had gone. Where both sides hold the same key
  * the EXISTING value wins, being the more recent of the two and the one the
  * user can actually see.
+ *
+ * `live` is the wallets on the account NOW. It is what lets a wallet that was
+ * deleted and re-added — and therefore carries a different id — get its SegWit
+ * labels back; see remapWalletIds for why the id in the file cannot be
+ * trusted. Omitting it is safe and means "match nothing", which is what an
+ * offline restore gets.
  */
 export async function applyBackup(
   payload: BackupPayloadShape,
-): Promise<Record<string, RestoreReport>> {
+  live: { id: string; spAddress: string }[] = [],
+): Promise<{
+  sections: Record<string, RestoreReport>;
+  skipped: string[];
+  remapped: number;
+}> {
   const sections = payload?.sections || {};
   const report: Record<string, RestoreReport> = {};
+  const remap = remapWalletIds(payload?.wallets, live);
 
   if (sections.txLabels) {
+    // No remapping here, and none is possible or needed: a txid is a fact
+    // about the chain, so a label keyed on one reattaches to the same payment
+    // however many times the wallet has been removed and added back.
     const existing = await loadTxLabels();
     let added = 0;
     let kept = 0;
@@ -132,7 +141,8 @@ export async function applyBackup(
     let added = 0;
     let kept = 0;
     for (const [walletId, addrs] of Object.entries(sections.segwitLabels)) {
-      const mine = existing[walletId] || (existing[walletId] = {});
+      const target = remap[walletId] || walletId;
+      const mine = existing[target] || (existing[target] = {});
       for (const [addr, label] of Object.entries(addrs || {})) {
         if (Object.prototype.hasOwnProperty.call(mine, addr)) kept++;
         else {
@@ -145,35 +155,29 @@ export async function applyBackup(
     report.segwitLabels = { added, kept };
   }
 
-  // THE PHRASES. Written only where this device does not already have one:
-  // the same merge rule as the labels, and a far more serious one to get wrong.
-  // Overwriting a stored phrase with a file's could replace the key to a wallet
-  // holding money with the key to a different one, and nothing would say so
-  // until the balance came back zero.
-  //
-  // The BIP-39 passphrase is NOT here and never will be — it is not in the
-  // file. Whoever restores still needs it from memory, which is the whole
-  // reason a stolen backup is not a stolen wallet.
-  const seeds = { added: 0, kept: 0 };
-  for (const w of payload?.wallets || []) {
-    if (!w?.id || !w.mnemonic) continue;
-    if (await hasSeed(w.id)) {
-      seeds.kept++;
-      continue;
-    }
-    await saveSeed(w.id, w.mnemonic);
-    seeds.added++;
-  }
-  if (seeds.added || seeds.kept) report.recoveryPhrases = seeds;
+  const skipped = Object.keys(sections).filter((s) => !KNOWN_SECTIONS.includes(s));
+  return { sections: report, skipped, remapped: Object.keys(remap).length };
+}
 
-  return report;
+/**
+ * Leaf entries in a section, for the "restored N of M" line.
+ *
+ * Counts one level down when a section's values are themselves objects, so
+ * segwitLabels (walletId -> address -> label) counts labels rather than
+ * wallets, and a flat section counts its own keys. That keeps the figure
+ * honest for a file written by the other client, whose sections this one may
+ * not otherwise know the shape of.
+ */
+function countSection(v: unknown): number {
+  if (!v || typeof v !== 'object') return 0;
+  let n = 0;
+  for (const inner of Object.values(v as Record<string, unknown>)) {
+    n += inner && typeof inner === 'object' ? Object.keys(inner as object).length : 1;
+  }
+  return n;
 }
 
 export function countItems(payload: BackupPayloadShape): number {
   const s = payload?.sections || {};
-  let n = Object.keys(s.txLabels || {}).length;
-  for (const addrs of Object.values(s.segwitLabels || {})) {
-    n += Object.keys(addrs || {}).length;
-  }
-  return n;
+  return Object.values(s).reduce((n: number, v) => n + countSection(v), 0);
 }

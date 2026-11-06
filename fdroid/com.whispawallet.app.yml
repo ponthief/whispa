@@ -11,9 +11,20 @@
 # fdroiddata's CI enforces the canonical form, and rewritemeta produces it:
 # it reorders the fields and STRIPS EVERY COMMENT BELOW. That is fine — the
 # comments are our record, not theirs. Verified: rewriting loses no field.
+# `AuthorName` sorts between `License` and `WebSite` — taken from the tool, not
+# guessed, since nothing else states the order.
+#
+# DO NOT COMMIT THE OUTPUT OF A LOCAL 2.4.5 REWRITE. That version wraps long
+# values onto a second line AND leaves a trailing space where it breaks, which
+# .canonical.yml beside this file does not have — so the formatting is version
+# skew against fdroiddata's CI rather than the canonical form. The canonical
+# copy here is kept byte-for-byte in the style the fork produced; if CI ever
+# disagrees, its rewrite is the authority, not ours.
 #
 # Checked against fdroidserver 2.4.5 with fdroiddata's own config/categories.yml:
-# `fdroid readmeta` and `fdroid lint com.whispawallet.app` both pass clean.
+# `fdroid readmeta` and `fdroid lint com.whispawallet.app` both pass clean —
+# and note what lint does NOT catch, since both got through it: a tag in
+# `commit:` and a missing `AuthorName`.
 # versionCode/versionName/applicationId below were read out of the published
 # v0.5.0 APK, not from build.gradle, so they match what Binaries points at.
 
@@ -23,6 +34,15 @@
 Categories:
   - Wallet
 License: MIT
+
+# Required by the fdroiddata new-app checklist ("An AuthorName must be added.
+# It doesn't need to be the real name."). fdroid lint does NOT check for it —
+# it passes clean without one — so nothing but the reviewer catches its
+# absence, which is how the submission sat with the box ticked and the field
+# missing. It sorts HERE, between License and WebSite: taken from rewritemeta's
+# own output, and check:fdroid pins the two files to the same order.
+AuthorName: ponthief
+
 WebSite: https://whispawallet.com
 SourceCode: https://github.com/ponthief/whispa
 IssueTracker: https://github.com/ponthief/whispa/issues
@@ -49,21 +69,37 @@ Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainne
 Builds:
   - versionName: 0.5.0
     versionCode: 500
-    commit: v0.5.0
+    # THE FULL HASH, not the tag. The checklist is explicit — "The `commit`
+    # field should be the full hash. Please don't use tag or branch in commit."
+    # — and `fdroid lint` does not enforce it, so `commit: v0.5.0` passed every
+    # local check and only a reviewer saw it. This is `git rev-parse
+    # v0.5.0^{commit}`; UpdateCheckMode: Tags still finds the next release.
+    commit: 4b16735e0b52d2ebfd4900e53948951b91ec57e6
     subdir: android/app
     ndk: r25b
 
-    # Pin node, because the Hermes bytecode and the asset packaging have to
-    # come out identical for the Binaries comparison above to pass, and a
-    # different node or npm can change both. The buildserver does NOT read
-    # .nvmrc — that file pins our own builds and CI; this is the same version
-    # said again, for their machine.
+    # NODE FROM DEBIAN, on the reviewer's instruction (seekme-seekyou,
+    # 2026-11-03: "install node from debian"). The buildserver is Debian trixie,
+    # where apt gives nodejs 20.19.2 and npm 9.2.0 — package.json asks for
+    # node >=18 and package-lock.json is lockfileVersion 3, which npm 7+ reads,
+    # so both are satisfied and the explicit `npm -g install npm@10.8.2` is no
+    # longer needed.
+    #
+    # WHAT THIS GAVE UP, recorded because it is the one thing that could fail
+    # the build. The previous version downloaded node 20.20.2 from nodejs.org
+    # against a sha256, to match .nvmrc exactly, on the reasoning that the
+    # Binaries comparison above needs byte-identical output and a different
+    # node or npm can change it. Against that: hermesc ships in the
+    # react-native package and `npm ci` on a lockfileVersion 3 lock pins the
+    # whole tree, so the bytecode and the dependency set come from the lockfile
+    # rather than from node — a 20.19-against-20.20 difference is unlikely to
+    # move either. Unlikely is not verified, and only a real build settles it;
+    # the MR's pipeline has never run (no runner), so nothing here has been
+    # build-tested yet. If the reproducible-build comparison fails, this block
+    # is the first thing to put back, and the MR reply says so.
     sudo:
-      - curl -Lo node.tar.xz https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz
-      - echo 'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d  node.tar.xz' | sha256sum -c -
-      - tar xJf node.tar.xz
-      - cp -a node-v20.20.2-linux-x64/. /usr/local/
-      - npm -g install npm@10.8.2
+      - apt-get update
+      - apt-get install -y nodejs npm
 
     # prebuild runs in build_dir/subdir — android/app — not the repo root
     # (common.py:2484). Hence the ../.. on both lines.

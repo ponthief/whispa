@@ -1,6 +1,7 @@
 Categories:
   - Wallet
 License: MIT
+AuthorName: ponthief
 WebSite: https://whispawallet.com
 SourceCode: https://github.com/ponthief/whispa
 IssueTracker: https://github.com/ponthief/whispa/issues
@@ -15,15 +16,11 @@ Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainne
 Builds:
   - versionName: 0.5.0
     versionCode: 500
-    commit: v0.5.0
+    commit: 4b16735e0b52d2ebfd4900e53948951b91ec57e6
     subdir: android/app
     sudo:
-      - curl -Lo node.tar.xz https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz
-      - echo 'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d  node.tar.xz'
-        | sha256sum -c -
-      - tar xJf node.tar.xz
-      - cp -a node-v20.20.2-linux-x64/. /usr/local/
-      - npm -g install npm@10.8.2
+      - apt-get update
+      - apt-get install -y nodejs npm
     gradle:
       - mainnet
     prebuild:

@@ -781,6 +781,57 @@ Note what this does *not* do. Turnstile still bounds only the browser case —
 that stays deliberate, because `RegisterScreen.tsx` renders no widget. The
 limiter is what bounds the rest.
 
+### Confirming a device sends one email
+
+Reported 2026-11-07: *"confirming a device sends an email that new sign in
+attempt, but there is no email with the code"*.
+
+`/auth/device-request-confirm` was sending **two** emails back to back to the
+same address — the six-digit code, then *"New device sign-in to your wallet —
+someone may have your password"*. The second is an answer to a question the
+user had just answered the other way: they pressed the button that says this
+device is theirs.
+
+It was misplaced rather than misconceived, and the source said so before
+anyone looked at the mail. The block carried its own comment — *"This endpoint
+is CHECK-ONLY: it never sends a confirmation email … The confirmation email is
+sent only when the user explicitly asks, via /auth/device-request-confirm"* —
+which describes `device-check` while sitting inside request-confirm; and
+`should_send_login_alert`'s docstring says its dedupe exists to *"prevent
+spamming the user when an untrusted device repeatedly hits device-check"*. Both
+entered in one commit (`475e086`, whose subject is about PayJoin contacts), so
+it had been in the wrong handler since the day it was written.
+
+The alert now lives in `device-check`, which is the only endpoint that
+actually observes an untrusted sign-in. Three things make it safe on a polled
+endpoint: the 12-hour dedupe on `(user, sha256(ua|ip))`, which is what it was
+written for — `PendingDeviceView` polls this on mount and `LoginView` calls it
+on every sign-in; a guard on the account **already having** a confirmed device,
+since a new account's first sign-in is by definition from an unconfirmed one
+and warning somebody about their own new account is the noise that teaches
+people to ignore the real alert; and a `try/except`, because the caller asked
+"is this device trusted" and that question still has an answer when the mailer
+is down. `device-check` stays check-only in every other respect — no code, no
+device state.
+
+**The ordering also proved something about the missing mail.** The alert was
+sent *after* the code, and a failed code send raises 500 before reaching it.
+So receiving the alert means the code's send call returned ok — it was accepted
+by the mailer and then not delivered. Two messages to one address in one
+request is the likeliest reason, and that is now gone; if it recurs, it is a
+delivery problem and `Device code email failed` in the instance log is where
+it shows.
+
+`tests/test_device_confirm_one_email.py` pins one email from confirm, the
+alert's new home with all three guards, and that no handler claims to be
+check-only while sending a code — the comment contradiction is what found
+this, and it is what review reads instead of the code. Seven of its ten
+assertions fail against the old handler. Its own first run failed on the
+comment explaining the fix, because that comment quotes the alert's subject
+line, so it strips comments (by `tokenize`, since a `#` inside an email body
+is not one) before asserting on source — the trap `check:stealth` hit with
+`DONT_KILL_APP` and `check:backup` with `Math.random()`.
+
 ## F-Droid, and the two proprietary blobs in the APK
 
 `FDROID.md` carries the steps. Three things belong here because they constrain

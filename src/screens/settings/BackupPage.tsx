@@ -4,7 +4,7 @@ import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
 import { backupFilename, decryptBackup, encryptBackup } from '@services/backup';
 import { applyBackup, collectBackup, countItems } from '@services/backupData';
-import { Block, Button, Group, Help, Note, Page, TextArea } from './ui';
+import { Block, Button, Group, Help, Note, Page, SecretInput } from './ui';
 
 // The backup screen.
 //
@@ -14,16 +14,23 @@ import { Block, Button, Group, Help, Note, Page, TextArea } from './ui';
 // at risk in any of them: they are on the chain and come back from the
 // recovery phrase.
 //
-// THE FILE IS SEALED WITH THE RECOVERY PHRASE and carries no key material at
-// all (2026-11-04, on the user's instruction). The BIP-39 passphrase is not
-// mentioned on this screen: it belongs to importing a wallet, which is a
-// different screen and a different job. What this screen must land instead is
-// that losing the phrase loses everything, which is why that note is the red
-// one.
+// THE FILE IS SEALED WITH A PASSWORD THE USER CHOOSES and carries no key
+// material at all (2026-11-08, on the user's instruction). It asked for the
+// recovery phrase until then, which was out of proportion: a backup of labels
+// does not justify typing the one secret that cannot be reissued, and every
+// extra screen those twelve words appear on is another place they can be seen
+// or phished. The BIP-39 passphrase is not mentioned here either — it belongs
+// to importing a wallet, which is a different screen and a different job.
 //
-// The phrase is checked for being a phrase — BIP-39's own checksum, in
-// services/backup.ts — before anything is encrypted, so a mistyped one cannot
-// produce a file nobody can ever open.
+// ASKED FOR TWICE on export. A phrase was checked against BIP-39's own
+// checksum before anything was encrypted; a password has no checksum, so a
+// mistyped one seals a file nobody can ever open and nothing finds out until
+// a restore. The confirm field is what replaces that check — not politeness.
+//
+// Restore asks once and does not apply the length rule: an older file may be
+// sealed with a recovery phrase or a wallet passphrase, decryptBackup reads
+// the header and treats each correctly, and refusing one for failing today's
+// policy would strand it.
 
 type Native = {
   save(filename: string, text: string): Promise<string | null>;
@@ -44,7 +51,8 @@ function native(): Native {
 }
 
 export default function BackupPage({ onBack }: { onBack: () => void }) {
-  const [phrase, setPhrase] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const inkey = useAuthStore((s) => s.inkey);
   const [busy, setBusy] = useState<null | 'export' | 'restore'>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -80,12 +88,19 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         say('Nothing to back up yet — no labels on this phone.', true);
         return;
       }
+      // Checked here as well as by the disabled button: a mismatch must never
+      // reach encryptBackup, which cannot tell a confirmed password from a
+      // typo and would seal a file nobody can open.
+      if (password !== confirm) {
+        say('The two passwords do not match.', true);
+        return;
+      }
       // The KDF runs for seconds on a phone. It yields every 20ms and reports
       // progress, so the screen counts up instead of freezing — the first
       // version blocked the JS thread and read as a hang, with the native
       // spinner still turning because only JavaScript had stopped.
       say('Encrypting… 0%');
-      const text = await encryptBackup(payload, phrase, (f) =>
+      const text = await encryptBackup(payload, password, (f) =>
         say(`Encrypting… ${Math.round(f * 100)}%`));
       const where = await native().save(backupFilename(), text);
       // null is the user backing out of the system picker, which is not a
@@ -93,7 +108,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       say(
         where
           ? `Saved ${total} label${total === 1 ? '' : 's'}. Open it again with the ` +
-            'same recovery phrase.'
+            'same password.'
           : 'Cancelled.',
       );
     } catch (e: any) {
@@ -106,7 +121,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     // and would encrypt against a string the user never typed. lint caught the
     // same shape once already; it is what CLAUDE.md records about the network
     // check that passed for the exact case it existed to refuse.
-  }, [phrase, walletRefs]);
+  }, [password, confirm, walletRefs]);
 
   const onRestore = useCallback(async () => {
     setBusy('restore');
@@ -118,7 +133,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         return;
       }
       say('Opening… 0%');
-      const payload = await decryptBackup(text, phrase, (f) =>
+      const payload = await decryptBackup(text, password, (f) =>
         say(`Opening… ${Math.round(f * 100)}%`));
       const total = countItems(payload as any);
       // The live wallets decide where a backed-up wallet's labels go: an id
@@ -156,7 +171,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(null);
     }
-  }, [phrase, walletRefs]);
+  }, [password, walletRefs]);
 
   return (
     <Page title="Backup" onBack={onBack}>
@@ -168,22 +183,23 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             SegWit address labels and pinned contacts.
           </Help>
         </Block>
-        <Block>
-          <Help>
-            Your coins are not in this file and do not need to be. They live on
-            the Bitcoin network, and your wallet finds them again from your
-            recovery phrase.
-          </Help>
-        </Block>
-        {/* The red one. The file is sealed with the phrase and holds nothing
-            else, so the phrase is the single point of failure for both the
-            backup and the wallet — and it is the one thing this app cannot
-            ever recover for anybody. */}
+        {/* The "your coins are not in this file, they live on the Bitcoin
+            network and come back from your recovery phrase" paragraph was
+            here until 2026-11-08. It went from the web on the user's
+            instruction, and from here as a consequence rather than by
+            request: it is the only line left that names the recovery phrase,
+            and leaving it would undo the point of no longer asking for one.
+            What it was defending against — somebody reading this as a wallet
+            backup — the first line already handles by saying what IS saved. */}
+        {/* The red one, and it is about the PASSWORD now. The file holds
+            labels and is sealed with a password that exists nowhere else, so
+            that password is the single point of failure for this file — and
+            unlike the recovery phrase it protects nothing that spends. */}
         <Block>
           <Note kind="error">
-            Keep your recovery phrase somewhere safe. It opens this backup and
-            it is the only way to restore your wallet. If you lose it, no one —
-            including us — can get your wallet or this file back.
+            Remember this password. It is the only thing that opens the file,
+            it is not stored anywhere, and no one — including us — can recover
+            it or the file's contents without it.
           </Note>
         </Block>
       </Group>
@@ -191,18 +207,30 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       {backupFileAvailable() ? (
         <Group title="Backup file">
           <Block first>
-            <TextArea
-              value={phrase}
-              onChangeText={setPhrase}
-              placeholder="Your recovery phrase"
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
+            <SecretInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Backup password"
+              textContentType="newPassword"
             />
             <Help>
-              Your backup is encrypted with your recovery phrase. It is never
-              written into the file.
+              At least 8 characters. Used only for this file, and never written
+              into it.
             </Help>
+          </Block>
+          {/* The confirm field is the checksum a password does not have.
+              Export only: a restore proves the password by opening the file,
+              and an older file may be sealed with something else entirely. */}
+          <Block>
+            <SecretInput
+              value={confirm}
+              onChangeText={setConfirm}
+              placeholder="Confirm password"
+              textContentType="newPassword"
+            />
+            {confirm && password !== confirm ? (
+              <Note kind="error">The two passwords do not match.</Note>
+            ) : null}
           </Block>
           <Block>
             <Button
@@ -210,7 +238,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               kind="primary"
               onPress={onExport}
               busy={busy === 'export'}
-              disabled={!!busy || !phrase.trim()}
+              disabled={!!busy || !password || password !== confirm}
             />
           </Block>
           <Block>
@@ -219,7 +247,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               kind="secondary"
               onPress={onRestore}
               busy={busy === 'restore'}
-              disabled={!!busy || !phrase.trim()}
+              disabled={!!busy || !password}
             />
           </Block>
           {msg ? (

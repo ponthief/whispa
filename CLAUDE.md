@@ -416,10 +416,11 @@ the objection that made it necessary: *"if user deletes app or wallet, the
 utxos and tnxs are removed from the backend. restoring them in the app won't
 restore them on the server."*
 
-**What it is for, and the screens say it in the first line**: a phone that is
-**lost, stolen or reinstalled**. Those three take the device-only data with
-them and nothing can rebuild it — transaction labels, SegWit address labels,
-pinned contacts. `services/backup.ts` does the crypto; each client supplies its
+**What it is for**: the device-only data goes and nothing can rebuild it —
+transaction labels, SegWit address labels, pinned contacts. The phone's copy
+names the three ways that happens there (lost, stolen, reinstalled); the web's
+names its own (a new computer, cleared site data), because a browser is not a
+phone. `services/backup.ts` does the crypto; each client supplies its
 own collector because the two store this differently — the web in
 `localStorage` under `thrilla_*_v1`, the phone in the platform keychain under
 named services.
@@ -456,55 +457,81 @@ ASSEMBLES its payload from a named list rather than sweeping its storage. The
 web list is `BACKUP_KEYS`, and `thrilla_vault` and `thrilla_kdf_salt_v1` are
 excluded by name with the reason beside them — a sweep would have taken both.
 
-**The file is encrypted with the wallet's recovery phrase** (2026-11-04, on the
-user's instruction). Three things follow, each an improvement on the wallet
-passphrase it replaced:
+**The file is encrypted with a password the user chooses** (2026-11-08, on the
+user's instruction: *"12 words recovery phrase is not what you should be asking
+for, it should be a single word which encrypts"*). That is the **third** key
+this file has had — a separate password, then the wallet's BIP-39 passphrase,
+then the recovery phrase, now back to a password — and the reason is
+proportion. The file holds labels. The two previous keys made somebody type
+the one secret that can never be reissued in order to save their notes about
+their own payments.
 
-- **A phrase has a checksum.** `isValidMnemonic` refuses a mistyped one before
-  anything is encrypted. The passphrase scheme needed a whole derivation check
-  (`verifySeedPassphrase`, now deleted) to close the same trap, because a
-  mistyped passphrase derives a perfectly valid, completely different, empty
-  wallet with no error at all.
-- **The file is not a bearer instrument.** It holds no phrase, so cracking it
-  yields labels. Under the one-day design the file plus one string was the
-  wallet, with no device needed — and it was an **offline oracle** for the
-  passphrase, the objection recorded then and now moot.
-- **It adds no secret its owner was not already keeping.** Whoever has the
-  phrase can restore the wallet regardless.
+**What it costs**, since the phrase was chosen over a password for reasons
+that have not stopped being true:
 
-**The phrase is normalised before it becomes a key** (`normalizeBackupKey`:
-lower case, single spaces) and that is the whole of cross-client
-compatibility. Without it the same twelve words typed with different capitals
-or spacing give different keys, each client writes files the other cannot
-open, and the only symptom is "wrong recovery phrase" on a file that is
-perfectly good. No Unicode normalisation: that would make the key depend on
-`String.prototype.normalize` behaving identically on Hermes and in a browser,
-which is the same class of engine difference that made argon2id unusable here.
-The BIP-39 English wordlist is lower-case ASCII, so nothing is lost.
+- **A password has no checksum.** `isValidMnemonic` refused a mistyped phrase
+  before anything was encrypted. A mistyped password seals a file nobody can
+  ever open, and nothing finds out until a restore. **Both export screens ask
+  for it twice**, and that confirm field is not politeness — it is the
+  checksum we gave up. Checked in the handler as well as by the disabled
+  button, because `encryptBackup` cannot tell a confirmed password from a typo.
+- **It is one more thing to lose.** The phrase was already written down
+  somewhere; this is a new secret that exists only for this file.
 
-**A file from the one-day passphrase scheme still opens**, with its secret used
-**verbatim** — a passphrase's every character is significant and lower-casing
-one would turn an existing backup into a file nothing can read, which is the
-outcome this feature may never produce. `keySource` is in the header,
-authenticated with it, so a restore can tell the two apart; when a legacy file
-fails, the error names the scheme instead of reading as a corrupt file.
+**What it buys**: neither backup screen asks for the recovery phrase any more.
+A screen that is not about the wallet should not be where those twelve words
+get typed, and every extra place they are typed is another place they can be
+seen, logged or phished. `assertNoSecrets` guarantees the file is labels, so
+the password protects something annoying to lose rather than something that
+spends.
 
-**The screens name ONE secret.** The BIP-39 passphrase is not mentioned on
-either of them (2026-11-04, on the user's instruction): it belongs to importing
-a wallet, which is a different screen and a different job, and naming it here
-was what made this one hard to follow. `check:backup` pins the absence of the
-word in template and JSX text, having stripped comments first — the same trap
-`check:stealth` hit with `DONT_KILL_APP`. The copy is three statements in
-order: when to use it, that the coins are not in it, and then **the red one** —
-*keep your recovery phrase somewhere safe; it opens this backup and it is the
-only way to restore your wallet.* Red because the phrase is now the single
-point of failure for both, and it is the one thing this app can never recover
-for anybody.
+**It is used VERBATIM** — no trimming, no case folding. Both clients send the
+raw string, so cross-client compatibility needs no normalisation to agree on,
+which is the half of the phrase scheme worth being glad to lose. Folding would
+quietly make `Otter` and `otter` one key: a weaker password than the user
+chose, and impossible to explain when it bites. `check:backup`'s test password
+is mixed-case on purpose — with a lower-case one, folding on the encrypt side
+alone passes every behavioural test and only a source regex catches it, which
+is how the first version of that control went green.
 
-Know the gap that leaves: **restoring a wallet still needs the passphrase too**,
-since `validateNewWalletPassphrase` is enforced on create and import alike. The
-import screen is where that is asked for and said; this screen does not repeat
-it.
+**Every earlier scheme stays readable**, and `keySource` in the authenticated
+header is what tells them apart. A `recovery-phrase` file (2026-11-04 to
+2026-11-08) is normalised — twelve words typed with different capitals or
+spacing have to give one key — and a `wallet-passphrase` file (2026-11-03 to
+2026-11-04) is verbatim. `normalizeBackupKey` survives for the first of those
+and for nothing else. Turning somebody's existing backup into a file nothing
+can read is the one outcome this feature may never produce, which is the same
+reason argon2id stays readable.
+
+**The restore path asks once and applies no length rule.** The floor is
+enforced on write; refusing an older file for failing today's policy would
+strand it.
+
+### What the two screens say, and what they stopped saying
+
+**The red warning is about the password** on both: *"Remember this password.
+It is the only thing that opens the file, it is not stored anywhere, and no
+one — including us — can recover it or the file's contents without it."*
+
+**The web app does not mention phones** (2026-11-08, reported: *"the text says
+if phone is lost or stolen, that means it should not be in the web app"*). A
+browser is not a phone. Its copy names what the equivalent loss is there — a
+new computer, or cleared site data.
+
+**Neither screen says where the coins live.** *"Your coins are not in this
+file and do not need to be. They live on the Bitcoin network, and your wallet
+finds them again from your recovery phrase"* went from the web on the user's
+instruction, and from the phone as a consequence rather than by request: it
+was the last line naming the recovery phrase, and leaving it would undo the
+point of no longer asking for one. What it defended against — somebody reading
+this as a wallet backup — the first line already handles by saying what IS
+saved.
+
+`check:backup` pins all of that, and the absence of the word "passphrase" in
+template and JSX text, having stripped comments AND collapsed whitespace
+first: a sentence that wraps across two source lines is the same sentence on
+screen, and matching it without that fails on where the editor broke the line.
+
 
 **A restore re-keys by sp_address, never by the id in the file.** This is the
 bug the objection surfaced. `wallet_id = urlsafe_short_hash()` at create time,
@@ -575,8 +602,8 @@ round-trips.
 its 24-byte nonce, which is what makes a random nonce per file safe when one
 key is reused across exports; a repeated nonce under one key is a total break.
 The header is authenticated so the stated KDF cost cannot be edited — without
-that a doctored file and a mistyped phrase would be indistinguishable. A wrong
-phrase and a tampered file give **one message**, because Poly1305 fails
+that a doctored file and a mistyped password would be indistinguishable. A
+wrong password and a tampered file give **one message**, because Poly1305 fails
 identically either way and naming which would be a guess printed as fact. (The
 legacy-file wording above branches on the *header*, which is authenticated and
 read before any of this, not on how the failure went.)

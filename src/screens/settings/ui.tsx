@@ -387,6 +387,28 @@ export function TextArea(props: TextInputProps) {
   );
 }
 
+/**
+ * A single-line secret on its own line.
+ *
+ * `TextArea` is multiline, and `secureTextEntry` with `multiline` is not
+ * reliable on Android — it renders the characters on some builds. `Field`
+ * puts its input in a row beside a button, which is wrong when two of these
+ * stack (a password and its confirmation).
+ */
+export function SecretInput(props: TextInputProps) {
+  return (
+    <TextInput
+      secureTextEntry
+      autoCapitalize="none"
+      autoCorrect={false}
+      spellCheck={false}
+      {...props}
+      style={styles.secretInput}
+      placeholderTextColor={colors.faint}
+    />
+  );
+}
+
 export function Note({
   kind,
   children,
@@ -573,6 +595,20 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   fieldBtn: { paddingHorizontal: space.lg },
+
+  secretInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: space.md,
+    paddingVertical: 10,
+    marginTop: space.md,
+    fontFamily: type.value.fontFamily,
+    fontSize: 15,
+    // Stated, not inherited — see textArea below.
+    color: colors.text,
+  },
 
   textArea: {
     borderWidth: 1,

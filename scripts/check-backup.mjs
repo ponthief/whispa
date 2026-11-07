@@ -48,8 +48,11 @@ const refuses = async (name, fn, code) => {
 // BIP-39 mnemonics with valid checksums, because encryptBackup refuses
 // anything that is not one — which is the point: a typo cannot produce a file
 // its owner can never open.
-const PW = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
-const OTHER = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+const PW = 'OtterBridge42';   // mixed case ON PURPOSE: see the verbatim section
+const OTHER = 'a-different-password';
+// Still needed: a real BIP-39 mnemonic, to rebuild a `recovery-phrase` file
+// the way the 2026-11-04 build wrote one and prove it still opens.
+const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 const payload = {
   app: 'whispa',
@@ -127,55 +130,93 @@ console.log('it refuses what it cannot honestly open');
   await refuses('a backup from a newer version', () => decryptBackup(JSON.stringify(newer), PW),
     'backup_version');
 
-  await refuses('a different (but valid) recovery phrase',
+  await refuses('a different password',
     () => decryptBackup(file, OTHER), 'backup_wrong_password');
 
   await refuses('a file that is not JSON', () => decryptBackup('not json', PW), 'backup_not_json');
 
-  // A KEY THAT IS NOT A PHRASE IS REFUSED BEFORE ANYTHING IS ENCRYPTED, and
-  // BIP-39's checksum is what makes that possible. Under the previous scheme
-  // the equivalent trap — a file sealed with a string its owner cannot
-  // reproduce — could only be caught by deriving a whole wallet.
+  // THE PASSWORD FLOOR, applied before anything is encrypted. Length only —
+  // mixed-case-and-a-digit rules are how people end up with one weak password
+  // they reuse, and this file seals labels rather than coins.
   for (const [what, key] of [
     ['an empty key', ''],
-    ['a password that is not a phrase', 'correct horse battery staple'],
-    ['a phrase with a bad checksum',
-      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon'],
-    ['eleven words of a twelve-word phrase',
-      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon'],
+    ['whitespace only', '    '],
+    ['a short password', 'otter'],
   ]) {
-    await refuses(what, () => encryptBackup(payload, key), 'backup_key_not_a_phrase');
+    await refuses(what, () => encryptBackup(payload, key), 'backup_password_too_weak');
   }
 }
 
-console.log('a file written on one client opens on the other');
+console.log('a password is used verbatim, so the two clients agree without rules');
 {
-  // THE NORMALISATION, which is the whole of cross-client compatibility. The
-  // same twelve words typed with different capitals or spacing must give the
-  // same key, or each client would happily write files the other could not
-  // open and the only symptom would be "wrong recovery phrase" on a file that
-  // is perfectly good.
-  ok('the key is normalised to lower case and single spaces',
-    normalizeBackupKey('  Abandon   ABANDON\nabandon ') === 'abandon abandon abandon');
-
+  // CROSS-CLIENT COMPATIBILITY IS NOW TRIVIAL: both clients send the raw
+  // string, so there is no normalisation for them to disagree about. That is
+  // the half of the phrase scheme worth being glad to lose.
+  //
+  // And the other half of the same coin: a password must NOT be folded. Doing
+  // it would quietly make "Otter" and "otter" one key — a weaker password
+  // than the user chose, and impossible to explain when it bites.
   const file = await encryptBackup(payload, PW);
+  const back = await decryptBackup(file, PW);
+  ok('the exact password opens it', JSON.stringify(back) === JSON.stringify(payload));
+
   for (const [what, typed] of [
-    ['capitals', PW.toUpperCase()],
-    ['leading and trailing space', `  ${PW}  `],
-    ['doubled spaces', PW.replace(/ /g, '  ')],
-    ['a newline between words', PW.replace(/ /g, '\n')],
+    ['different capitals', PW.toUpperCase()],
+    ['a trailing space', `${PW} `],
+    ['a leading space', ` ${PW}`],
+  ]) {
+    await refuses(`${what} does NOT open it`,
+      () => decryptBackup(file, typed), 'backup_wrong_password');
+  }
+
+  ok('and the file records what opens it',
+    JSON.parse(file).keySource === KEY_SOURCE && KEY_SOURCE === 'password');
+
+  // normalizeBackupKey still exists, for reading a recovery-phrase file. It
+  // must keep working — the section below opens one with it.
+  ok('the phrase normaliser is still exported for older files',
+    normalizeBackupKey('  Abandon   ABANDON\nabandon ') === 'abandon abandon abandon');
+}
+
+console.log('a backup sealed with the recovery phrase still opens');
+{
+  // 2026-11-04 to 2026-11-08. Rebuilt the way that build wrote one, and
+  // opened with the phrase typed carelessly, because those files were
+  // normalised and must still be.
+  const { xchacha20poly1305 } = await import('@noble/ciphers/chacha');
+  const { scryptAsync } = await import('@noble/hashes/scrypt');
+  const { base64 } = await import('@scure/base');
+  const { randomBytes, utf8ToBytes } = await import('@noble/hashes/utils');
+  const salt = randomBytes(16);
+  const nonce = randomBytes(24);
+  const header = {
+    format: 'whispa.backup',
+    version: BACKUP_VERSION,
+    kdf: { ...KDF, salt: base64.encode(salt) },
+    cipher: 'xchacha20poly1305',
+    nonce: base64.encode(nonce),
+    keySource: 'recovery-phrase',
+  };
+  const key = await scryptAsync(utf8ToBytes(normalizeBackupKey(PHRASE)), salt,
+    { N: KDF.N, r: KDF.r, p: KDF.p, dkLen: KDF.dkLen });
+  const ct = xchacha20poly1305(key, nonce, utf8ToBytes(JSON.stringify(header)))
+    .encrypt(utf8ToBytes(JSON.stringify(payload)));
+  const phraseFile = JSON.stringify({ ...header, ct: base64.encode(ct) });
+
+  for (const [what, typed] of [
+    ['as written', PHRASE],
+    ['in capitals', PHRASE.toUpperCase()],
+    ['with doubled spaces', PHRASE.replace(/ /g, '  ')],
   ]) {
     let got = null;
     try {
-      got = await decryptBackup(file, typed);
+      got = await decryptBackup(phraseFile, typed);
     } catch (e) {
-      ok(`the same phrase typed with ${what} opens it`, false, `${e.code}: ${e.message}`);
+      ok(`a phrase-sealed file opens with the phrase ${what}`, false, `${e.code}: ${e.message}`);
     }
-    ok(`the same phrase typed with ${what} opens it`,
+    ok(`a phrase-sealed file opens with the phrase ${what}`,
       JSON.stringify(got) === JSON.stringify(payload));
   }
-  ok('and the file records what opens it',
-    JSON.parse(file).keySource === KEY_SOURCE && KEY_SOURCE === 'recovery-phrase');
 }
 
 console.log('a backup from the one-day passphrase scheme still opens');
@@ -349,23 +390,26 @@ console.log('the parameters are not quietly weakened');
   ok('and a build without a real CSPRNG refuses to write one',
     /secureRandomUnavailable\(\)/.test(SRC),
     'a predictable salt turns the KDF into a lookup table');
-  // THE KEY IS THE RECOVERY PHRASE, checked against BIP-39 before anything is
-  // encrypted. The empty string falls out of the same check: a file "sealed"
-  // with it would be a plaintext payload in an envelope that looks encrypted.
-  ok('the file key is checked against BIP-39 before encrypting',
-    /isValidMnemonic\(secret\)/.test(SRC),
-    'a mistyped phrase would otherwise seal a file nobody can ever open');
-  ok('and the key is normalised, so the two clients agree',
+  // THE KEY IS A PASSWORD, held to a floor before anything is encrypted. The
+  // empty string falls out of the same check: a file "sealed" with it would be
+  // a plaintext payload in an envelope that looks encrypted.
+  ok('the password is validated before encrypting',
+    /validateBackupPassword\(password\)/.test(SRC),
+    'the empty string is not a key');
+  ok('and it is used VERBATIM, never folded',
+    /const secret = password;/.test(SRC),
+    'lower-casing a password makes "Otter" and "otter" one key');
+  ok('the phrase normaliser survives, for files that need it',
     /normalizeBackupKey\(/.test(SRC),
-    'a file written in the browser has to open on the phone');
+    'a recovery-phrase file was normalised and must still open');
   ok('and the file says which secret opens it',
     /keySource/.test(SRC),
-    'a restore has to tell a recovery-phrase file from an older one');
-  // The payload must never gain key material again, which is a rule about this
+    'a restore has to tell a password file from the two older kinds');
+  // The payload must never gain key material, which is a rule about this
   // source and not only about a payload that happens to be tested above.
   ok('nothing writes a phrase into the payload',
     !/saveSeed|readSeed|seedVault/.test(SRC),
-    'the file is sealed WITH the phrase; a copy inside makes it a bearer instrument');
+    'the file holds labels; a phrase inside would make it a bearer instrument');
   // The KDF runs for seconds on a phone. Synchronously it froze the app and
   // read as a hang — reported as "never finishes, keeps spinning", with the
   // native spinner still turning because only JavaScript had stopped.
@@ -450,43 +494,82 @@ console.log('the backup screens say what the file is for, and name one secret');
   // named would otherwise fail the check that it is not named. The same trap
   // check-stealth.cjs hit with DONT_KILL_APP, and this file hit with
   // Math.random(), so it is stripped here too.
+  // Whitespace collapsed as well, because a sentence that wraps across two
+  // source lines is the same sentence on screen — matching it without this
+  // fails on where the editor happened to break the line.
   const copy = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\/[^\n]*/g, '');
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\s+/g, ' ');
 
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
-    // WHAT IT IS FOR, stated rather than left to be inferred. The scope is
-    // narrow on purpose and a reader who thinks this file is their wallet will
-    // store it carelessly; one who thinks it is useless will not keep it.
-    ok(`${who} says when to use it`,
-      /lost or stolen/.test(src) && /reinstall/.test(src),
-      'the file is for a lost, stolen or reinstalled phone, and says so');
-    ok(`${who} says the coins are not in it`,
-      /coins are not in this file/.test(src),
-      'otherwise this reads as a wallet backup, which it is not');
-    // THE RED ONE. The phrase opens the file and restores the wallet, and it
-    // is the single thing this app can never recover for anybody.
-    ok(`${who} warns in red about losing the phrase`,
-      /Keep your recovery phrase somewhere safe/.test(src) &&
-      /only way to restore your wallet/.test(src));
-    // ONE SECRET ON SCREEN, by instruction (2026-11-04). The BIP-39 passphrase
-    // belongs to importing a wallet; naming it here was what made this screen
-    // hard to follow.
+    ok(`${who} says what it saves`,
+      /transaction labels/.test(src) && /pinned contacts/.test(src));
+    // THE RED ONE, and it is about the PASSWORD since 2026-11-08. It opens the
+    // file, it exists nowhere else, and losing it loses the file's contents.
+    ok(`${who} warns in red about losing the password`,
+      /Remember this password/.test(src) &&
+      /only thing that opens the file/.test(src));
+    // ONE SECRET ON SCREEN. "passphrase" belongs to importing a wallet, and
+    // naming it here was what made this screen hard to follow.
     ok(`${who} never says "passphrase" on screen`,
       !/passphrase/i.test(src),
-      'the screen asks for one secret: the recovery phrase');
+      'the screen asks for one secret: a password for this file');
   }
+
+  // SCOPED TO THE PHONE, by instruction (2026-11-08): "the text says if phone
+  // is lost or stolen, that means it should not be in the web app". The
+  // browser is not a phone, so its copy talks about a new computer and
+  // cleared site data instead.
+  ok('the phone says when to use it',
+    /lost or stolen/.test(copy(P)) && /reinstall/.test(copy(P)));
+  ok('the web does NOT talk about phones',
+    !/\bphone\b/i.test(copy(V)),
+    'a browser is not a phone, and saying so was the reported bug');
+  ok('and the web says what it IS about instead',
+    /new computer/.test(copy(V)) || /clearing site data/.test(copy(V)));
+
+  // DROPPED FROM THE WEB, by the same instruction: "do not mention that coins
+  // are not in the file and where they live". The phone keeps it — it was not
+  // part of the report, and there it sits beside the lost-or-stolen line that
+  // makes a reader wonder about their coins in the first place.
+  ok('the web does not discuss where the coins live',
+    !/coins are not in this file/.test(copy(V)) && !/Bitcoin network/.test(copy(V)));
+
+  // NEITHER SCREEN ASKS FOR THE RECOVERY PHRASE ANY MORE. That is the whole
+  // point of the change: a backup of labels does not justify typing the one
+  // secret that cannot be reissued, and every extra screen those words appear
+  // on is another place they can be seen or phished.
+  for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
+    ok(`${who} never asks for the recovery phrase`,
+      !/recovery phrase/i.test(src), src.match(/.{0,60}recovery phrase.{0,60}/i)?.[0]);
+  }
+
   ok('the web warning uses the red alert style',
     /class="alert alert-error"/.test(V),
     'alert alone is the neutral box; this one has to read as a warning');
   ok('the phone warning uses the error note',
-    /<Note kind="error">\s*\n?\s*Keep your recovery phrase/.test(P));
+    /<Note kind="error">\s*\n?\s*Remember this password/.test(P));
+
+  // THE CONFIRM FIELD IS THE CHECKSUM A PASSWORD DOES NOT HAVE. A mistyped
+  // phrase was refused by BIP-39 before anything was encrypted; a mistyped
+  // password seals a file nobody can ever open and nothing finds out until a
+  // restore. Export only — a restore proves the password by opening the file.
+  for (const [who, src] of [['the web', V], ['the phone', P]]) {
+    ok(`${who} asks for the password twice on export`,
+      /Confirm password/.test(src));
+    ok(`${who} refuses to export when the two do not match`,
+      /password !== (bkPassword2\.value|confirm)/.test(src.replace(/\s+/g, ' ')) ||
+      /bkPassword !== bkPassword2/.test(src),
+      'the disabled button is not enough; encryptBackup cannot tell a typo');
+  }
 
   // The browser has no phrase of its own — keyvault.js keeps derived keys only
   // — so the export asks for one. It must NOT start persisting it.
-  ok('the web export asks for a recovery phrase', /bkPhrase/.test(V));
+  ok('the web export asks for a backup password', /bkPassword/.test(V));
   ok('and the browser never stores it',
-    !/localStorage\.setItem\([^)]*[Pp]hrase/.test(V) && !/vaultStore\([^)]*bkPhrase/.test(V),
+    !/localStorage\.setItem\([^)]*(bkPassword|[Pp]hrase)/.test(V) &&
+    !/vaultStore\([^)]*bkPassword/.test(V),
     'a typed phrase that gets persisted is a new secret in IndexedDB');
   // Both clients hand the live wallet list to applyBackup, which is what makes
   // the re-key possible at all.

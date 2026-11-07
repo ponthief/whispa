@@ -3,7 +3,7 @@ import { scryptAsync } from '@noble/hashes/scrypt';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, randomBytes, utf8ToBytes } from '@noble/hashes/utils';
 import { base64 } from '@scure/base';
-import { isValidMnemonic, secureRandomUnavailable } from './spKeys';
+import { secureRandomUnavailable } from './spKeys';
 
 // An encrypted backup of what a lost, stolen or reinstalled phone takes with
 // it — and nothing else.
@@ -29,62 +29,97 @@ import { isValidMnemonic, secureRandomUnavailable } from './spKeys';
 // silent: a backup carrying a phrase encrypts, writes and restores perfectly
 // well, and nothing afterwards says the file is now worth stealing.
 //
-// THE FILE IS ENCRYPTED WITH THE WALLET'S RECOVERY PHRASE (2026-11-04, on the
-// user's instruction). Three things follow, and each is an improvement on the
-// wallet passphrase it replaced:
+// THE FILE IS ENCRYPTED WITH A PASSWORD THE USER CHOOSES (2026-11-08, on the
+// user's instruction, and the THIRD key this file has had). The first was a
+// separate password, the second the wallet's BIP-39 passphrase, the third the
+// recovery phrase. This returns to the first, knowingly, and the reason is
+// proportion: the file holds labels, and the previous two keys made somebody
+// type the one secret that can never be reissued in order to save their notes
+// about their own payments.
 //
-//   * A phrase has a CHECKSUM. isValidMnemonic refuses a mistyped one before
-//     anything is encrypted, so the trap that the passphrase scheme needed a
-//     whole derivation check to close — a file sealed with a string its owner
-//     cannot reproduce, discovered years later with the phone already gone —
-//     is closed by BIP-39 instead.
-//   * The file is no longer a BEARER INSTRUMENT. It holds no phrase, so
-//     cracking it yields labels. Under the previous design the file plus one
-//     string was the wallet, with no device needed.
-//   * It needs no secret its owner is not already required to keep. Whoever
-//     has the phrase can restore the wallet regardless; sealing the file with
-//     it adds no new thing to remember and no new thing to lose.
+// WHAT THAT COSTS, since the phrase was picked over a password for reasons
+// that have not stopped being true:
 //
-// The phrase is NORMALISED before it becomes a key (normalizeBackupKey), and
-// that is what makes a file written in the browser open on the phone and the
-// other way round. Without it the same twelve words typed with different
-// capitals or spacing would give different keys, each client would happily
-// write files the other could not open, and the only symptom would be "wrong
-// recovery phrase" on a file that is perfectly good.
+//   * A password has NO CHECKSUM. A mistyped phrase was refused before
+//     anything was encrypted; a mistyped password seals a file nobody can ever
+//     open, and nothing finds out until a restore. Both export screens ask for
+//     it twice for exactly this reason — that confirmation is not politeness,
+//     it is the checksum we gave up.
+//   * It is ONE MORE THING TO LOSE. The phrase was already written down
+//     somewhere; this is a new secret that exists only for this file.
 //
-// WHAT THIS FILE DOES NOT RESTORE, stated here because both screens state it
-// to the user: the wallet. That comes back by importing the recovery phrase,
-// and the coins come back by scanning the chain. Nor does it restore what the
-// SERVER holds — a deleted wallet's coin labels and freeze flags live in
-// silnt.utxos and go with it.
+// WHAT IT BUYS, and why it is the right trade here: the backup screen no
+// longer asks for the recovery phrase at all. A screen that is not about the
+// wallet should not be a place where those twelve words get typed, and every
+// extra place they are typed is another place they can be seen, logged or
+// phished. The file is labels — assertNoSecrets guarantees that — so the
+// password protects something annoying to lose rather than something that
+// spends.
+//
+// It is used VERBATIM: no trimming, no case folding. Both clients send the
+// raw string, so a file written in the browser opens on the phone and the
+// other way round with no normalisation to agree on.
 
 export const BACKUP_FORMAT = 'whispa.backup';
 export const BACKUP_VERSION = 1;
 
 // What the file says it is sealed with. Recorded in the header and
 // authenticated with it, so it cannot be relabelled.
-export const KEY_SOURCE = 'recovery-phrase';
+//
+// A PASSWORD THE USER CHOOSES (2026-11-08, on the user's instruction: "12
+// words recovery phrase is not what you should be asking for, it should be a
+// single word which encrypts"). Asking somebody to type twelve words to save
+// their transaction labels is a tax out of all proportion to what the file
+// holds — and it put the one secret that cannot be reissued into a field on a
+// screen that is not about the wallet at all.
+export const KEY_SOURCE = 'password';
 
-// Files from the one day the backup was sealed with the wallet's BIP-39
-// passphrase (2026-11-03 to 2026-11-04). They still open — the secret goes
-// into the same field — and they are deliberately NOT normalised, because a
-// passphrase is used verbatim in derivation and lower-casing one would turn a
-// readable backup into a file nothing can open. That is the outcome this
-// feature may never produce, which is also why argon2id stays readable.
-const LEGACY_KEY_SOURCE = 'wallet-passphrase';
+// EVERY EARLIER SCHEME STAYS READABLE. A file names what sealed it, so one
+// written under either of these still opens; only what this build WRITES has
+// changed. Turning somebody's existing backup into a file nothing can read is
+// the one outcome this feature may never produce, which is the same reason
+// argon2id stays readable.
+//
+//   recovery-phrase   2026-11-04 to 2026-11-08. Normalised, because twelve
+//                     words typed with different capitals or spacing have to
+//                     give one key.
+//   wallet-passphrase 2026-11-03 to 2026-11-04. Verbatim, because every
+//                     character of a BIP-39 passphrase is significant.
+const PHRASE_KEY_SOURCE = 'recovery-phrase';
+const PASSPHRASE_KEY_SOURCE = 'wallet-passphrase';
 
 /**
  * The exact string a recovery phrase becomes before the KDF sees it.
  *
- * Both clients go through encryptBackup/decryptBackup rather than normalising
- * for themselves, so the two cannot drift. Lower case and single spaces: the
- * BIP-39 English wordlist is lower-case ASCII, so this is lossless for a valid
- * phrase. No Unicode normalisation, which would make the key depend on
- * String.prototype.normalize behaving identically on Hermes and in a browser —
- * the same kind of engine difference that made argon2id unusable here.
+ * Only for reading a `recovery-phrase` file now. A PASSWORD IS NEVER PUT
+ * THROUGH THIS: every character of one is significant, and lower-casing would
+ * quietly make "Otter" and "otter" the same key — which is both a weaker
+ * password than the user chose and impossible to explain when it bites.
  */
 export function normalizeBackupKey(phrase: string): string {
   return (phrase || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Shortest password this build will SEAL a file with. */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * The one password rule, so the two clients and the check cannot drift.
+ *
+ * Length only, deliberately. Mixed-case-and-a-digit rules are how people end
+ * up with one weak password they reuse, and this seals labels rather than
+ * coins — the file holds no phrase, no passphrase and no key, so cracking it
+ * yields somebody's notes about their own payments.
+ *
+ * Enforced on WRITE only. A file made under any other rule must still open.
+ */
+export function validateBackupPassword(password: string): string | null {
+  const pw = password || '';
+  if (!pw.trim()) return 'Enter a password for this backup.';
+  if (pw.length < MIN_PASSWORD_LENGTH) {
+    return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  return null;
 }
 
 // scrypt, N=2^14 r=8 p=1 — the scrypt paper's own "interactive" parameters,
@@ -242,22 +277,17 @@ export async function encryptBackup(
   // then notices has written the secret to memory and, a moment later, to disk.
   assertNoSecrets(payload);
 
-  // THE KEY IS A RECOVERY PHRASE, AND BIP-39 CAN SAY SO. A phrase carries a
-  // checksum, so a typo is caught here — before a file is written that its
-  // owner can never open, which under the previous scheme could only be caught
-  // by deriving a wallet from it. The empty string falls out of the same check
-  // rather than needing one of its own.
+  // THE KEY IS A PASSWORD THE USER CHOSE, used verbatim — no trimming, no
+  // case folding. The BIP-39 checksum that caught a mistyped phrase has no
+  // equivalent here, which is why both screens ask for it twice on export.
   //
   // Checked on WRITE only. A file made under different rules must still open,
   // or this would strand backups rather than protect them.
-  const secret = normalizeBackupKey(password);
-  if (!isValidMnemonic(secret)) {
-    throw new BackupError(
-      'backup_key_not_a_phrase',
-      'That is not a valid recovery phrase — check the words and their order. ' +
-        'Your backup is encrypted with your recovery phrase.',
-    );
+  const weak = validateBackupPassword(password);
+  if (weak) {
+    throw new BackupError('backup_password_too_weak', weak);
   }
+  const secret = password;
 
   // The salt and the nonce are the two values that MUST come from a real
   // CSPRNG. A predictable salt turns the KDF into a lookup, and a repeated
@@ -341,12 +371,13 @@ export async function decryptBackup(
     throw new BackupError('backup_damaged', 'That backup file is damaged.');
   }
 
-  // A recovery-phrase file gets the normalised key; a file from the one-day
-  // passphrase scheme gets the string VERBATIM, because every character of a
-  // BIP-39 passphrase is significant and lower-casing one would make an
-  // existing backup unopenable.
-  const legacy = env.keySource === LEGACY_KEY_SOURCE;
-  const secret = legacy ? password : normalizeBackupKey(password);
+  // WHAT THE FILE SAYS SEALED IT decides how the typed string is treated. Only
+  // a recovery-phrase file is normalised; a password and a BIP-39 passphrase
+  // are both used verbatim, because every character of either is significant
+  // and folding one would make an existing backup unopenable.
+  const fromPhrase = env.keySource === PHRASE_KEY_SOURCE;
+  const legacy = fromPhrase || env.keySource === PASSPHRASE_KEY_SOURCE;
+  const secret = fromPhrase ? normalizeBackupKey(password) : password;
 
   // KDF parameters taken from the FILE, not from this build's constants: a
   // backup written with other parameters, or another KDF entirely, must still
@@ -368,9 +399,10 @@ export async function decryptBackup(
       'backup_wrong_password',
       legacy
         ? 'That backup was written by an earlier version of WhiSPa, which did ' +
-          'not seal files with your recovery phrase. Enter the secret you used ' +
-          'when you saved it, or save a fresh backup from this version.'
-        : 'Wrong recovery phrase, or the file has been altered.',
+          'not seal files with a password. Enter the secret you used when you ' +
+          'saved it — for most files that is your recovery phrase — or save a ' +
+          'fresh backup from this version.'
+        : 'Wrong password, or the file has been altered.',
     );
   }
 

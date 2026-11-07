@@ -10,15 +10,28 @@ const confirmForget = ref(false)
 const myWalletIds = ref([])
 
 // ── Backup ──────────────────────────────────────────────────────────────────
-// For a lost or stolen phone, or a reinstall: it saves the device-only data —
-// labels and pinned contacts — and nothing else. No key material whatsoever
-// (2026-11-04). The file is SEALED WITH THE RECOVERY PHRASE, which is typed
-// here, used as the file's key and never persisted in this browser.
+// Saves the browser-only data — labels and pinned contacts — and nothing else.
+// No key material whatsoever.
 //
-// The BIP-39 passphrase is not mentioned on this screen by instruction: it
-// belongs to importing a wallet, which is a different job on a different
-// screen. See the long note at the top of services/backup.ts.
-const bkPhrase = ref('')
+// SEALED WITH A PASSWORD THE USER CHOOSES (2026-11-08, on the user's
+// instruction). It used to ask for the twelve-word recovery phrase, which was
+// wrong twice over on this screen: a backup of labels does not justify typing
+// the one secret that cannot be reissued, and every extra place those words
+// are typed is another place they can be seen or phished.
+//
+// Typed, never stored. keyvault.js keeps derived keys only, and this
+// deliberately does not start keeping anything either.
+//
+// ASKED FOR TWICE on export, because a password has no checksum. A mistyped
+// phrase was refused by BIP-39 before anything was encrypted; a mistyped
+// password seals a file nobody can ever open and nothing finds out until a
+// restore. The confirm field is what replaces that check.
+//
+// The copy says nothing about phones, which this is not, and nothing about
+// where the coins live, which is not this screen's business (2026-11-08, on
+// the user's instruction).
+const bkPassword = ref('')
+const bkPassword2 = ref('')
 const bkBusy = ref(null)
 const bkMsg = ref('')
 const bkErr = ref(false)
@@ -60,14 +73,17 @@ async function doExport() {
       bkSay('Nothing to back up yet — no labels or pinned contacts in this browser.', true)
       return
     }
+    // Checked here as well as by the disabled button: a mismatch must never
+    // reach encryptBackup, which cannot tell a confirmed password from a
+    // typo and would seal a file nobody can open.
+    if (bkPassword.value !== bkPassword2.value) {
+      bkSay('The two passwords do not match.', true)
+      return
+    }
     // The KDF yields every 20ms and reports progress, so the tab stays
     // responsive and the page counts up rather than looking wedged.
-    //
-    // encryptBackup checks the phrase against BIP-39's own checksum before it
-    // encrypts anything, so a mistyped one is refused here rather than turning
-    // into a file nobody can open.
     bkSay('Encrypting… 0%')
-    const text = await encryptBackup(payload, bkPhrase.value,
+    const text = await encryptBackup(payload, bkPassword.value,
       (f) => bkSay(`Encrypting… ${Math.round(f * 100)}%`))
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const a = document.createElement('a')
@@ -77,7 +93,7 @@ async function doExport() {
     // Revoked, or the blob is held for the life of the tab — and this one is a
     // decrypted-adjacent artifact we would rather not leave lying around.
     URL.revokeObjectURL(url)
-    bkSay(`Saved ${total} item${total === 1 ? '' : 's'}. Open it again with the same recovery phrase.`)
+    bkSay(`Saved ${total} item${total === 1 ? '' : 's'}. Open it again with the same password.`)
   } catch (e) {
     bkSay(e?.message || 'Could not write the backup.', true)
   } finally {
@@ -90,8 +106,13 @@ async function onPickBackup(ev) {
   // Cleared immediately so picking the SAME file twice still fires a change.
   ev.target.value = ''
   if (!file) return
-  if (!bkPhrase.value.trim()) {
-    bkSay('Enter your recovery phrase first, then choose the file.', true)
+  // Restore takes the password the file was SAVED with, which for an older
+  // file may be a recovery phrase or a wallet passphrase — decryptBackup reads
+  // the header and treats each correctly. So no confirm field here, and no
+  // length rule: the rule is enforced on write, and refusing an old file for
+  // failing today's policy would strand it.
+  if (!bkPassword.value) {
+    bkSay('Enter the password for this backup first, then choose the file.', true)
     return
   }
   bkBusy.value = 'restore'
@@ -100,7 +121,7 @@ async function onPickBackup(ev) {
     const { decryptBackup } = await import('@/services/backup')
     const { applyBackup, describeBackup } = await import('@/stores/backupdata')
     bkSay('Opening… 0%')
-    const payload = await decryptBackup(await file.text(), bkPhrase.value,
+    const payload = await decryptBackup(await file.text(), bkPassword.value,
       (f) => bkSay(`Opening… ${Math.round(f * 100)}%`))
     const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
     // The live wallets decide where a backed-up wallet's labels go: an id in
@@ -497,50 +518,56 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Backup. Two short statements and one red warning, in that order: what
-         the file is for, what it does NOT need to hold, and the single thing
-         whose loss cannot be undone. The BIP-39 passphrase is deliberately not
-         named here — it belongs to importing a wallet, not to this. -->
+    <!-- Backup. One statement of what it saves, then the password, then the
+         red warning about losing it. No phone, no coins, no recovery phrase —
+         this screen is about labels and the password that seals them. -->
     <div class="card" style="margin-top:20px">
       <div class="card-header"><h2>Backup</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <p class="text-dim text-sm" style="margin:0">
-          Use this if your phone is lost or stolen, or if you reinstall the app.
-          It saves what only this device knows: your transaction labels, SegWit
-          address labels and pinned contacts.
-        </p>
-        <p class="text-dim text-sm" style="margin:0">
-          Your coins are not in this file and do not need to be. They live on the
-          Bitcoin network, and your wallet finds them again from your recovery
-          phrase.
+          Saves what only this browser knows: your transaction labels, SegWit
+          address labels and pinned contacts. Keep the file somewhere you can
+          find it again — on a new computer, or after clearing site data, it is
+          the only way to get them back.
         </p>
         <div class="alert alert-error" style="padding:10px;border-radius:6px">
           <p class="text-sm" style="margin:0">
-            <strong>Keep your recovery phrase somewhere safe.</strong> It opens
-            this backup and it is the only way to restore your wallet. If you lose
-            it, no one — including us — can get your wallet or this file back.
+            <strong>Remember this password.</strong> It is the only thing that
+            opens the file, it is not stored anywhere, and no one — including us
+            — can recover it or the file's contents without it.
           </p>
         </div>
 
         <div class="field">
-          <label>Recovery phrase</label>
-          <textarea class="input" rows="2" v-model="bkPhrase"
-                    placeholder="Your recovery phrase"
-                    autocomplete="off" spellcheck="false"></textarea>
-          <!-- Typed, never stored. keyvault.js keeps derived keys only, so the
-               browser has no phrase to read — and this deliberately does not
-               start keeping one. It is the file's key and goes nowhere else. -->
+          <label>Backup password</label>
+          <input class="input" type="password" v-model="bkPassword"
+                 placeholder="Choose a password" autocomplete="new-password" />
           <p class="text-dim text-xs" style="margin:6px 0 0">
-            Your backup is encrypted with your recovery phrase. It is not written
-            into the file and not saved in this browser.
+            At least 8 characters. Used only for this file, and never saved in
+            this browser.
+          </p>
+        </div>
+
+        <!-- The confirm field is the checksum a password does not have: a
+             mistyped one seals a file nobody can open, and nothing would find
+             out until a restore. Export only — a restore proves the password
+             by opening the file. -->
+        <div class="field">
+          <label>Confirm password</label>
+          <input class="input" type="password" v-model="bkPassword2"
+                 placeholder="Type it again" autocomplete="new-password" />
+          <p v-if="bkPassword2 && bkPassword !== bkPassword2"
+             class="text-error text-xs" style="margin:6px 0 0">
+            The two passwords do not match.
           </p>
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" :disabled="bkBusy || !bkPhrase.trim()" @click="doExport">
+          <button class="btn btn-primary btn-sm"
+                  :disabled="bkBusy || !bkPassword || bkPassword !== bkPassword2" @click="doExport">
             {{ bkBusy === 'export' ? '…' : '↓ Download backup' }}
           </button>
-          <button class="btn btn-ghost btn-sm" :disabled="bkBusy || !bkPhrase.trim()" @click="bkFile?.click()">
+          <button class="btn btn-ghost btn-sm" :disabled="bkBusy || !bkPassword" @click="bkFile?.click()">
             ↑ Restore from file
           </button>
           <input ref="bkFile" type="file" accept="application/json,.json"

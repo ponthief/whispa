@@ -38,6 +38,20 @@ export const BACKUP_KEYS = {
 // therefore the one that needs both a nested merge and a wallet-id remap.
 const NESTED_BY_WALLET = 'segwitLabels'
 
+// SECTIONS A RESTORE MAY NOT OVERWRITE.
+//
+// bitmailPins is not a label. It is trust-on-first-use evidence: the SP
+// address the user's own BitMail SHOULD resolve to, pinned on the device so
+// that an admin who repoints the DNS record is caught. bitmailpins.js refuses
+// to overwrite a pin with a different value for exactly that reason — a silent
+// replacement is how tampering would be masked — and a restore writing one
+// straight into localStorage would walk around that refusal with a file.
+//
+// So for this section an existing, DIFFERENT value is KEPT and counted as a
+// conflict. A pin that is simply missing here is still restored, which is the
+// useful half: a new browser inherits the trust anchor.
+const NEVER_OVERWRITTEN = ['bitmailPins']
+
 // Keys that exist and are deliberately left out, with the reason. Listed rather
 // than merely absent so that "is this missing on purpose?" has an answer.
 export const BACKUP_EXCLUDED = {
@@ -114,7 +128,8 @@ export function collectBackup(wallets = []) {
  * wallet that came back with a different id. See remapWalletIds.
  *
  * Returns what it did, per section: `added` counts entries this actually wrote
- * (new or changed) and `kept` the ones already identical.
+ * (new or changed), `kept` the ones already identical, and `conflicts` the ones
+ * a guarded section refused to overwrite (see NEVER_OVERWRITTEN).
  */
 export function applyBackup(payload, live = []) {
   const report = {}
@@ -127,6 +142,7 @@ export function applyBackup(payload, live = []) {
     const existing = readJson(key) || {}
     let added = 0
     let kept = 0
+    let conflicts = 0
 
     if (name === NESTED_BY_WALLET) {
       // Merged at the ADDRESS level, not the wallet level. Merging whole
@@ -149,10 +165,16 @@ export function applyBackup(payload, live = []) {
         }
       }
     } else {
+      const guarded = NEVER_OVERWRITTEN.includes(name)
       for (const [k, v] of Object.entries(incoming)) {
+        const here = Object.prototype.hasOwnProperty.call(existing, k)
         const same = JSON.stringify(existing[k]) === JSON.stringify(v)
         if (same) kept++
-        else {
+        else if (here && guarded) {
+          // Kept, and counted apart from the ones that merely matched: a pin
+          // the file disagrees with is the case this guard exists for.
+          conflicts++
+        } else {
           existing[k] = v
           added++
         }
@@ -162,10 +184,10 @@ export function applyBackup(payload, live = []) {
     try {
       localStorage.setItem(key, JSON.stringify(existing))
     } catch {
-      report[name] = { added: 0, kept, failed: true }
+      report[name] = { added: 0, kept, conflicts, failed: true }
       continue
     }
-    report[name] = { added, kept, failed: false }
+    report[name] = { added, kept, conflicts, failed: false }
   }
 
   const known = Object.keys(BACKUP_KEYS)

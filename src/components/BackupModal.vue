@@ -267,9 +267,16 @@ async function openPending() {
         <button class="btn btn-ghost btn-sm btn-icon" @click="close">✕</button>
       </div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-        <!-- "text must be really simple: backup labels, contacts". One line. -->
+        <!-- LABELS. It said "labels and contacts" until 2026-11-08, and the
+             file has never held a contact: a Tango connection is a row in
+             silnt.payjoin_contacts naming BOTH user ids, it lives on the
+             server, and it cannot be re-created from one side — the other has
+             to accept. So a backup could not bring back a connection somebody
+             removed even if it tried, and saying "contacts" promised exactly
+             that. What the word was reaching for was the BitMail pins, which
+             are tamper evidence rather than an address book. -->
         <p class="text-dim text-sm" style="margin:0">
-          Backs up your labels and contacts.
+          Backs up your labels.
         </p>
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm

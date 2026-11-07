@@ -562,7 +562,17 @@ console.log('the two backup screens say the same simple thing');
   // without saying "browser" on a product that is also a phone app.
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
     ok(`${who} says what it saves, in one line`,
-      /Backs up your labels and contacts/.test(src));
+      /Backs up your labels\./.test(src));
+    // AND DOES NOT PROMISE CONTACTS. The file has never held one: a Tango
+    // connection is a row in silnt.payjoin_contacts naming BOTH user ids, it
+    // lives on the server, and it cannot be re-created from one side — the
+    // other has to accept. A screen offering to restore them would be
+    // promising something no file could deliver, which is worse than saying
+    // nothing, because the person it misleads is the one who has just deleted
+    // something and is looking for a way back.
+    ok(`${who} does not promise to restore contacts`,
+      !/contacts/i.test(src),
+      'connections live on the server and take two sides to make');
     ok(`${who} does not name a device`,
       !/\bphone\b/i.test(src) && !/\bbrowser\b/i.test(src),
       'there is no browser on the phone, and no phone in the browser');
@@ -876,6 +886,30 @@ console.log('the web collector never reaches the key vault');
   const foreign = { ...swTaken, sections: { ...swTaken.sections, phoneOnlyThing: { a: 1 } } };
   ok('a section this client does not know is reported, not dropped silently',
     applyBackup(foreign, []).skipped.join(',') === 'phoneOnlyThing');
+
+  // A RESTORE IS NOT A WAY AROUND A PIN. bitmailPins is trust-on-first-use
+  // evidence — the SP address the user's own BitMail should resolve to —
+  // and bitmailpins.js refuses to overwrite one with a different value,
+  // because a silent replacement is how a repointed DNS record would be
+  // masked. "The file wins" (2026-11-08) must not reach into that: writing
+  // straight to localStorage would walk around the refusal with a file.
+  store.set('thrilla_bitmail_pins_v1', JSON.stringify({ 'me@host': 'sp1qmine' }));
+  const pinTaken = collectBackup([]);
+  store.set('thrilla_bitmail_pins_v1', JSON.stringify({ 'me@host': 'sp1qCHANGED' }));
+  const pinR = applyBackup(pinTaken, []).sections;
+  const pins = JSON.parse(store.get('thrilla_bitmail_pins_v1'));
+  ok('a restore does NOT overwrite a BitMail pin it disagrees with',
+    pins['me@host'] === 'sp1qCHANGED',
+    'the pin is tamper evidence; a file must not be able to replace one');
+  ok('and reports the disagreement rather than swallowing it',
+    pinR.bitmailPins.conflicts === 1 && pinR.bitmailPins.added === 0);
+
+  // The useful half still works: a pin this device does not have is restored,
+  // so a new browser inherits the trust anchor.
+  store.set('thrilla_bitmail_pins_v1', JSON.stringify({}));
+  applyBackup(pinTaken, []);
+  ok('but a pin that is missing here is restored',
+    JSON.parse(store.get('thrilla_bitmail_pins_v1'))['me@host'] === 'sp1qmine');
 
   ok('the vault is never collected even when present',
     (() => {

@@ -417,7 +417,28 @@ utxos and tnxs are removed from the backend. restoring them in the app won't
 restore them on the server."*
 
 **What it is for**: the device-only data goes and nothing can rebuild it —
-transaction labels, SegWit address labels, pinned contacts. Neither screen
+transaction labels, SegWit address labels, and (on the web) the BitMail pins.
+
+**It holds no contacts, and both screens said it did until 2026-11-08.** Asked
+directly: *"don't we store Tango connections on the server, so user removing
+them from tango should not be able to restore them via file?"* — yes, and the
+word was wrong twice over. A connection is a row in `silnt.payjoin_contacts`
+naming **both** user ids; it lives on the server and cannot be re-created from
+one side, because the other has to accept. So a file could not bring one back
+even if it carried it, and the screen was promising exactly that to the person
+most likely to be looking for a way back — somebody who has just deleted one.
+The same goes for `payjoin_contact_labels` and `sp_contacts`. Both screens now
+say **"Backs up your labels."**, and `check:backup` refuses the word on either.
+
+What "contacts" was reaching for was `bitmailPins`, which is not an address
+book: it is trust-on-first-use evidence, the SP address the user's own BitMail
+should resolve to. Which makes it the one section **a restore may not
+overwrite** (`NEVER_OVERWRITTEN`). `bitmailpins.js` refuses to replace a pin
+with a different value, because a silent replacement is how a repointed DNS
+record would be masked — and "the file wins" would otherwise walk around that
+refusal with a file. A pin the file disagrees with is kept and counted as a
+`conflict`; a pin this device does not have is still restored, which is the
+useful half, since a new browser inherits the trust anchor. Neither screen
 lists the ways that happens any more; see "Where it lives" below for why both
 now say one line and name no device. `services/backup.ts` does the crypto;
 each client supplies its

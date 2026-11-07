@@ -236,14 +236,21 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
   return (
     <Page title="Backup & Restore" onBack={onBack}>
       <Group title="What this saves">
-        {/* ONE LINE, and the same one the web modal uses (2026-11-08, on the
-            user's instruction: "text must be really simple: backup labels,
-            contacts"). "What only this phone knows" went with it — the two
-            screens were each naming their own device, which is a distinction
-            the reader does not need and which the web could not state without
-            saying "browser". What it saves is what it saves. */}
+        {/* ONE LINE, and the same one the web modal uses. "What only this
+            phone knows" went first — the two screens were each naming their
+            own device, which the reader does not need and which the web could
+            not state without saying "browser".
+
+            AND "CONTACTS" WENT ON 2026-11-08. The file has never held one: a
+            Tango connection is a row in silnt.payjoin_contacts naming BOTH
+            user ids, it lives on the server, and it cannot be re-created from
+            one side — the other has to accept. A backup could not bring back
+            a connection somebody removed even if it tried, and the word
+            promised exactly that. What it was reaching for was the web's
+            BitMail pins, which are tamper evidence rather than an address
+            book, and which this client does not store at all. */}
         <Block first>
-          <Help>Backs up your labels and contacts.</Help>
+          <Help>Backs up your labels.</Help>
         </Block>
         {/* The "your coins are not in this file, they live on the Bitcoin
             network and come back from your recovery phrase" paragraph was

@@ -13,8 +13,8 @@ import {
 } from '@services/backup';
 import { applyBackup, collectBackup, countItems } from '@services/backupData';
 import { collectWalletSeeds, restoreWallets } from '@services/walletBackup';
-import { readSeed, saveSeed } from '@services/seedVault';
-import { storeWalletKeys } from '@services/secureKeys';
+import { hasSeed, readSeed, saveSeed } from '@services/seedVault';
+import { hasWalletKeys, storeWalletKeys } from '@services/secureKeys';
 import { deriveSilentPayment } from '@services/spKeys';
 import { resetCatchUp } from '../../hooks/useCatchUpScan';
 import { applyServerLabels, collectServerLabels } from '@services/serverLabels';
@@ -268,6 +268,12 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             createWallet: (data) => api.createSilntWallet(inkey, data) as any,
             storeWalletKeys,
             saveSeed,
+            // What this device already has, asked per wallet. Without these a
+            // reinstall adopts nothing: the wallets are all on the account
+            // and the keys are all missing, which is exactly "restore on
+            // mobile didn't work, it still said wallet keys need recovery".
+            hasKeys: hasWalletKeys,
+            hasSeed,
             onCreated: resetCatchUp,
           },
           password,
@@ -297,6 +303,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // this client cannot store is still named rather than counted as
       // restored.
       const madeWallets = walletReport?.created.length || 0;
+      const gotKeys = walletReport?.adopted.length || 0;
       const walletTrouble = [
         ...(walletReport?.mismatched || []).map(
           (w) => `${w.title} (its phrase and this passphrase do not match it)`),
@@ -312,6 +319,12 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           // concluding their money is gone.
           madeWallets
             ? `${madeWallets} wallet${madeWallets === 1 ? '' : 's'} restored — ` +
+              'scan to find their coins.'
+            : '',
+          // The reinstall case, and the common one: the wallets were still on
+          // the account and only their keys were missing here.
+          gotKeys
+            ? `${gotKeys} wallet${gotKeys === 1 ? '' : 's'} got their keys back — ` +
               'scan to find their coins.'
             : '',
           walletTrouble.length

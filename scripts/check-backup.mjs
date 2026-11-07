@@ -507,6 +507,36 @@ console.log('the parameters are not quietly weakened');
   // The KDF runs for seconds on a phone. Synchronously it froze the app and
   // read as a hang — reported as "never finishes, keeps spinning", with the
   // native spinner still turning because only JavaScript had stopped.
+  // THE PROGRESS REPORTS ARE THROTTLED, which is not cosmetic. asyncTick is
+  // 20ms, so the raw callback fires ~50 times a second, and each one is a
+  // setState on a screen whose JS thread is busy with the KDF. React Native
+  // coalesces them, the number stops moving, and it LOOKS STUCK — reported
+  // 2026-11-08 as "opening a backup file took a while, stuck at 20%, but then
+  // completed". It had not stalled; it had no idle moment to paint in.
+  //
+  // Exercised against a simulated four-second run at 50 ticks a second,
+  // because the real one here finishes too fast to show anything.
+  {
+    const seen = [];
+    let t = 1_000_000;
+    const realNow = Date.now;
+    Date.now = () => t;
+    try {
+      const wrapped = mod.throttleKdfProgress((f) => seen.push(f));
+      for (let i = 0; i <= 200; i++) { wrapped(i / 200); t += 20; }
+      ok('the KDF progress is throttled to a few reports a second',
+        seen.length >= 15 && seen.length <= 30,
+        `${seen.length} reports for a 4s run — 50/s floods the bridge, 1 looks dead`);
+      ok('and the first and last always get through',
+        seen[0] === 0 && seen[seen.length - 1] === 1,
+        'the screen has to know it started, and that it finished');
+      ok('and no percentage is reported twice in a row',
+        new Set(seen.map((f) => Math.round(f * 100))).size === seen.length);
+    } finally {
+      Date.now = realNow;
+    }
+  }
+
   ok('the KDF is async and yields',
     /scryptAsync/.test(SRC) && /asyncTick/.test(SRC),
     'a synchronous KDF blocks the JS thread and reads as a crash');
@@ -790,6 +820,17 @@ console.log('the two backup screens say the same simple thing');
     /title="Backup & Restore"/.test(
       readFileSync(new URL('../src/screens/SettingsScreen.tsx', import.meta.url), 'utf8')));
 
+  // THE PHONE PASSES WHAT THIS DEVICE ALREADY HAS. walletBackup errs towards
+  // storing when it cannot tell, so a screen that omits these still restores
+  // — it just rewrites keys that were already correct. These are what make a
+  // restore onto the phone that MADE the backup a no-op.
+  ok('the phone tells the restore what this device already has',
+    /hasKeys: hasWalletKeys/.test(copy(P)) && /\bhasSeed\b/.test(copy(P)),
+    'without them every restore rewrites keystore entries that were fine');
+  ok('and it reports the wallets that got their keys back',
+    /adopted/.test(copy(P)) && /got their keys back/.test(copy(P)),
+    'the reinstall case is the common one and has to say it happened');
+
   ok('the web clears the password when the modal opens or closes',
     /watch\(\(\) => props\.show[\s\S]{0,200}password\.value = ''/.test(V),
     'a field that persists across save and restore prompts nobody');
@@ -914,28 +955,104 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
   };
   const fileWallets = [
     { ...wallets[0], mnemonic: SEED_A },
-    { id: 'w-x', title: 'Already here', network: 'signet', spAddress: 'sp1qhere', mnemonic: SEED_A },
+    // On the account already. Its address IS what its phrase derives, as a
+    // real file's would be — the save side could not have written it
+    // otherwise.
+    { id: 'w-x', title: 'Already here', network: 'signet',
+      spAddress: derive(SEED_B, PASS).spAddress, mnemonic: SEED_B },
     { id: 'w-y', title: 'From the web', network: 'signet', spAddress: 'sp1qweb' },
   ];
-  const r = await restoreWallets(api, PASS, fileWallets, [{ id: 'live', spAddress: 'SP1QHERE' }]);
+  const r = await restoreWallets(api, PASS, fileWallets,
+    [{ id: 'live', spAddress: derive(SEED_B, PASS).spAddress.toUpperCase() }]);
 
   ok('a wallet in the file is recreated', r.created.length === 1 && made.length === 1);
   ok('and its keys and phrase are stored on the device',
-    stored.length === 1 && stored[0][0] === 'new-1' && seeded[0][1] === SEED_A);
+    stored[0][0] === 'new-1' && seeded[0][1] === SEED_A);
   ok('the BIRTH height goes with it, not the resume point',
     made[0].last_height === 101,
     'a restored wallet must rescan from where it began, or its history is lost');
   // Matched by ADDRESS, case-insensitively — never by the id in the file,
   // which does not survive a wallet being deleted and added back. Without
   // this, restoring twice makes a second copy of every wallet.
-  ok('a wallet already on the account is skipped, matched by address', r.skipped === 1);
+  // This `api` fake answers neither hasKeys nor hasSeed, so the wallet that is
+  // already on the account is ADOPTED rather than skipped — the safe side of
+  // not knowing, and the behaviour the reinstall case depends on.
+  ok('a wallet already on the account gets its keys when nothing says otherwise',
+    r.adopted.length === 1 && r.skipped === 0, JSON.stringify(r));
   ok('a wallet with no phrase is counted, not failed', r.noPhrase === 1);
 
+  // ── THE REINSTALL, WHICH IS THE WHOLE USE CASE ───────────────────────────
+  // "Restore on mobile didn't work, it still said that wallet keys need
+  // recovery." Reinstalling the app deletes nothing server-side, so every
+  // wallet is ALREADY ON THE ACCOUNT and only the keys are missing. A restore
+  // that stopped at "already there" skipped all of them and stored nothing —
+  // the exact case the feature exists for, failing silently and reporting
+  // success.
+  {
+    const kept = [];
+    const seeded = [];
+    const fresh = {
+      ...api,
+      storeWalletKeys: async (id, k) => { kept.push(id); return true; },
+      saveSeed: async (id, m) => { seeded.push([id, m]); return true; },
+      // A new phone: the account has the wallet, this device has nothing.
+      hasKeys: async () => false,
+      hasSeed: async () => false,
+    };
+    const onAccount = [{ id: 'server-side-id', spAddress: wallets[0].spAddress }];
+    const re = await restoreWallets(fresh, PASS, [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
+    ok('a wallet on the account with no keys HERE is adopted, not skipped',
+      re.adopted.length === 1 && re.skipped === 0,
+      JSON.stringify(re));
+    ok('and its keys and phrase are stored against the id the account holds',
+      kept[0] === 'server-side-id' && seeded[0][0] === 'server-side-id',
+      'storing them under the id in the FILE would reach no wallet at all');
+    ok('and no second copy of the wallet is created',
+      re.created.length === 0,
+      'the account already has it; creating another is the other failure');
+
+    // The same phone that made the backup: everything is already here, so
+    // nothing is written. Asked per wallet rather than assumed, or a restore
+    // would rewrite keystore entries that are already correct.
+    const same = { ...fresh, hasKeys: async () => true, hasSeed: async () => true };
+    const noop = await restoreWallets(same, PASS, [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
+    ok('a wallet that is already usable here is left alone',
+      noop.skipped === 1 && noop.adopted.length === 0);
+
+    // Half a wallet is still a broken wallet: keys without the phrase, or the
+    // phrase without keys, both need the missing half.
+    for (const [what, probe] of [
+      ['keys', { hasKeys: async () => false, hasSeed: async () => true }],
+      ['the phrase', { hasKeys: async () => true, hasSeed: async () => false }],
+    ]) {
+      const partial = await restoreWallets({ ...fresh, ...probe }, PASS,
+        [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
+      ok(`a wallet missing ${what} here is adopted`, partial.adopted.length === 1);
+    }
+
+    // A caller that cannot answer errs towards storing. Writing keys that are
+    // already right costs nothing; leaving a wallet unusable is the report.
+    const blind = { ...fresh, hasKeys: undefined, hasSeed: undefined };
+    const assumed = await restoreWallets(blind, PASS,
+      [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
+    ok('a caller that cannot say what is here stores the keys anyway',
+      assumed.adopted.length === 1);
+
+    // And a keystore that refuses is reported, not swallowed as success.
+    const refuses = { ...fresh, storeWalletKeys: async () => false };
+    const bad = await restoreWallets(refuses, PASS,
+      [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
+    ok('a keystore that refuses during an adopt is reported as failed',
+      bad.failed.length === 1 && bad.adopted.length === 0);
+  }
+
   // RESTORING THE SAME FILE TWICE MUST NOT DOUBLE ANYTHING.
-  const live2 = [{ id: 'live', spAddress: 'sp1qhere' }, { id: 'new-1', spAddress: fileWallets[0].spAddress }];
+  const live2 = [{ id: 'live', spAddress: derive(SEED_B, PASS).spAddress },
+                 { id: 'new-1', spAddress: fileWallets[0].spAddress }];
   const again = await restoreWallets(api, PASS, fileWallets, live2);
   ok('restoring the same file again creates nothing',
-    again.created.length === 0 && made.length === 1);
+    again.created.length === 0 && made.length === 1,
+    'a second copy of every wallet is the other way this fails');
 
   // A FILE WHOSE PHRASE DOES NOT DERIVE THE ADDRESS IT CLAIMS. Normally
   // impossible — the save side checked — but a hand-edited file would

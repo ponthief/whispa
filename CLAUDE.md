@@ -451,9 +451,23 @@ keystore, derivation and api — so it typechecks under both tsconfigs and a
 check can drive it with no device. Four things in it are each a restore that
 would look like it worked:
 
-- **A wallet already on the account is matched by SP ADDRESS and skipped**,
-  never by the id in the file. Without that, restoring twice makes a second
-  copy of every wallet, each with its own id and history.
+- **A wallet already on the account is matched by SP ADDRESS**, never by the
+  id in the file. Without that, restoring twice makes a second copy of every
+  wallet, each with its own id and history.
+- **But "on the account" is not "working here", and conflating them broke the
+  main case.** Reported 2026-11-08: *"restore on mobile didn't work, it still
+  said that wallet keys need recovery."* Reinstalling the app deletes nothing
+  server-side, so on a new phone **every** wallet is already on the account —
+  and a restore that stopped at "already there" skipped all of them and stored
+  nothing. The account was never what was missing; the KEYS were. A wallet on
+  the account whose keys are absent from this device is now **adopted**: keys
+  and phrase derived from the file's phrase and stored against the id the
+  account already holds, with no second wallet created. `hasKeys` and `hasSeed`
+  are asked per wallet and **not knowing means no**, because writing keys that
+  were already correct costs a write and the other way round costs the feature.
+  That question is asked FIRST, before any derivation — a wallet that is
+  already usable needs no keys derived, and deriving them would also report a
+  phrase/address disagreement for a wallet that works.
 - **The derivation is verified again before anything is created.** A
   hand-edited file would otherwise create a wallet at an address nobody can
   reach, which is indistinguishable from success until a payment never
@@ -917,6 +931,22 @@ runs for seconds on a phone and synchronously it froze the JS thread — which i
 exactly what the report described, the native spinner still turning because
 only JavaScript had stopped. `asyncTick` yields every 20ms and both screens
 count up.
+
+**But the REPORTS are throttled, and the yielding is not.** At 20ms ticks the
+raw callback fires about fifty times a second, each one a `setState` on a
+screen whose JS thread is busy with the KDF. React Native coalesces them, the
+number stops moving, and it reads as a hang — reported 2026-11-08 as *"opening
+a backup file took a while, stuck at 20%, but then completed"*. It had not
+stalled; it had no idle moment to paint in. `throttleKdfProgress` holds it to
+one report per 200ms and only on a whole-percent change, with 0 and 1 always
+passing so the screen knows it started and finished. The yielding itself stays
+at 20ms: a lumpy number is a nuisance, a frozen thread is the original bug.
+
+That report is also the **phone measurement** this section keeps asking for.
+N=2^15 is perceptibly slow on a real device, where N=2^14 was not. It stays at
+2^15 because the file can now carry a wallet — but if it is ever raised again,
+that is the number to beat, and halving it back is a one-line change that
+strands nothing.
 
 **argon2id stays READABLE for ever.** A file names its own KDF in its header,
 so every backup written before the switch still opens — including the one that

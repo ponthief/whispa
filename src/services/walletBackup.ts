@@ -76,6 +76,27 @@ export type LeftOut = {
   reason: 'passphrase' | 'no-seed';
 };
 
+/**
+ * Does this device already have everything it needs for a wallet?
+ *
+ * Both halves, because half a wallet is still a broken one: keys without the
+ * phrase cannot show a recovery phrase, and the phrase without keys cannot
+ * scan or spend.
+ *
+ * NOT KNOWING MEANS NO. A caller that cannot answer, or a keystore that
+ * throws, errs towards storing keys that may already be correct — which costs
+ * a write — rather than towards leaving a wallet unusable, which is the whole
+ * of the report this exists for.
+ */
+async function alreadyUsable(deps: RestoreDeps, walletId: string): Promise<boolean> {
+  if (!deps.hasKeys || !deps.hasSeed) return false;
+  try {
+    return (await deps.hasKeys(walletId)) && (await deps.hasSeed(walletId));
+  } catch {
+    return false;
+  }
+}
+
 /** SP addresses are bech32m; compare them the way the rest of the app does. */
 function sameAddress(a?: string, b?: string): boolean {
   return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -138,6 +159,22 @@ export type RestoreDeps = {
     passphrase: string,
     network: string,
   ): SilentPaymentKeysLike;
+  /**
+   * Whether THIS DEVICE already holds the keys for a wallet, and the phrase.
+   *
+   * THE WHOLE REPORT OF 2026-11-08 TURNS ON THIS: "restore on mobile didn't
+   * work, it still said that wallet keys need recovery." Reinstalling the app
+   * does not delete anything server-side, so on a new phone every wallet is
+   * already ON THE ACCOUNT — and a restore that only asked that question
+   * skipped all of them and stored nothing. The account was never the thing
+   * missing; the KEYS were.
+   *
+   * Optional, so a caller that cannot answer (or a check) still works: absent
+   * means "assume nothing is here", which errs towards storing keys that are
+   * already stored rather than towards leaving a wallet unusable.
+   */
+  hasKeys?(walletId: string): Promise<boolean>;
+  hasSeed?(walletId: string): Promise<boolean>;
   createWallet(data: {
     title: string;
     sp_address: string;
@@ -160,8 +197,20 @@ export type RestoreDeps = {
 export type WalletRestoreReport = {
   /** Wallets created on this device. */
   created: { id: string; title: string }[];
-  /** Already on the account, matched by SP address. */
+  /**
+   * Already on the account AND already usable here — nothing to do.
+   *
+   * Note what this does NOT include any more: a wallet on the account whose
+   * keys are missing from this device. That is the reinstall case, it is the
+   * common one, and it is `adopted` below.
+   */
   skipped: number;
+  /**
+   * On the account already, and this device did not have its keys. They were
+   * derived from the file's phrase and stored, which is what turns off
+   * "Recover Keys" and lets the device scan and spend.
+   */
+  adopted: { id: string; title: string }[];
   /** In the file with no phrase — a web-written backup. */
   noPhrase: number;
   /** The phrase and passphrase did not derive the address the file records. */
@@ -173,11 +222,19 @@ export type WalletRestoreReport = {
 /**
  * Recreate the wallets a file carries.
  *
- * ADDRESS FIRST, ALWAYS. A wallet already on the account is matched by SP
- * address and skipped — never by the id in the file, which is a
+ * ADDRESS FIRST, ALWAYS — never the id in the file, which is a
  * `urlsafe_short_hash()` that does not survive a wallet being deleted and
  * added back. Without that, restoring twice makes a second copy of every
  * wallet, each with its own id, balance and history.
+ *
+ * BUT "ALREADY ON THE ACCOUNT" IS NOT "ALREADY WORKING HERE", and conflating
+ * the two is what was reported on 2026-11-08: "restore on mobile didn't work,
+ * it still said that wallet keys need recovery". Reinstalling the app deletes
+ * nothing server-side, so on a new phone every wallet is on the account
+ * already — and a restore that stopped there skipped every one of them and
+ * stored nothing, which is the exact case the feature exists for. A wallet
+ * that is on the account but has no keys on THIS DEVICE is adopted: keys and
+ * phrase stored against the id the account already has.
  *
  * AND THE DERIVATION IS VERIFIED BEFORE ANYTHING IS CREATED. The phrase and
  * the passphrase must together give the address the file recorded. They
@@ -196,6 +253,7 @@ export async function restoreWallets(
   const report: WalletRestoreReport = {
     created: [],
     skipped: 0,
+    adopted: [],
     noPhrase: 0,
     mismatched: [],
     failed: [],
@@ -205,12 +263,25 @@ export async function restoreWallets(
     if (!w || !w.spAddress) continue;
     const title = w.title || 'Wallet';
 
-    if ((live || []).some((l) => sameAddress(l.spAddress, w.spAddress))) {
+    // The wallet as the ACCOUNT holds it now, if it is there at all. A
+    // reinstall keeps every server-side row, so this is the normal case and
+    // the id here is the one the device has to store keys against.
+    const existing = (live || []).find((l) => sameAddress(l.spAddress, w.spAddress));
+
+    // NOTHING TO DO AT ALL — asked FIRST, before any derivation. A wallet
+    // that is on the account and already usable on this device is the common
+    // case on the phone that made the backup, and deriving its keys only to
+    // throw them away would also report a phrase/address disagreement for a
+    // wallet that works perfectly well.
+    if (existing?.id && (await alreadyUsable(deps, existing.id))) {
       report.skipped++;
       continue;
     }
+
     if (!w.mnemonic) {
-      report.noPhrase++;
+      // A web-written file. Nothing to adopt with and nothing to create from.
+      if (existing) report.skipped++;
+      else report.noPhrase++;
       continue;
     }
 
@@ -223,6 +294,34 @@ export async function restoreWallets(
     }
     if (!sameAddress(keys.spAddress, w.spAddress)) {
       report.mismatched.push({ title });
+      continue;
+    }
+
+    // ── ALREADY ON THE ACCOUNT ───────────────────────────────────────────
+    // Create nothing — that would duplicate the wallet — but give this device
+    // what it is missing. Asked per wallet rather than assumed, so a restore
+    // onto the phone that made the backup is a no-op instead of rewriting
+    // keystore entries that are already correct.
+    if (existing?.id) {
+      try {
+        const okKeys = await deps.storeWalletKeys(existing.id, {
+          scanSecret: keys.scanSecret,
+          spendKey: keys.spendKey,
+          refundAddress: keys.refundAddress,
+          sweepAccount: keys.sweepAccount,
+        });
+        if (okKeys === false) {
+          throw new Error('Its keys could not be stored on this device.');
+        }
+        const okSeed = await deps.saveSeed(existing.id, w.mnemonic);
+        if (okSeed === false) {
+          throw new Error('Its recovery phrase could not be stored.');
+        }
+        deps.onCreated?.(existing.id);
+        report.adopted.push({ id: existing.id, title });
+      } catch (e: any) {
+        report.failed.push({ title, message: e?.message || 'Could not store its keys.' });
+      }
       continue;
     }
 

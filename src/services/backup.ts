@@ -314,6 +314,40 @@ const dec = { decode: bytesToUtf8 };
  * somebody can see the end of is a different thing from a wait that looks like
  * a crash.
  */
+/**
+ * Fewer progress reports than the KDF makes.
+ *
+ * `asyncTick: 20` yields every 20ms, so the raw callback fires about fifty
+ * times a second, and each one is a setState on a screen whose JS thread is
+ * busy doing the KDF. React Native coalesces them, the number stops moving,
+ * and the bar LOOKS STUCK — reported on 2026-11-08 as "opening a backup file
+ * took a while, stuck at 20%, but then completed". It had not stalled; it had
+ * no idle moment to paint in.
+ *
+ * So: at most one report every 200ms, and only when the whole percent has
+ * actually changed. That is five updates a second, which reads as moving, and
+ * it leaves the thread the room to render them. 0 and 1 always pass, because
+ * the first tells the screen it has started and the last that it is done.
+ *
+ * The yielding itself is NOT reduced. It is what keeps the UI responsive at
+ * all, and the original bug it fixed — a synchronous KDF freezing the JS
+ * thread, with the native spinner still turning — is worse than a lumpy
+ * number.
+ */
+export function throttleKdfProgress(onProgress?: KdfProgress): KdfProgress | undefined {
+  if (!onProgress) return undefined;
+  let lastAt = 0;
+  let lastPct = -1;
+  return (fraction: number) => {
+    const pct = Math.round((fraction || 0) * 100);
+    const now = Date.now();
+    if (fraction > 0 && fraction < 1 && (pct === lastPct || now - lastAt < 200)) return;
+    lastPct = pct;
+    lastAt = now;
+    onProgress(fraction);
+  };
+}
+
 async function kdfKey(
   password: string,
   salt: Uint8Array,
@@ -324,7 +358,7 @@ async function kdfKey(
     throw new BackupError('backup_no_password', 'A backup needs a password.');
   }
   const pw = enc.encode(password);
-  const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress };
+  const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress: throttleKdfProgress(onProgress) };
 
   if (spec.name === 'scrypt') {
     return scryptAsync(pw, salt, { N: spec.N, r: spec.r, p: spec.p, ...opts });

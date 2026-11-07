@@ -66,13 +66,34 @@ export const BACKUP_VERSION = 1;
 // What the file says it is sealed with. Recorded in the header and
 // authenticated with it, so it cannot be relabelled.
 //
-// A PASSWORD THE USER CHOOSES (2026-11-08, on the user's instruction: "12
-// words recovery phrase is not what you should be asking for, it should be a
-// single word which encrypts"). Asking somebody to type twelve words to save
-// their transaction labels is a tax out of all proportion to what the file
-// holds — and it put the one secret that cannot be reissued into a field on a
-// screen that is not about the wallet at all.
-export const KEY_SOURCE = 'password';
+// THE WALLET'S BIP-39 PASSPHRASE (2026-11-08, on the user's instruction:
+// "user must enter passphrase, which encrypts the file, so no separate
+// password, just the passphrase with which wallet was created — if wrong
+// passphrase entered the wallet doesn't get backed up").
+//
+// It changed because WHAT THE FILE IS changed. A file of labels deserved a
+// password of its own; a file that can bring a wallet back on a new phone is
+// a different object, and the secret that already guards that wallet is the
+// right key for it. Three things follow, and each is the reason rather than a
+// side effect:
+//
+//   It is a secret the user already has, so the file adds no NEW thing to
+//   lose. That was the standing objection to a per-file password.
+//
+//   It CAN BE CHECKED. A password had no checksum and nothing replaced the
+//   confirm box; a passphrase is verifiable against the wallet itself —
+//   derive the SP address from (seed, typed passphrase) and compare it to the
+//   one the account holds. A wallet whose passphrase does not match is left
+//   OUT of the file rather than sealed under a secret that cannot open it.
+//
+//   It is already held to a floor. PASSPHRASE_MIN_LENGTH is 12, enforced at
+//   wallet creation, where MIN_PASSWORD_LENGTH was 8. The floor rose by
+//   changing what the key IS, which is the only way it could rise without
+//   stranding files already written.
+//
+// The name is the one the 2026-11-03 scheme used, and deliberately: both are
+// the wallet's passphrase, used verbatim, so one decrypt path serves both.
+export const KEY_SOURCE = 'wallet-passphrase';
 
 // EVERY EARLIER SCHEME STAYS READABLE. A file names what sealed it, so one
 // written under either of these still opens; only what this build WRITES has
@@ -83,10 +104,15 @@ export const KEY_SOURCE = 'password';
 //   recovery-phrase   2026-11-04 to 2026-11-08. Normalised, because twelve
 //                     words typed with different capitals or spacing have to
 //                     give one key.
-//   wallet-passphrase 2026-11-03 to 2026-11-04. Verbatim, because every
-//                     character of a BIP-39 passphrase is significant.
+//   password          2026-11-08, for part of one day. A password the user
+//                     chose for this file alone. Verbatim.
+//
+// `wallet-passphrase` is not listed here because it is what this build WRITES
+// again — a file from 2026-11-03 and one from today are both the wallet's
+// passphrase used verbatim, so there is one decrypt path and nothing to tell
+// apart. What differs is the PAYLOAD, which says what it holds.
 const PHRASE_KEY_SOURCE = 'recovery-phrase';
-const PASSPHRASE_KEY_SOURCE = 'wallet-passphrase';
+const PASSWORD_KEY_SOURCE = 'password';
 
 /**
  * The exact string a recovery phrase becomes before the KDF sees it.
@@ -100,30 +126,59 @@ export function normalizeBackupKey(phrase: string): string {
   return (phrase || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/** Shortest password this build will SEAL a file with. */
-export const MIN_PASSWORD_LENGTH = 8;
+/**
+ * Shortest secret this build will SEAL a file with.
+ *
+ * It is 12 because the key is the wallet's BIP-39 passphrase and
+ * `spKeys.PASSPHRASE_MIN_LENGTH` is 12, enforced where it can be enforced —
+ * at wallet creation. It was 8 while the key was a password this file
+ * invented for itself.
+ *
+ * THE FLOOR ROSE BY CHANGING WHAT THE KEY IS, which is the only way it could
+ * rise at all: a minimum applied to a passphrase somebody already has would
+ * refuse to back up a real wallet, and the two numbers must not drift apart
+ * either — a passphrase that creates a wallet and then cannot seal its backup
+ * is a wallet with no way out.
+ */
+export const MIN_PASSWORD_LENGTH = 12;
 
 /**
- * The one password rule, so the two clients and the check cannot drift.
+ * The one rule on the typed secret, so the two clients and the check cannot
+ * drift.
  *
- * Length only, deliberately. Mixed-case-and-a-digit rules are how people end
- * up with one weak password they reuse, and this seals labels rather than
- * coins — the file holds no phrase, no passphrase and no key, so cracking it
- * yields somebody's notes about their own payments.
+ * Length only, deliberately: composition rules are how people end up with one
+ * weak secret they reuse. What actually guards the file now is that the key
+ * is a secret the wallet already enforces a floor on, and — on the phone —
+ * that it is CHECKED against the wallet before anything is written.
  *
- * Enforced on WRITE only. A file made under any other rule must still open.
+ * Enforced on WRITE only. A file made under any other rule must still open,
+ * or this feature produces the one outcome it may never produce.
  */
 export function validateBackupPassword(password: string): string | null {
   const pw = password || '';
-  if (!pw.trim()) return 'Enter a password for this backup.';
+  if (!pw.trim()) return 'Enter your wallet passphrase.';
   if (pw.length < MIN_PASSWORD_LENGTH) {
     return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
   }
   return null;
 }
 
-// scrypt, N=2^14 r=8 p=1 — the scrypt paper's own "interactive" parameters,
-// 16 MiB of memory.
+// scrypt, N=2^15 r=8 p=1 — 32 MiB, twice the scrypt paper's own "interactive"
+// parameters.
+//
+// IT WAS 2^14, AND WHAT CHANGED IS WHAT THE FILE HOLDS (2026-11-08). 16 MiB
+// was chosen against a file of labels, where the honest statement of the risk
+// was that cracking it "yields somebody's notes about their own payments".
+// This file can carry a recovery phrase, so an offline attacker holding one is
+// guessing at coins, and the work per guess should cost more than it did.
+//
+// DOUBLED, not raised as far as it could go, and the reason is recorded in the
+// paragraph below: the number that decides a KDF cost has to come off a phone,
+// and nothing here can measure Hermes. A factor of two is defensible from the
+// ratio alone — the work and the memory both double — where a factor of eight
+// is a number somebody would have to live with on a mid-range Android. If this
+// is measured on a device and there is room, raise it again; every file names
+// its own parameters, so nothing already written is stranded either way.
 //
 // THIS REPLACED ARGON2ID ON 2026-11-03, AFTER IT SHIPPED, because on a real
 // phone it was unusable: the user reported an export that "never finishes, keeps
@@ -144,7 +199,7 @@ export function validateBackupPassword(password: string): string | null {
 // cost is the entire point, so measuring it on the wrong engine measured
 // nothing. If these are ever changed again, the number that matters comes off a
 // phone.
-export const KDF = { name: 'scrypt' as const, N: 1 << 14, r: 8, p: 1, dkLen: 32 };
+export const KDF = { name: 'scrypt' as const, N: 1 << 15, r: 8, p: 1, dkLen: 32 };
 
 // What this build can still READ. A file names its own KDF in its header, so
 // every backup written before this change keeps opening — including the one
@@ -202,6 +257,23 @@ export class BackupError extends Error {
 const FORBIDDEN_KEY =
   /mnemonic|seed[_ -]?phrase|recovery[_ -]?phrase|passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
 
+/**
+ * THE ONE PLACE A PHRASE MAY SIT: `payload.wallets[n].mnemonic`.
+ *
+ * Exactly that path, matched on the path rather than on the key name, so a
+ * `mnemonic` anywhere else in the payload is still refused — including one at
+ * `sections.txLabels.mnemonic`, which the name test alone would have let
+ * through on the way back IN if the test were relaxed instead.
+ *
+ * This is how the file brings a wallet back on a new phone (2026-11-08, on the
+ * user's instruction), and it is the whole of what makes the file a bearer
+ * instrument: file plus passphrase is the wallet. The phrase only reaches this
+ * path after the typed passphrase has been VERIFIED to derive that wallet's
+ * own SP address, so a file sealed under a secret that cannot open it is not a
+ * state this can get into.
+ */
+const PHRASE_IS_ALLOWED_AT = /^payload\.wallets\[\d+\]\.mnemonic$/;
+
 export function assertNoSecrets(value: unknown, path = 'payload'): void {
   if (value === null || typeof value !== 'object') return;
   if (Array.isArray(value)) {
@@ -209,14 +281,16 @@ export function assertNoSecrets(value: unknown, path = 'payload'): void {
     return;
   }
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (FORBIDDEN_KEY.test(k)) {
+    const here = `${path}.${k}`;
+    if (FORBIDDEN_KEY.test(k) && !PHRASE_IS_ALLOWED_AT.test(here)) {
       throw new BackupError(
         'backup_would_carry_a_secret',
-        `Refusing a backup containing "${path}.${k}". A backup carries labels ` +
-          `and the wallets they belong to — no phrase, no passphrase, no key.`,
+        `Refusing a backup containing "${here}". A wallet's recovery phrase ` +
+          `belongs at wallets[n].mnemonic and nowhere else — no passphrase, ` +
+          `no xprv, no scan or spend key, anywhere.`,
       );
     }
-    assertNoSecrets(v, `${path}.${k}`);
+    assertNoSecrets(v, here);
   }
 }
 
@@ -350,7 +424,7 @@ export type BackupFileInfo = {
   /** What the header says sealed it, verbatim. */
   keySource: string;
   /** What to ask the user for, in the words the screen should use. */
-  asksFor: 'password' | 'recovery phrase' | 'wallet passphrase';
+  asksFor: 'wallet passphrase' | 'recovery phrase' | 'password';
   /** Why it cannot be read, when it cannot. */
   problem: string | null;
 };
@@ -360,7 +434,7 @@ export function inspectBackupFile(text: string): BackupFileInfo {
     readable: false,
     encrypted: false,
     keySource: '',
-    asksFor: 'password',
+    asksFor: 'wallet passphrase',
     problem: null,
   };
   try {
@@ -368,15 +442,15 @@ export function inspectBackupFile(text: string): BackupFileInfo {
     info.readable = true;
     info.encrypted = typeof env.ct === 'string' && env.ct.length > 0;
     info.keySource = typeof env.keySource === 'string' ? env.keySource : '';
-    // The two legacy schemes are named so the screen can ask for the right
-    // thing up front, instead of the user discovering it from a failed
-    // decrypt. See the comment on PHRASE_KEY_SOURCE for the dates.
+    // Each scheme is named so the screen can ask for the right thing up
+    // front, instead of the user discovering it from a failed decrypt. See
+    // the comment on PHRASE_KEY_SOURCE for the dates.
     info.asksFor =
       info.keySource === PHRASE_KEY_SOURCE
         ? 'recovery phrase'
-        : info.keySource === PASSPHRASE_KEY_SOURCE
-          ? 'wallet passphrase'
-          : 'password';
+        : info.keySource === PASSWORD_KEY_SOURCE
+          ? 'password'
+          : 'wallet passphrase';
   } catch (e: any) {
     info.problem = e?.message || 'That file is not a WhiSPa backup.';
   }
@@ -442,7 +516,7 @@ export async function decryptBackup(
   // are both used verbatim, because every character of either is significant
   // and folding one would make an existing backup unopenable.
   const fromPhrase = env.keySource === PHRASE_KEY_SOURCE;
-  const legacy = fromPhrase || env.keySource === PASSPHRASE_KEY_SOURCE;
+  const legacy = fromPhrase || env.keySource === PASSWORD_KEY_SOURCE;
   const secret = fromPhrase ? normalizeBackupKey(password) : password;
 
   // KDF parameters taken from the FILE, not from this build's constants: a
@@ -505,6 +579,18 @@ export type BackupWalletRef = {
   network: string;
   /** The sp1…/tsp1… this wallet is known by, from the server record. */
   spAddress: string;
+  /**
+   * The wallet's BIRTH height, not its resume point — see
+   * `services/walletBackup.ts`, which is where a restore uses it.
+   */
+  lastHeight?: number;
+  /**
+   * The recovery phrase, on a backup written by the PHONE. This is the one
+   * place in a payload where key material is allowed, and `assertNoSecrets`
+   * permits exactly this path and no other. The browser never writes it: its
+   * vault holds derived keys and has never held the words.
+   */
+  mnemonic?: string;
 };
 
 /**

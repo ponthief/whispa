@@ -16,7 +16,7 @@ const mod = await import(
 );
 const { encryptBackup, decryptBackup, assertNoSecrets, backupFilename, KDF,
         BACKUP_VERSION, KEY_SOURCE, normalizeBackupKey, remapWalletIds,
-        inspectBackupFile } = mod;
+        inspectBackupFile, MIN_PASSWORD_LENGTH } = mod;
 const RAW = readFileSync(new URL('../src/services/backup.ts', import.meta.url), 'utf8');
 // Comments stripped before any source assertion. check-stealth.cjs learned this
 // the hard way — it counted a comment saying "DONT_KILL_APP is passed on every
@@ -136,13 +136,20 @@ console.log('it refuses what it cannot honestly open');
 
   await refuses('a file that is not JSON', () => decryptBackup('not json', PW), 'backup_not_json');
 
-  // THE PASSWORD FLOOR, applied before anything is encrypted. Length only —
-  // mixed-case-and-a-digit rules are how people end up with one weak password
-  // they reuse, and this file seals labels rather than coins.
+  // THE FLOOR, applied before anything is encrypted. Length only — composition
+  // rules are how people end up with one weak secret they reuse.
+  //
+  // IT IS 12 SINCE 2026-11-08, matching spKeys.PASSPHRASE_MIN_LENGTH, and it
+  // rose by changing what the key IS rather than by tightening a number: the
+  // key is the wallet's own passphrase, which already has that floor enforced
+  // at creation. The two must not drift — a passphrase that can create a
+  // wallet and then cannot seal its backup is a wallet with no way out — so
+  // the check reads the constant from spKeys rather than repeating 12 here.
   for (const [what, key] of [
     ['an empty key', ''],
     ['whitespace only', '    '],
-    ['a short password', 'otter'],
+    ['a short passphrase', 'otter'],
+    ['one character under the floor', 'a'.repeat(MIN_PASSWORD_LENGTH - 1)],
   ]) {
     await refuses(what, () => encryptBackup(payload, key), 'backup_password_too_weak');
   }
@@ -171,7 +178,8 @@ console.log('a password is used verbatim, so the two clients agree without rules
   }
 
   ok('and the file records what opens it',
-    JSON.parse(file).keySource === KEY_SOURCE && KEY_SOURCE === 'password');
+    JSON.parse(file).keySource === KEY_SOURCE && KEY_SOURCE === 'wallet-passphrase',
+    `keySource is ${KEY_SOURCE}`);
 
   // normalizeBackupKey still exists, for reading a recovery-phrase file. It
   // must keep working — the section below opens one with it.
@@ -191,7 +199,7 @@ console.log('a chosen file can be read for what it wants, before any secret');
   const mine = inspectBackupFile(file);
   ok('a file this build wrote is readable', mine.readable && !mine.problem);
   ok('and is reported as encrypted', mine.encrypted === true);
-  ok('and asks for a password', mine.asksFor === 'password');
+  ok('and asks for the wallet passphrase', mine.asksFor === 'wallet passphrase');
 
   // A HEADER READ, NOT A VERIFICATION — which is exactly why the keySource can
   // be edited here and still be reported. Nothing is trusted until the AEAD
@@ -199,7 +207,7 @@ console.log('a chosen file can be read for what it wants, before any secret');
   // a failed decrypt and nothing else.
   for (const [source, asks] of [
     ['recovery-phrase', 'recovery phrase'],
-    ['wallet-passphrase', 'wallet passphrase'],
+    ['password', 'password'],
   ]) {
     const relabelled = JSON.stringify({ ...JSON.parse(file), keySource: source });
     ok(`a ${source} file asks for the ${asks}`,
@@ -269,13 +277,18 @@ console.log('a backup sealed with the recovery phrase still opens');
   }
 }
 
-console.log('a backup from the one-day passphrase scheme still opens');
+console.log('a backup from the one-day password scheme still opens');
 {
-  // A file sealed with the wallet's BIP-39 passphrase, written between
-  // 2026-11-03 and 2026-11-04. Those still open, with the secret typed into
-  // the same field and NOT normalised — every character of a passphrase is
-  // significant. Turning an existing backup into a file nothing can read is
-  // the one outcome this feature may never produce.
+  // A file sealed with a password the user chose for the file alone, written
+  // on 2026-11-08 and superseded the same day when the key became the wallet's
+  // passphrase. Those still open, with the secret typed into the same field
+  // and NOT normalised. Turning an existing backup into a file nothing can
+  // read is the one outcome this feature may never produce.
+  //
+  // The 2026-11-03 `wallet-passphrase` scheme is NOT tested here any more,
+  // because it is not legacy: it is what this build writes, and the section
+  // above covers it. The two are the same key used the same way; only the
+  // payload differs.
   const PASS = 'MixedCase Passphrase 42';
   const { xchacha20poly1305 } = await import('@noble/ciphers/chacha');
   const { scryptAsync } = await import('@noble/hashes/scrypt');
@@ -289,7 +302,7 @@ console.log('a backup from the one-day passphrase scheme still opens');
     kdf: { ...KDF, salt: base64.encode(salt) },
     cipher: 'xchacha20poly1305',
     nonce: base64.encode(nonce),
-    keySource: 'wallet-passphrase',
+    keySource: 'password',
   };
   const key = await scryptAsync(utf8ToBytes(PASS), salt,
     { N: KDF.N, r: KDF.r, p: KDF.p, dkLen: KDF.dkLen });
@@ -303,7 +316,7 @@ console.log('a backup from the one-day passphrase scheme still opens');
   } catch (e) {
     ok('a wallet-passphrase backup still opens', false, `${e.code}: ${e.message}`);
   }
-  ok('a wallet-passphrase backup still opens, with its secret used verbatim',
+  ok('a password-sealed backup still opens, with its secret used verbatim',
     JSON.stringify(back) === JSON.stringify(payload),
     'lower-casing it would make an existing backup unopenable');
 
@@ -324,18 +337,22 @@ console.log('it never carries key material, in either direction');
   // A payload carrying a mnemonic encrypts, writes and restores perfectly, and
   // turns the file into a bearer instrument with nothing saying so.
   //
-  // THE RULE IS BLANKET AGAIN since 2026-11-04: no key material at any depth
-  // under any recognisable name. For one day a phrase was permitted at
-  // wallets[n].mnemonic so the file could bring a wallet back; sealing the
-  // file WITH the phrase removed the reason for it, since anyone who can open
-  // the file already typed the phrase to do so.
+  // ONE PATH IS ALLOWED, AND IT IS THE ONLY ONE: wallets[n].mnemonic, since
+  // 2026-11-08, so the file can bring a wallet back on a new phone. Everything
+  // below is still refused, and the two that matter most are the near misses —
+  // a phrase one level deeper inside a wallet, and one under a key the name
+  // test alone would catch but which has no business holding a phrase.
+  //
+  // THE MATCH IS ON THE PATH, not on the key name, which is what keeps this
+  // narrow: relaxing the NAME test instead would have let a mnemonic through
+  // at sections.txLabels.mnemonic on the way back IN, where the payload is
+  // whatever a file says it is.
   const shapes = [
     { mnemonic: 'abandon abandon' },
     { nested: { mnemonic: 'abandon abandon' } },
     { sections: { txLabels: { mnemonic: 'abandon abandon' } } },
-    // The sanctioned path of the one-day design. It is a refusal now, and this
-    // is the case that would silently come back if the old shape were restored.
-    { wallets: [{ id: 'w', mnemonic: 'abandon abandon' }] },
+    { wallets: [{ id: 'w', deeper: { mnemonic: 'abandon abandon' } }] },
+    { wallets: { notAnArray: { mnemonic: 'abandon abandon' } } },
     { wallets: [{ id: 'w', seedPhrase: 'abandon abandon' }] },
     { recovery_phrase: 'abandon abandon' },
     { wallets: [{ id: 'w', xprv: 'xprv9s...' }] },
@@ -349,6 +366,29 @@ console.log('it never carries key material, in either direction');
     await refuses(`export refuses ${JSON.stringify(bad).slice(0, 42)}`,
       () => encryptBackup({ app: 'whispa', payloadVersion: 1, exportedAt: 0, ...bad }, PW),
       'backup_would_carry_a_secret');
+  }
+
+  // AND THE ONE PATH THAT IS ALLOWED, both ways — an export that refused it
+  // would make the whole wallet-restore feature impossible, and an import that
+  // refused it would make every phone backup unopenable.
+  {
+    const withPhrase = {
+      app: 'whispa', payloadVersion: 1, exportedAt: 0,
+      sections: { txLabels: { a: 'b' } },
+      wallets: [{ id: 'w', title: 'Main', network: 'signet',
+                  spAddress: 'sp1qmine', mnemonic: PHRASE }],
+    };
+    let sealed = null;
+    try {
+      sealed = await encryptBackup(withPhrase, PW);
+    } catch (e) {
+      ok('a phrase at wallets[n].mnemonic is allowed out', false, `${e.code}: ${e.message}`);
+    }
+    ok('a phrase at wallets[n].mnemonic is allowed out', !!sealed);
+    if (sealed) {
+      const back = await decryptBackup(sealed, PW);
+      ok('and back in', back.wallets[0].mnemonic === PHRASE);
+    }
   }
   // And on the way IN: a file written by hand, or by a tampered build, must not
   // be able to push key material into this app's storage.
@@ -426,7 +466,11 @@ console.log('the parameters are not quietly weakened');
   // silently makes every new backup easier to crack, and every test still
   // passes.
   ok('a memory-hard KDF, not a plain hash', KDF.name === 'scrypt');
-  ok(`N is at least 2^14 (is 2^${Math.log2(KDF.N)})`, KDF.N >= 1 << 14);
+  // 2^15 since 2026-11-08, raised with the stakes: the file can carry a
+  // recovery phrase now, so an offline attacker holding one is guessing at
+  // coins rather than at somebody's notes. Lowering it is invisible — the file
+  // still round-trips — which is why the floor is asserted rather than trusted.
+  ok(`N is at least 2^15 (is 2^${Math.log2(KDF.N)})`, KDF.N >= 1 << 15);
   ok(`r is at least 8 (is ${KDF.r})`, KDF.r >= 8);
   ok(`the derived key is 32 bytes (is ${KDF.dkLen})`, KDF.dkLen === 32);
   ok('the cipher is an AEAD',
@@ -560,9 +604,17 @@ console.log('the two backup screens say the same simple thing');
   // "what only this phone knows", "what only this browser knows" — which is a
   // distinction the reader does not need and which the web could not state
   // without saying "browser" on a product that is also a phone app.
+  // THE TWO SCREENS NO LONGER SAY THE SAME THING, and that is forced rather
+  // than chosen: the phone's file can carry a wallet and the web's cannot,
+  // because keyvault.js holds derived keys and has never held the words. A
+  // single line claiming the same scope on both would be false on one of them.
+  ok('the phone says it saves wallets as well as labels',
+    /Backs up your wallets and labels\./.test(copy(P)));
+  ok('and the web says where to get the wallets',
+    /Backs up your labels\./.test(copy(V)) && /from the app/.test(copy(V)),
+    'a web backup has no phrase in it, and must not imply otherwise');
+
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
-    ok(`${who} says what it saves, in one line`,
-      /Backs up your labels\./.test(src));
     // AND DOES NOT PROMISE CONTACTS. The file has never held one: a Tango
     // connection is a row in silnt.payjoin_contacts naming BOTH user ids, it
     // lives on the server, and it cannot be re-created from one side — the
@@ -576,17 +628,15 @@ console.log('the two backup screens say the same simple thing');
     ok(`${who} does not name a device`,
       !/\bphone\b/i.test(src) && !/\bbrowser\b/i.test(src),
       'there is no browser on the phone, and no phone in the browser');
-    // THE RED ONE, about the password: it opens the file, exists nowhere
-    // else, and nobody can recover it.
-    ok(`${who} warns in red about losing the password`,
-      /Remember this password/.test(src) &&
-      /only thing that opens the file/.test(src));
-    ok(`${who} never says "passphrase" on screen`,
-      !/passphrase/i.test(src),
-      'the screen asks for one secret: a password for this file');
-    ok(`${who} never asks for the recovery phrase`,
-      !/recovery phrase/i.test(src),
-      src.match(/.{0,60}recovery phrase.{0,60}/i)?.[0]);
+    // THE RED ONE. It used to be about losing the password; since the file
+    // can carry a wallet it is about what the file IS, which is the thing
+    // nobody should have to work out for themselves.
+    ok(`${who} says the secret is not stored and cannot be recovered`,
+      /not stored anywhere/.test(src) &&
+      /(no one|nobody)[^.]*including us/.test(src));
+    ok(`${who} asks for the WALLET passphrase, by name`,
+      /wallet passphrase/i.test(src),
+      'the file key is the passphrase the wallet was created with');
     ok(`${who} does not discuss where the coins live`,
       !/coins are not in this file/.test(src) && !/Bitcoin network/.test(src));
   }
@@ -595,7 +645,18 @@ console.log('the two backup screens say the same simple thing');
     /class="alert alert-error"/.test(V),
     'alert alone is the neutral box; this one has to read as a warning');
   ok('the phone warning uses the error note',
-    /<Note kind="error">\s*\n?\s*Remember this password/.test(P));
+    /<Note kind="error">\s*\n?\s*Keep this file private/.test(P));
+
+  // THE PHONE SAYS WHAT THE FILE IS. It carries recovery phrases, so the file
+  // plus the passphrase is the wallet — stated, not left to be worked out by
+  // somebody deciding where to put it.
+  ok('the phone says the file holds the wallets and can spend',
+    /holds your wallets/.test(copy(P)) && /spend your coins/.test(copy(P)),
+    'a file that can spend must say so where it is made');
+  // And the web says it CANNOT check the passphrase, because it cannot:
+  // verifying means deriving an address from the seed, which is on the phone.
+  ok('the web says it cannot check the passphrase before saving',
+    /cannot check it before saving/.test(copy(V)));
 
   // WHERE IT LIVES ON THE WEB. Moved out of Settings into the wallet card's
   // gear menu; two screens offering one thing, with nothing to say which you
@@ -663,7 +724,7 @@ console.log('the two backup screens say the same simple thing');
     // sealed a new backup with it and closed, having asked nothing. One field
     // serving two operations has to be emptied between them, at BOTH ends.
     ok(`${who} clears the field once a restore finishes`,
-      /'Restored\.'[\s\S]{0,400}(setPassword\(''\)|password\.value = '')/.test(src),
+      /'Restored\.'[\s\S]{0,1400}(setPassword\(''\)|password\.value = '')/.test(src),
       'otherwise Save seals a backup with the password typed to open one');
   }
 
@@ -785,6 +846,125 @@ console.log('the two backup screens say the same simple thing');
     'a typed password that gets persisted is a new secret in the browser');
 }
 
+
+console.log('a wallet travels in the file, and a wrong passphrase leaves it out');
+{
+  // THE USE CASE THE FEATURE EXISTS FOR (2026-11-08): "user loses, replaces
+  // the phone, reinstalls the app. When he logs in to new phone, reinstalled
+  // app he can just restore from the backup instead of importing wallet or
+  // entering wallet recovery keys."
+  //
+  // EXERCISED with fakes for the keystore, the derivation and the api, because
+  // every failure in here produces a file that looks perfectly fine: a wallet
+  // sealed under a passphrase that cannot open it, a wallet recreated at an
+  // address nobody can reach, or a second copy of a wallet that was already
+  // there.
+  const { collectWalletSeeds, restoreWallets } = await import(
+    pathToFileURL(new URL('../src/services/walletBackup.ts', import.meta.url).pathname).href);
+
+  const PASS = 'correct horse battery';
+  const SEED_A = 'abandon abandon abandon';
+  const SEED_B = 'legal winner thank';
+  // A stand-in for deriveSilentPayment: the address is a pure function of the
+  // seed AND the passphrase, which is the only property the real one needs to
+  // have for any of this to work.
+  const derive = (mnemonic, passphrase) => ({
+    spAddress: `sp1q${mnemonic.split(' ')[0]}-${passphrase}`,
+    scanSecret: 'scan', spendKey: 'spend',
+    refundAddress: 'refund', sweepAccount: 'sweep',
+  });
+  const vault = { 'w-a': SEED_A, 'w-b': SEED_B };
+  const deps = { readSeed: async (id) => vault[id] || null, deriveSilentPayment: derive };
+
+  const wallets = [
+    { id: 'w-a', title: 'Main', network: 'signet', spAddress: derive(SEED_A, PASS).spAddress, lastHeight: 101 },
+    { id: 'w-b', title: 'Other', network: 'signet', spAddress: derive(SEED_B, 'a different one').spAddress },
+    { id: 'w-c', title: 'Elsewhere', network: 'signet', spAddress: 'sp1qsomewhere' },
+  ];
+
+  const got = await collectWalletSeeds(deps, PASS, wallets);
+  ok('a wallet this passphrase opens is backed up', got.seeds['w-a'] === SEED_A);
+  // "If wrong passphrase entered the wallet doesn't get backed up."
+  ok('a wallet it does NOT open is left out', !('w-b' in got.seeds));
+  ok('and the reason is the passphrase, by name',
+    got.leftOut.some((w) => w.id === 'w-b' && w.reason === 'passphrase'));
+  ok('a wallet with no phrase on this device is left out too',
+    !('w-c' in got.seeds) &&
+    got.leftOut.some((w) => w.id === 'w-c' && w.reason === 'no-seed'));
+  ok('and it is named, not silently absent',
+    got.leftOut.every((w) => !!w.title));
+
+  // ONE BAD WALLET MUST NOT COST THE OTHERS.
+  const throwy = {
+    readSeed: async (id) => (id === 'w-a' ? SEED_A : (() => { throw new Error('keystore'); })()),
+    deriveSilentPayment: derive,
+  };
+  const partial = await collectWalletSeeds(throwy, PASS, wallets);
+  ok('a keystore failure on one wallet keeps the rest', partial.seeds['w-a'] === SEED_A);
+
+  // ── THE RESTORE ──────────────────────────────────────────────────────────
+  const made = [];
+  const stored = [];
+  const seeded = [];
+  const api = {
+    deriveSilentPayment: derive,
+    createWallet: async (data) => { made.push(data); return { wallet_id: `new-${made.length}` }; },
+    storeWalletKeys: async (id, keys) => { stored.push([id, keys]); return true; },
+    saveSeed: async (id, m) => { seeded.push([id, m]); return true; },
+  };
+  const fileWallets = [
+    { ...wallets[0], mnemonic: SEED_A },
+    { id: 'w-x', title: 'Already here', network: 'signet', spAddress: 'sp1qhere', mnemonic: SEED_A },
+    { id: 'w-y', title: 'From the web', network: 'signet', spAddress: 'sp1qweb' },
+  ];
+  const r = await restoreWallets(api, PASS, fileWallets, [{ id: 'live', spAddress: 'SP1QHERE' }]);
+
+  ok('a wallet in the file is recreated', r.created.length === 1 && made.length === 1);
+  ok('and its keys and phrase are stored on the device',
+    stored.length === 1 && stored[0][0] === 'new-1' && seeded[0][1] === SEED_A);
+  ok('the BIRTH height goes with it, not the resume point',
+    made[0].last_height === 101,
+    'a restored wallet must rescan from where it began, or its history is lost');
+  // Matched by ADDRESS, case-insensitively — never by the id in the file,
+  // which does not survive a wallet being deleted and added back. Without
+  // this, restoring twice makes a second copy of every wallet.
+  ok('a wallet already on the account is skipped, matched by address', r.skipped === 1);
+  ok('a wallet with no phrase is counted, not failed', r.noPhrase === 1);
+
+  // RESTORING THE SAME FILE TWICE MUST NOT DOUBLE ANYTHING.
+  const live2 = [{ id: 'live', spAddress: 'sp1qhere' }, { id: 'new-1', spAddress: fileWallets[0].spAddress }];
+  const again = await restoreWallets(api, PASS, fileWallets, live2);
+  ok('restoring the same file again creates nothing',
+    again.created.length === 0 && made.length === 1);
+
+  // A FILE WHOSE PHRASE DOES NOT DERIVE THE ADDRESS IT CLAIMS. Normally
+  // impossible — the save side checked — but a hand-edited file would
+  // otherwise create a wallet at an address nobody can reach, which looks
+  // exactly like a successful restore until a payment never arrives.
+  const crossed = [{ id: 'w', title: 'Tampered', network: 'signet',
+                     spAddress: 'sp1qnot-the-one', mnemonic: SEED_A }];
+  const bad = await restoreWallets(api, PASS, crossed, []);
+  ok('a wallet whose phrase does not derive its address is NOT created',
+    bad.mismatched.length === 1 && bad.created.length === 0 && made.length === 1);
+
+  // A WRONG PASSPHRASE AT RESTORE TIME hits the same wall, for the same
+  // reason: the address is derived from both.
+  const wrongPass = await restoreWallets(api, 'not the passphrase', [fileWallets[0]], []);
+  ok('and so does the right phrase under the wrong passphrase',
+    wrongPass.mismatched.length === 1 && wrongPass.created.length === 0);
+
+  // `false` FROM THE KEYSTORE IS A FAILURE, not a success. Ignoring it leaves
+  // a wallet on the server with no keys on the device: it shows up in the
+  // list, cannot scan, and reads as a restore that worked.
+  for (const [what, dep] of [
+    ['keys', { ...api, storeWalletKeys: async () => false }],
+    ['the phrase', { ...api, saveSeed: async () => false }],
+  ]) {
+    const f = await restoreWallets(dep, PASS, [{ ...wallets[0], mnemonic: SEED_A }], []);
+    ok(`a keystore that refuses to store ${what} is reported as failed`,
+      f.failed.length === 1 && f.created.length === 0, JSON.stringify(f));
+  }
+}
 
 console.log('the SP labels on the server travel in the file too');
 {
@@ -1140,9 +1320,22 @@ console.log('the phone collector reads labels and nothing else');
   for (const forbidden of ['seedVault', 'secureKeys', 'appPin', 'appLock']) {
     ok(`it never imports ${forbidden}`, !imports.includes(forbidden));
   }
-  ok('and nothing in it writes a phrase anywhere',
-    !/saveSeed|readSeed|mnemonic/.test(RN),
-    'the file holds no phrase, so a restore has none to write');
+  // THE COLLECTOR STILL NEVER TOUCHES THE KEYSTORE, and that separation is
+  // what survives the file starting to carry phrases (2026-11-08). The phrase
+  // reaches the payload from the SCREEN, which read it, verified it against
+  // its wallet and passed it in — this module copies a field it was handed and
+  // has no way to go and get one. So the four imports above still bound what
+  // it can reach, and that is the control, not the absence of the word.
+  ok('it still cannot reach a phrase itself',
+    !/saveSeed\(|readSeed\(|seedVault/.test(RN),
+    'the collector is handed a phrase; it must not be able to fetch one');
+  // And it must CARRY the one it is handed. This dropped every phrase on the
+  // floor for one build: collected, verified, then discarded by a map that
+  // rebuilt each wallet from four named fields — a file that looked perfectly
+  // normal and restored no wallets at all.
+  ok('and it carries the phrase and birth height it IS handed',
+    /mnemonic: w\.mnemonic/.test(RN) && /lastHeight: w\.lastHeight/.test(RN),
+    'rebuilding the wallet objects silently drops anything not named');
   // THE FILE WINS, AND NOTHING IS DELETED — the same pair the web's half is
   // exercised on above, pinned source-side here because this module reaches
   // for the platform keychain and cannot be imported by a check.

@@ -88,7 +88,7 @@ async function doSave() {
   // stated HERE rather than by greying something out. A dead control explains
   // nothing; this says what is missing.
   if (!password.value) {
-    say('A password is required to encrypt the backup file.', 'error')
+    say('Your wallet passphrase is required to encrypt the backup file.', 'error')
     return
   }
   // ONE FIELD, NO CONFIRMATION (2026-11-08, on the user's instruction: "drop
@@ -303,8 +303,15 @@ async function openPending() {
              removed even if it tried, and saying "contacts" promised exactly
              that. What the word was reaching for was the BitMail pins, which
              are tamper evidence rather than an address book. -->
+        <!-- LABELS ONLY HERE, and the phone's file says wallets, because the
+             browser cannot carry a phrase: keyvault.js holds { scanSecret,
+             spendKey, refundAddress, sweepAccount } and has never held the
+             words. It seals with the same passphrase, so one file opens on
+             either client — a phone's backup restores its wallets here only
+             as far as this client can, which is their labels. -->
         <p class="text-dim text-sm" style="margin:0">
-          Backs up your labels.
+          Backs up your labels. Save a backup from the app to include your
+          wallets.
         </p>
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm
@@ -318,9 +325,9 @@ async function openPending() {
           <!-- The label follows the FILE once one is chosen, so a backup from
                the older scheme does not say "Password" over a box that wants
                twelve words. -->
-          <label>{{ pending ? `${pending.info.asksFor} for this file` : 'Password' }}</label>
+          <label>{{ pending ? `${pending.info.asksFor} for this file` : 'Wallet passphrase' }}</label>
           <input class="input" type="text" v-model="password"
-                 :placeholder="pending ? pending.info.asksFor : 'Password'"
+                 :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
                  autocomplete="off" autocapitalize="off" spellcheck="false"
                  @keyup.enter="pending ? openPending() : doSave()" />
         </div>
@@ -328,10 +335,17 @@ async function openPending() {
         <!-- Only while saving is the password the thing that can be lost. Once
              a file is in hand the question is what opens THAT file, and this
              warning would be answering the wrong one. -->
+        <!-- THE WEB CANNOT VERIFY THE PASSPHRASE, and says so rather than
+             implying a check it cannot do: verifying means deriving an SP
+             address from (seed, passphrase), and the seed is on the phone.
+             The phone leaves a wallet out when its passphrase does not match;
+             here a mistyped one seals a file that nothing will open. -->
         <div v-if="!pending" class="alert alert-error" style="padding:10px;border-radius:6px">
           <p class="text-sm" style="margin:0">
-            <strong>Remember this password.</strong> It is the only thing that
-            opens the file, and no one — including us — can recover it.
+            <strong>Use your wallet passphrase.</strong> It is the only thing
+            that opens the file, it is not stored anywhere, and no one —
+            including us — can recover it. This page cannot check it before
+            saving.
           </p>
         </div>
 

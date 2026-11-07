@@ -51,7 +51,10 @@ branch.
   work to iOS"). If iOS CI is ever genuinely unwanted, disable the triggers and
   say so in the file.
 - **Never skip, disable or quarantine a test** to get CI green.
-- Private keys are never stored: not the BIP-84 key, not the passphrase.
+- Private keys are never stored SERVER-SIDE: not the BIP-84 key, not the
+  passphrase. The device keystore holds the phrase, and since 2026-11-08 so
+  does the backup file — see "The backup IS a wallet backup", which is the
+  user's own decision and the reason that qualifier is now written out.
 - Push notifications must not mention amounts — they pass through Google.
 - Web mainnet stays closed to the outside; onboarding is mobile-app only.
 
@@ -409,15 +412,89 @@ than a build flag, for the reason `push.ts` gives about its own module, and the
 section does not render without it — a switch storing a preference nothing can
 honour is the worse failure.
 
-## The backup is not a wallet backup
+## The backup IS a wallet backup
 
-Added 2026-11-03, and its scope was cut back on 2026-11-04 after the user put
-the objection that made it necessary: *"if user deletes app or wallet, the
+**What it is for** (2026-11-08, the user stating the use case): *"the whole
+use case for backup/restore is: user loses, replaces the phone, reinstalls the
+app. When he logs in to new phone, reinstalled app he can just restore from the
+backup instead of importing wallet or entering wallet recovery keys."*
+
+So a **phone** backup carries each wallet's recovery phrase, and a restore
+recreates the wallets from it. Everything below about labels still holds; this
+is the thing on top of it.
+
+**KNOW WHAT THAT MAKES THE FILE.** Anyone holding it and the passphrase can
+spend the coins. It is not a file of notes any more. That was put to the user
+with the trade spelled out and chosen deliberately, and three things changed
+with it: the key is the wallet's own passphrase rather than a password this
+file invented, the floor rose from 8 to 12 by that change alone
+(`PASSPHRASE_MIN_LENGTH`), and the KDF cost doubled.
+
+**The passphrase is CHECKED, not taken on trust** — *"if wrong passphrase
+entered the wallet doesn't get backed up"*. Deriving an SP address from (seed,
+typed passphrase) and comparing it to the one the account holds is a complete
+test, since BIP-39 feeds the passphrase into the seed: one wrong character
+gives a different wallet. A wallet that fails is **left out and named on
+screen**, because sealing a phrase under a secret that cannot open it produces
+a file that looks perfectly fine and restores nothing.
+
+**The phone only, and not by choice.** `seedVault` holds the phrase there; the
+browser's `keyvault.js` holds `{ scanSecret, spendKey, refundAddress,
+sweepAccount }` and has never held the words, so the web can neither carry a
+phrase nor verify a passphrase. It seals with the same passphrase so one file
+opens on either client, says *"Save a backup from the app to include your
+wallets"*, and says in as many words that it **cannot check the passphrase**
+before saving.
+
+`services/walletBackup.ts` is both halves, with every dependency injected —
+keystore, derivation and api — so it typechecks under both tsconfigs and a
+check can drive it with no device. Four things in it are each a restore that
+would look like it worked:
+
+- **A wallet already on the account is matched by SP ADDRESS and skipped**,
+  never by the id in the file. Without that, restoring twice makes a second
+  copy of every wallet, each with its own id and history.
+- **The derivation is verified again before anything is created.** A
+  hand-edited file would otherwise create a wallet at an address nobody can
+  reach, which is indistinguishable from success until a payment never
+  arrives.
+- **The BIRTH height travels, not the resume point.** A restored wallet is a
+  new row with no coins; setting `last_height` from the old `last_scan_height`
+  would declare every block below it already read, and the resume point only
+  moves forward, so the history would be gone for good.
+- **`false` from the keystore is a failure.** `storeWalletKeys` and `saveSeed`
+  return booleans, and ignoring them leaves a wallet on the server with no keys
+  on the device: it appears in the list, shows "Recover Keys", cannot scan, and
+  reads as a restore that worked.
+
+**Wallets are restored BEFORE labels**, and `live` is re-read in between, so
+the labels land on the wallets this restore just made instead of being remapped
+to nothing.
+
+**And `assertNoSecrets` now permits exactly one path**: `wallets[n].mnemonic`,
+matched on the PATH rather than the key name. Relaxing the name test instead
+would have let a phrase through at `sections.txLabels.mnemonic` on the way back
+in, where the payload is whatever a file says it is. Everything else — a
+phrase one level deeper inside a wallet, a passphrase, an xprv, a scan or
+spend key, anywhere — is still refused in both directions.
+
+**The one that nearly shipped silently**: `backupData.ts`'s collector rebuilds
+each wallet from named fields, so for one build it collected every phrase,
+verified it, and then **dropped it one line later**. The file looked perfectly
+normal and restored no wallets at all. `check:backup` asserts the map carries
+`mnemonic` and `lastHeight` now, and that the collector still cannot go and
+FETCH a phrase — the separation that survives the change is that the screen
+reads and verifies it and hands it in.
+
+**What it was before**: added 2026-11-03, cut back on 2026-11-04 after the user
+put the objection that made it necessary — *"if user deletes app or wallet, the
 utxos and tnxs are removed from the backend. restoring them in the app won't
-restore them on the server."*
+restore them on the server."* That objection is still correct about the server
+and is answered below; what changed is that the file now also carries the one
+thing the server never had.
 
-**What it is for**: the device-only data goes and nothing can rebuild it —
-transaction labels, SegWit address labels, and (on the web) the BitMail pins.
+**The device-only data** is the rest of what it holds: transaction labels,
+SegWit address labels, and (on the web) the BitMail pins.
 
 **It holds no contacts, and both screens said it did until 2026-11-08.** Asked
 directly: *"don't we store Tango connections on the server, so user removing
@@ -507,19 +584,18 @@ catches that shape on the phone and cannot in a `.vue` file, `check:vue` does
 not look for it, and no behavioural check would have seen it. Driving the real
 modal in Chromium did.
 
-**The file carries no key material at all.** Not the recovery phrase, not the
-passphrase, not an xprv, spend key or scan key. `assertNoSecrets` walks the
-payload on the way out **and** on the way back in, refusing any key whose NAME
-looks like key material at any depth.
+**The file carries key material at exactly one path**: `wallets[n].mnemonic`,
+on a phone backup. Not the passphrase — that is the key, and a key inside the
+thing it opens is no key at all — and not an xprv, spend key or scan key
+anywhere. `assertNoSecrets` walks the payload on the way out **and** on the way
+back in, refusing any key whose NAME looks like key material at any other
+depth, and permitting that one by PATH.
 
-That is a blanket rule again. For one day (2026-11-03) a phrase was permitted
-at `wallets[n].mnemonic`, so the file could bring a wallet back as well as its
-labels; **sealing the file with the phrase removed the reason for it.** A copy
-inside is redundant — whoever opens the file typed the phrase to do so — while
-being the single thing that made the file a bearer instrument. The day's
-argument for carrying it is still correct about the device (the keystore does
-hold the phrase, and "private keys are never stored" means never stored
-SERVER-SIDE) and it simply stopped applying.
+The rule was blanket from 2026-11-04 to 2026-11-08, and the argument that
+closed it is the argument that reopened it. A phrase inside was redundant while
+the file was sealed WITH the phrase — whoever opens it typed the phrase to do
+so. It is sealed with the PASSPHRASE now, which the phrase is not, so the copy
+is the entire point.
 
 It remains a tripwire on the payload's **shape**, not a scan of its values: a
 seed under the key `notes` would pass, which is exactly why each client
@@ -553,36 +629,38 @@ restoring one elsewhere would hand a second machine the first one's trust. And
 would BENEFIT from restoring, which is exactly why they must not be: a backup
 that could clear them is an offline way around the lockout.
 
-**The file is encrypted with a password the user chooses** (2026-11-08, on the
-user's instruction: *"12 words recovery phrase is not what you should be asking
-for, it should be a single word which encrypts"*). That is the **third** key
-this file has had — a separate password, then the wallet's BIP-39 passphrase,
-then the recovery phrase, now back to a password — and the reason is
-proportion. The file holds labels. The two previous keys made somebody type
-the one secret that can never be reissued in order to save their notes about
-their own payments.
+**The file is encrypted with the wallet's BIP-39 passphrase** (2026-11-08, on
+the user's instruction: *"user must enter passphrase, which encrypts the file,
+so no separate password, just the passphrase with which wallet was created"*).
 
-**What it costs**, since the phrase was chosen over a password for reasons
-that have not stopped being true:
+That is the **fourth** key this file has had — a separate password, the
+passphrase, the recovery phrase, a password again, and now the passphrase —
+and the churn is worth reading as one argument rather than four. Each key was
+chosen for what the file held at the time, and the file changed. While it held
+labels, a password of its own was right and the phrase was out of proportion
+(*"12 words recovery phrase is not what you should be asking for, it should be
+a single word which encrypts"*). Once it could bring a wallet back, the secret
+that already guards that wallet is the right key for it: it adds no new thing
+to lose, it **can be checked** where a password could not, and it comes with a
+floor of 12 that a wallet already enforces.
 
-- **A password has no checksum.** `isValidMnemonic` refused a mistyped phrase
-  before anything was encrypted. A mistyped password seals a file nobody can
-  ever open, and nothing finds out until a restore. There was a confirm field
-  for it; **it went on 2026-11-08** (*"drop confirm password field, one field
-  is sufficient"*), so nothing checks the typing at all now. What stands in
-  its place is that the field is **not masked** — what was typed can be read
-  back before pressing Save, which is a weaker check than a second box and not
-  nothing. `validateBackupPassword` still runs in the handler ahead of
-  `encryptBackup`, and length is all it can judge.
-- **It is one more thing to lose.** The phrase was already written down
-  somewhere; this is a new secret that exists only for this file.
+The name `wallet-passphrase` is the one the 2026-11-03 scheme used, on purpose:
+both are the passphrase used verbatim, so there is one decrypt path and nothing
+to tell apart. What differs is the payload, which says what it holds.
 
-**What it buys**: neither backup screen asks for the recovery phrase any more.
-A screen that is not about the wallet should not be where those twelve words
-get typed, and every extra place they are typed is another place they can be
-seen, logged or phished. `assertNoSecrets` guarantees the file is labels, so
-the password protects something annoying to lose rather than something that
-spends.
+**What the typed-secret checks are now.** A password had none: the confirm box
+went on 2026-11-08 (*"drop confirm password field, one field is sufficient"*)
+and nothing replaced it but the field being unmasked. A passphrase has a real
+one on the phone — it is derived and compared against each wallet, and a wallet
+it does not open is left out and named. The web cannot do that and says so.
+`validateBackupPassword` still runs in the handler ahead of `encryptBackup` and
+judges length alone.
+
+**Neither screen asks for the recovery phrase**, and that still holds: the
+phrase is read from the keystore, never typed. Every extra place those twelve
+words are typed is another place they can be seen, logged or phished — which is
+an argument about the KEYBOARD, not about the file, and it survives the file
+carrying a phrase intact.
 
 **It is used VERBATIM** — no trimming, no case folding. Both clients send the
 raw string, so cross-client compatibility needs no normalisation to agree on,

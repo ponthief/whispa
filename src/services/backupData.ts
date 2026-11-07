@@ -80,11 +80,24 @@ export async function collectBackup(
   // re-added under a new id, and a wallet with nothing in it today may be the
   // one that matches tomorrow. Id, title, network and sp_address — the
   // sp_address is the stable name and the other three are for the report.
+  // FIELD BY FIELD, and every field named on purpose: this rebuilds the
+  // objects rather than passing them through, so nothing the caller happens
+  // to be carrying rides along into the file by accident.
+  //
+  // Which also means a field the file NEEDS has to be added here, and the two
+  // added on 2026-11-08 are exactly that: `mnemonic` is the whole of the
+  // wallet restore, and `lastHeight` is where a restored wallet starts
+  // scanning. Both were dropped on the floor by this map for one build —
+  // every phrase collected, verified against its wallet, and then quietly
+  // discarded one line later, producing a file that looked perfectly normal
+  // and restored no wallets at all.
   const out: BackupWallet[] = wallets.map((w) => ({
     id: w.id,
     title: w.title,
     network: w.network,
     spAddress: w.spAddress,
+    ...(typeof w.lastHeight === 'number' ? { lastHeight: w.lastHeight } : {}),
+    ...(w.mnemonic ? { mnemonic: w.mnemonic } : {}),
   }));
 
   return {

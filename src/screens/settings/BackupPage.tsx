@@ -12,6 +12,11 @@ import {
   validateBackupPassword,
 } from '@services/backup';
 import { applyBackup, collectBackup, countItems } from '@services/backupData';
+import { collectWalletSeeds, restoreWallets } from '@services/walletBackup';
+import { readSeed, saveSeed } from '@services/seedVault';
+import { storeWalletKeys } from '@services/secureKeys';
+import { deriveSilentPayment } from '@services/spKeys';
+import { resetCatchUp } from '../../hooks/useCatchUpScan';
 import { applyServerLabels, collectServerLabels } from '@services/serverLabels';
 import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 
@@ -86,6 +91,10 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       title: w.title || 'Wallet',
       network: w.network,
       spAddress: w.sp_address || '',
+      // The BIRTH height, so a restored wallet rescans from where it began.
+      // See walletBackup.BackupWalletRef for why the resume point is the wrong
+      // number to carry.
+      lastHeight: typeof w.last_height === 'number' ? w.last_height : undefined,
     }));
   }, [inkey]);
 
@@ -109,12 +118,29 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     say(null);
     try {
       const refs = await walletRefs();
+      // THE PASSPHRASE IS CHECKED AGAINST EACH WALLET before a single phrase
+      // is written ("if wrong passphrase entered the wallet doesn't get backed
+      // up"). A wallet it does not open is left out and named below, rather
+      // than sealed under a secret that cannot open it — which would make a
+      // file that looks perfectly fine and restores nothing.
+      const { seeds, leftOut } = await collectWalletSeeds(
+        { readSeed, deriveSilentPayment }, password, refs);
+      const withSeeds = refs.map((w) =>
+        seeds[w.id] ? { ...w, mnemonic: seeds[w.id] } : w);
+      if (!Object.keys(seeds).length && refs.length) {
+        say(
+          'That passphrase does not open any of your wallets, so none would ' +
+            'be in the file. Check it and try again.',
+          true,
+        );
+        return;
+      }
       // The SERVER-side coin labels too (2026-11-08). silnt.utxos.label is
       // where an SP coin's label lives, and it was not in the file, so a
       // restore brought back a SegWit label and not an SP one.
       const payload = await collectBackup(
         Platform.OS === 'ios' ? 'ios' : 'android',
-        refs,
+        withSeeds,
         inkey ? await collectServerLabels(api as any, inkey, refs) : {},
       );
       const total = countItems(payload);
@@ -130,9 +156,18 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       const text = await encryptBackup(payload, password, (f) =>
         say(`Encrypting… ${Math.round(f * 100)}%`));
       const where = await native().save(backupFilename(), text);
+      const missed = leftOut.length
+        ? ` ${leftOut.length} wallet${leftOut.length === 1 ? '' : 's'} left out: ` +
+          leftOut
+            .map((w) =>
+              `${w.title} (${w.reason === 'passphrase'
+                ? 'different passphrase'
+                : 'no recovery phrase saved here'})`)
+            .join(', ') + '.'
+        : '';
       // null is the user backing out of the system picker, which is not a
       // failure and must not be reported as one.
-      say(where ? 'Saved.' : 'Cancelled.');
+      say(where ? `Saved.${missed}` : 'Cancelled.', !!(where && missed));
     } catch (e: any) {
       say(e?.message || 'Could not write the backup.', true);
     } finally {
@@ -212,7 +247,38 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // The live wallets decide where a backed-up wallet's labels go: an id
       // from the file may belong to a wallet that has since been deleted and
       // added back, which gives it a new one.
-      const live = await walletRefs().catch(() => []);
+      let live = await walletRefs().catch(() => []);
+
+      // WALLETS FIRST, LABELS SECOND, and the order is the whole point: a
+      // label is filed against a wallet id, so recreating the wallets before
+      // applying them means the labels land on the wallets this restore just
+      // made rather than being remapped to nothing. `live` is re-read after,
+      // so the remap sees the new ids.
+      //
+      // This is the use case the feature exists for (2026-11-08): "user
+      // loses, replaces the phone, reinstalls the app... he can just restore
+      // from the backup instead of importing wallet or entering wallet
+      // recovery keys."
+      let walletReport = null as Awaited<ReturnType<typeof restoreWallets>> | null;
+      const fileWallets = ((payload as any).wallets || []) as any[];
+      if (inkey && fileWallets.length) {
+        walletReport = await restoreWallets(
+          {
+            deriveSilentPayment,
+            createWallet: (data) => api.createSilntWallet(inkey, data) as any,
+            storeWalletKeys,
+            saveSeed,
+            onCreated: resetCatchUp,
+          },
+          password,
+          fileWallets,
+          live,
+        );
+        if (walletReport.created.length) {
+          live = await walletRefs().catch(() => live);
+        }
+      }
+
       const { skipped } = await applyBackup(payload as any, live);
       // The server-side half, over the network and therefore after the local
       // one: a failure here must not cost the labels already written.
@@ -230,9 +296,27 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // in it is now here, which is what the user came to find out. A section
       // this client cannot store is still named rather than counted as
       // restored.
+      const madeWallets = walletReport?.created.length || 0;
+      const walletTrouble = [
+        ...(walletReport?.mismatched || []).map(
+          (w) => `${w.title} (its phrase and this passphrase do not match it)`),
+        ...(walletReport?.failed || []).map((w) => `${w.title} (${w.message})`),
+      ];
       say(
         [
           'Restored.',
+          // Named before the labels, because a wallet coming back is the
+          // headline and a label is not. The scan is said in the same breath:
+          // a restored wallet has no coins until one runs, and somebody
+          // looking at a zero balance needs to know that now rather than
+          // concluding their money is gone.
+          madeWallets
+            ? `${madeWallets} wallet${madeWallets === 1 ? '' : 's'} restored — ` +
+              'scan to find their coins.'
+            : '',
+          walletTrouble.length
+            ? `Not restored: ${walletTrouble.join(', ')}.`
+            : '',
           // A label whose coin is not here yet. The coins come back from the
           // chain, so this is the normal state between adding a wallet back
           // and finishing a rescan.
@@ -277,7 +361,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             BitMail pins, which are tamper evidence rather than an address
             book, and which this client does not store at all. */}
         <Block first>
-          <Help>Backs up your labels.</Help>
+          <Help>Backs up your wallets and labels.</Help>
         </Block>
         {/* The "your coins are not in this file, they live on the Bitcoin
             network and come back from your recovery phrase" paragraph was
@@ -291,11 +375,17 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             labels and is sealed with a password that exists nowhere else, so
             that password is the single point of failure for this file — and
             unlike the recovery phrase it protects nothing that spends. */}
+        {/* THE RED ONE SAYS WHAT THE FILE IS, which changed on 2026-11-08
+            when it started carrying recovery phrases. Anyone holding the file
+            and the passphrase can spend the coins — that is the cost of being
+            able to restore a wallet without typing twelve words, and it is
+            not something to leave anybody to work out. */}
         <Block>
           <Note kind="error">
-            Remember this password. It is the only thing that opens the file,
-            it is not stored anywhere, and no one — including us — can recover
-            it or the file's contents without it.
+            Keep this file private. It holds your wallets, so anyone with the
+            file and your passphrase can spend your coins. Your passphrase is
+            not in it and is not stored anywhere — without it no one,
+            including us, can open the file.
           </Note>
         </Block>
       </Group>
@@ -316,13 +406,13 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             <LineInput
               value={password}
               onChangeText={setPassword}
-              placeholder={pending ? pending.info.asksFor : 'Backup password'}
+              placeholder={pending ? pending.info.asksFor : 'Wallet passphrase'}
             />
             <Help>
               {pending
                 ? `The ${pending.info.asksFor} this file was saved with.`
-                : 'At least 8 characters. Used only for this file, and never ' +
-                  'written into it.'}
+                : 'The passphrase your wallet was created with. A wallet it ' +
+                  'does not open is left out of the file.'}
             </Help>
           </Block>
           {/* A FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND, so

@@ -8,7 +8,7 @@
 // weakened KDF still round-trips. A backup carrying a mnemonic still restores.
 // A backup whose header can be edited still opens with the right password. None
 // of it shows up in a build, a lint, or a glance at the file.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const mod = await import(
@@ -800,6 +800,72 @@ console.log('the web collector never reaches the key vault');
   ok('and the exclusions are written down with reasons',
     /BACKUP_EXCLUDED/.test(WEB) && /thrilla_vault/.test(WEB),
     '"is this missing on purpose?" needs an answer in the file');
+
+  // THE PARTITION IS TOTAL: every `thrilla_*` key this app stores is either
+  // collected or named in BACKUP_EXCLUDED with a reason. A key that is
+  // neither fails here, so one cannot be added to the app without somebody
+  // deciding whether it belongs in a backup.
+  //
+  // This is what the question "what else is in the backup that shouldn't be?"
+  // turned up (2026-11-08): nothing was in it that should not have been, but
+  // two LEGACY KEY STORES — thrilla_wallet_keys_v1 and thrilla_wkey_* — were
+  // missing from the list, which is the one category it exists for. Nothing
+  // collected them, because the list above is explicit; nothing recorded that
+  // on purpose either, and assertNoSecrets would not have caught them:
+  // FORBIDDEN_KEY matches names like `mnemonic` and `xprv`, and `wkey_…` is
+  // neither.
+  //
+  // Read off the SOURCE rather than a list in this file, or the check would
+  // be a copy of the thing it is checking.
+  {
+    const srcDirs = ['src/stores', 'src/views', 'src/components', 'src/api', 'src/composables'];
+    const found = new Set();
+    const walk = (dir) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${e.name}`;
+        if (e.isDirectory()) { walk(full); continue; }
+        if (!/\.(js|vue|ts)$/.test(e.name)) continue;
+        // COMMENTS STRIPPED FIRST. backupdata.js's own prose names
+        // `thrilla_notes` as an example of a key a sweep would wrongly pick
+        // up, and this check counted it as a real one — the trap check:stealth
+        // hit with DONT_KILL_APP and this file hit with Math.random(). `//` is
+        // only treated as a comment when it does not follow a colon, so a URL
+        // in a string does not eat the rest of its line.
+        const text = readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/<!--[\s\S]*?-->/g, '')
+          .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+        for (const m of text.matchAll(/['"`](thrilla_[a-z0-9_]*)['"`]/g)) found.add(m[1]);
+      }
+    };
+    for (const d of srcDirs) {
+      try { walk(new URL(`../${d}`, import.meta.url).pathname); } catch { /* absent */ }
+    }
+    const { BACKUP_KEYS, BACKUP_EXCLUDED } = await import(
+      pathToFileURL(new URL('../src/stores/backupdata.js', import.meta.url).pathname).href);
+    const collected = Object.values(BACKUP_KEYS);
+    const excluded = Object.keys(BACKUP_EXCLUDED);
+    const classified = (k) =>
+      collected.includes(k) || excluded.includes(k) ||
+      // An entry ending in `_` is a prefix: the per-wallet key stores.
+      excluded.some((e) => e.endsWith('_') && k.startsWith(e));
+    const unclassified = [...found].filter((k) => !classified(k)).sort();
+    ok('every thrilla_* key the app stores is collected or excluded by name',
+      unclassified.length === 0,
+      unclassified.length
+        ? `not classified: ${unclassified.join(', ')} — decide, then add to ` +
+          'BACKUP_KEYS or BACKUP_EXCLUDED'
+        : `${found.size} keys, all accounted for`);
+    // And the control is only worth anything if it is actually reading keys.
+    ok('and the scan found the keys it is meant to be checking',
+      found.has('thrilla_vault') && found.has('thrilla_tx_labels_v1') && found.size >= 15,
+      `found ${found.size}`);
+    // The two legacy key stores by name, because they are the finding.
+    for (const legacy of ['thrilla_wallet_keys_v1', 'thrilla_wkey_']) {
+      ok(`${legacy} is named as excluded, not merely absent`,
+        excluded.includes(legacy) && /key material/i.test(BACKUP_EXCLUDED[legacy]));
+    }
+  }
   // EXERCISED, not asserted by regex. Merge-vs-replace is behaviour, and the
   // failure is silent and permanent: a restore that replaced would delete every
   // label written since the backup was taken, with nothing on screen saying so.

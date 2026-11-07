@@ -475,8 +475,34 @@ SERVER-SIDE) and it simply stopped applying.
 It remains a tripwire on the payload's **shape**, not a scan of its values: a
 seed under the key `notes` would pass, which is exactly why each client
 ASSEMBLES its payload from a named list rather than sweeping its storage. The
-web list is `BACKUP_KEYS`, and `thrilla_vault` and `thrilla_kdf_salt_v1` are
-excluded by name with the reason beside them — a sweep would have taken both.
+web list is `BACKUP_KEYS`; the phone's surface is bounded by what its collector
+imports, which `check:backup` pins to three modules.
+
+**And the exclusions are a TOTAL partition now** (2026-11-08). Asked *"what
+else is in the backup that shouldn't be?"*, the answer was nothing — the file
+holds `txLabels`, `segwitLabels`, and on the web `swapTxids` and `bitmailPins`,
+none of which the server owns. But the audit found that
+`thrilla_wallet_keys_v1` and `thrilla_wkey_*`, the LEGACY CryptoJS key stores
+still sitting in a long-lived browser, were **absent from `BACKUP_EXCLUDED`** —
+the one category that list exists for. Nothing collected them, because the list
+above is explicit, and nothing recorded that as a decision either.
+`assertNoSecrets` would not have caught them: `FORBIDDEN_KEY` matches
+`mnemonic`, `xprv`, `privkey` and the like, and `wkey_…` is none of those.
+
+So `BACKUP_EXCLUDED` now names **every** `thrilla_*` key the app stores, with a
+reason, and `check:backup` scans `src/` for the literals and fails on one that
+is neither collected nor excluded — a new key cannot be added without somebody
+deciding. An entry ending in `_` is a prefix. The scan strips comments first,
+because `backupdata.js`'s own prose names `thrilla_notes` as an example and the
+check counted it as a real key on its first run: the trap `check:stealth` hit
+with `DONT_KILL_APP` and this file hit with `Math.random()`.
+
+Two entries are worth reading for their reasons rather than their names.
+`thrilla_device_id` identifies this browser to the trusted-device check, so
+restoring one elsewhere would hand a second machine the first one's trust. And
+`thrilla_login_attempts` / `thrilla_login_lockout` are the only entries a user
+would BENEFIT from restoring, which is exactly why they must not be: a backup
+that could clear them is an offline way around the lockout.
 
 **The file is encrypted with a password the user chooses** (2026-11-08, on the
 user's instruction: *"12 words recovery phrase is not what you should be asking

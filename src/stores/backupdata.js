@@ -52,14 +52,54 @@ const NESTED_BY_WALLET = 'segwitLabels'
 // useful half: a new browser inherits the trust anchor.
 const NEVER_OVERWRITTEN = ['bitmailPins']
 
-// Keys that exist and are deliberately left out, with the reason. Listed rather
-// than merely absent so that "is this missing on purpose?" has an answer.
+// Every other `thrilla_*` key this app stores, with the reason it is not in a
+// backup. Listed rather than merely absent so that "is this left out on
+// purpose?" has an answer — and check:backup asserts the partition is TOTAL:
+// a key that is neither collected above nor named here fails the check, so a
+// new one cannot be added to the app without somebody deciding.
+//
+// It was five entries until 2026-11-08, when the question "what else is in the
+// backup that shouldn't be?" was put and the answer turned out to be nothing —
+// but that two LEGACY KEY STORES were missing from this list, which is the one
+// category it exists for. Nothing collected them, because the list above is
+// explicit; nothing recorded that on purpose either. assertNoSecrets would not
+// have caught them: FORBIDDEN_KEY matches names like `mnemonic` and `xprv`,
+// and `wkey_…` is neither.
+//
+// An entry ending in `_` is a PREFIX, since those keys are per-wallet.
 export const BACKUP_EXCLUDED = {
   thrilla_vault: 'the key vault — restoring a wallet is what the recovery phrase is for',
   thrilla_kdf_salt_v1: 'wraps the key vault',
+  thrilla_wallet_keys_v1: 'LEGACY key storage (single CryptoJS blob) — key material',
+  thrilla_wkey_: 'LEGACY key storage, per wallet (CryptoJS) — key material',
   thrilla_pending_sends_v1: 'in-flight sends; stale rows would show payments that already landed',
   thrilla_plain_sends_v1: 'same',
   thrilla_tango_commit_v1: 'a live round on THIS device; it cannot be moved to another',
+
+  // Session and account identity. None of it is the user's data to restore,
+  // and a stale copy is worse than none: a token or an API key from another
+  // day is an authentication decision made by a file.
+  thrilla_token: 'session token — a restore must not be a way to be logged in',
+  thrilla_inkey: 'the wallet invoice key — a credential, not data',
+  thrilla_adminkey: 'the wallet admin key — a credential, not data',
+  thrilla_username: 'account identity; comes from signing in',
+  thrilla_email: 'account identity; comes from signing in',
+  thrilla_device_id: 'identifies THIS browser to the trusted-device check — ' +
+    'restoring one elsewhere would hand a second machine the first one\'s trust',
+  thrilla_last_activity: 'the idle-timeout clock; restoring it would move it',
+
+  // The lockout counters, and the reason they are worth naming rather than
+  // leaving to the explicit list: they are the only entries a user would
+  // BENEFIT from restoring, which is precisely why they must not be. A backup
+  // that could clear them would be an offline way around the lockout.
+  thrilla_login_attempts: 'failed-login counter — restoring it would reset a lockout',
+  thrilla_login_lockout: 'the lockout itself; same',
+
+  // Display preferences. Left out because they are not what the file is for
+  // and are one tap to set, not because restoring one would do harm.
+  thrilla_unit: 'display preference',
+  thrilla_usd_rate: 'a cached rate; it refreshes',
+  thrilla_wallet_id: 'which wallet is selected right now',
 }
 
 function readJson(key) {

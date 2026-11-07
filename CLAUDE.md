@@ -557,6 +557,14 @@ seeing it is the only way to tell you are typing what you typed before. A
 masked field is also how "I can't restore" happens when the file is perfectly
 good and the typing was not, with nothing on screen able to say which.
 
+**Both of those are on BOTH clients.** The report came from the web and the
+phone carried the same two bindings — `disabled={!!busy || !password ||
+password !== confirm}` behind the same two fields, and `secureTextEntry` on
+them. `SecretInput` is `LineInput` now, unmasked, and the phone's handlers say
+what is missing exactly as the modal's do. `check:backup` pins each on both,
+and scopes the mask assertion to that one component, because an app PIN
+elsewhere is still a thing to mask.
+
 **If a restore refuses, check what sealed the file.** A backup written between
 2026-11-04 and 2026-11-08 needs the RECOVERY PHRASE in that box, not a
 password; `decryptBackup` branches on the header's `keySource` and the error

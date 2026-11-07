@@ -4,7 +4,7 @@ import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
 import { backupFilename, decryptBackup, encryptBackup } from '@services/backup';
 import { applyBackup, collectBackup, countItems } from '@services/backupData';
-import { Block, Button, Group, Help, Note, Page, SecretInput } from './ui';
+import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 
 // The backup screen.
 //
@@ -76,6 +76,21 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
   }, [inkey]);
 
   const onExport = useCallback(async () => {
+    // THE BUTTONS ARE LIVE WHATEVER THE FIELDS HOLD, so every requirement is
+    // stated here rather than by greying something out. Reported on the web as
+    // "you dropped Restore!! I've backed up and now I can't restore" — the
+    // button was there and disabled, which a dead control with no explanation
+    // is indistinguishable from. Same shape here, so the same fix.
+    if (!password) {
+      say('Enter a password first — it is what will open the file.', true);
+      return;
+    }
+    // A mismatch must never reach encryptBackup, which cannot tell a confirmed
+    // password from a typo and would seal a file nobody can open.
+    if (password !== confirm) {
+      say('Type the same password in both boxes to save.', true);
+      return;
+    }
     setBusy('export');
     say(null);
     try {
@@ -86,13 +101,6 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       const total = countItems(payload);
       if (!total) {
         say('Nothing to back up yet.', true);
-        return;
-      }
-      // Checked here as well as by the disabled button: a mismatch must never
-      // reach encryptBackup, which cannot tell a confirmed password from a
-      // typo and would seal a file nobody can open.
-      if (password !== confirm) {
-        say('The two passwords do not match.', true);
         return;
       }
       // The KDF runs for seconds on a phone. It yields every 20ms and reports
@@ -124,6 +132,15 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
   }, [password, confirm, walletRefs]);
 
   const onRestore = useCallback(async () => {
+    // Say what is missing rather than opening a system picker whose result is
+    // going to be refused. No confirm on this path and no length rule: an
+    // older file may be sealed with a recovery phrase or a wallet passphrase,
+    // and refusing it for failing today's policy would strand it.
+    if (!password) {
+      say('Enter the password you used when you saved the backup, then press ' +
+        'this again.', true);
+      return;
+    }
     setBusy('restore');
     say(null);
     try {
@@ -204,12 +221,16 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
 
       {backupFileAvailable() ? (
         <Group title="Backup file">
+          {/* NOT MASKED (2026-11-08, on the user's instruction, and the web
+              modal matches). A per-file password with no checksum, typed once
+              — seeing it is the only way to tell you are typing what you typed
+              before, and a masked field is how "I can't restore" happens when
+              the file is fine and the typing was not. */}
           <Block first>
-            <SecretInput
+            <LineInput
               value={password}
               onChangeText={setPassword}
               placeholder="Backup password"
-              textContentType="newPassword"
             />
             <Help>
               At least 8 characters. Used only for this file, and never written
@@ -218,25 +239,27 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           </Block>
           {/* The confirm field is the checksum a password does not have.
               Export only: a restore proves the password by opening the file,
-              and an older file may be sealed with something else entirely. */}
-          <Block>
-            <SecretInput
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="Confirm password"
-              textContentType="newPassword"
-            />
-            {confirm && password !== confirm ? (
-              <Note kind="error">The two passwords do not match.</Note>
-            ) : null}
-          </Block>
+              and an older file may be sealed with something else entirely. So
+              it appears only once there is something to confirm. */}
+          {password ? (
+            <Block>
+              <LineInput
+                value={confirm}
+                onChangeText={setConfirm}
+                placeholder="Confirm password (only to save)"
+              />
+              {confirm && password !== confirm ? (
+                <Note kind="error">The two passwords do not match.</Note>
+              ) : null}
+            </Block>
+          ) : null}
           <Block>
             <Button
               label={busy === 'export' ? 'Working…' : 'Save a backup'}
               kind="primary"
               onPress={onExport}
               busy={busy === 'export'}
-              disabled={!!busy || !password || password !== confirm}
+              disabled={!!busy}
             />
           </Block>
           <Block>
@@ -245,7 +268,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               kind="secondary"
               onPress={onRestore}
               busy={busy === 'restore'}
-              disabled={!!busy || !password}
+              disabled={!!busy}
             />
           </Block>
           {msg ? (

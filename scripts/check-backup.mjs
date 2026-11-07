@@ -555,11 +555,21 @@ console.log('the two backup screens say the same simple thing');
   // starts empty, and a dead control with no explanation is indistinguishable
   // from one that is not there. They are live; the handlers say what is
   // missing.
+  //
+  // BOTH CLIENTS, because it was the same binding on both — the report came
+  // from the web and the phone had `disabled={!!busy || !password || password
+  // !== confirm}` sitting behind the same two fields.
   ok('the web buttons are only ever disabled while busy',
     !/:disabled="[^"]*!password/.test(V) && !/:disabled="[^"]*password !== confirm/.test(V),
     'greying a button out instead of explaining is how Restore went missing');
+  ok('the phone buttons are only ever disabled while busy',
+    !/disabled=\{[^}]*!password/.test(P) && !/disabled=\{[^}]*password !== confirm/.test(P),
+    'greying a button out instead of explaining is how Restore went missing');
   ok('and restore says what it needs before opening a picker',
     /function startRestore[\s\S]{0,260}Enter the password/.test(V));
+  ok('and the phone says it before opening the system picker',
+    /const onRestore[\s\S]{0,400}Enter the password[\s\S]{0,400}native\(\)\.open/.test(P),
+    'a picker whose result is going to be refused should not open');
 
   // AND THE PASSWORD IS NOT MASKED (2026-11-08, on the user's instruction).
   // It is a per-file password with no checksum, typed once: seeing it is the
@@ -567,6 +577,18 @@ console.log('the two backup screens say the same simple thing');
   // is how "I can't restore" happens when the file is fine.
   ok('the web does not mask the backup password',
     !/type="password"/.test(V),
+    'a per-file password with no checksum has to be visible');
+  // Scoped to the component the backup screen actually renders, not to the
+  // whole of ui.tsx: an app PIN elsewhere is still a thing to mask, and the
+  // mention of `secureTextEntry` left behind in LineInput's own doc comment
+  // explaining its absence must not fail the check that it is absent — the
+  // trap check:stealth hit with DONT_KILL_APP.
+  const UI = readFileSync(new URL('../src/screens/settings/ui.tsx', import.meta.url), 'utf8');
+  const lineInput = copy(UI.slice(UI.indexOf('export function LineInput')))
+    .slice(0, 400);
+  ok('the phone backup fields are LineInput', /<LineInput/.test(P));
+  ok('the phone does not mask the backup password',
+    !!lineInput && !/secureTextEntry/.test(lineInput) && !/secureTextEntry/.test(copy(P)),
     'a per-file password with no checksum has to be visible');
 
   ok('the web clears the password when the modal opens or closes',

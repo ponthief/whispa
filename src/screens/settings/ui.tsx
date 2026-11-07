@@ -388,22 +388,27 @@ export function TextArea(props: TextInputProps) {
 }
 
 /**
- * A single-line secret on its own line.
+ * A single-line value on its own line.
  *
- * `TextArea` is multiline, and `secureTextEntry` with `multiline` is not
- * reliable on Android — it renders the characters on some builds. `Field`
- * puts its input in a row beside a button, which is wrong when two of these
- * stack (a password and its confirmation).
+ * `Field` puts its input in a row beside a button, which is wrong when two of
+ * these stack (a password and its confirmation), and `TextArea` is multiline.
+ *
+ * NOT MASKED, and it used to be (`SecretInput`, with `secureTextEntry`). The
+ * one thing typed into it is the backup password — a per-file password with no
+ * checksum, typed once, not an account credential — and seeing it is the only
+ * way to tell you are typing what you typed before. Masking it is also how
+ * "I can't restore" happens when the file is perfectly good and the typing was
+ * not, with nothing on screen able to say which. Autocorrect and capitalisation
+ * stay off: both would alter the password silently.
  */
-export function SecretInput(props: TextInputProps) {
+export function LineInput(props: TextInputProps) {
   return (
     <TextInput
-      secureTextEntry
       autoCapitalize="none"
       autoCorrect={false}
       spellCheck={false}
       {...props}
-      style={styles.secretInput}
+      style={styles.lineInput}
       placeholderTextColor={colors.faint}
     />
   );
@@ -596,7 +601,7 @@ const styles = StyleSheet.create({
   },
   fieldBtn: { paddingHorizontal: space.lg },
 
-  secretInput: {
+  lineInput: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.sm,

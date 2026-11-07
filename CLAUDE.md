@@ -543,6 +543,25 @@ instruction and from the phone as a consequence: it was the last line naming
 the recovery phrase, and leaving it would undo the point of no longer asking
 for one.
 
+**Neither button is ever disabled for missing input**, and that is a fix
+rather than a preference. Reported as *"you dropped Restore!! I've backed up
+and now I can't restore"* — the Restore button was there, `:disabled` until a
+password was typed, so it sat greyed out the moment the modal opened. **A dead
+control with no explanation is indistinguishable from one that is not there.**
+Both buttons are live now; the handlers say what is missing, and `startRestore`
+refuses before opening a file picker whose result it would only reject.
+
+**The password is not masked** (2026-11-08, on the user's instruction). It is a
+per-file password with no checksum, typed once, not an account credential —
+seeing it is the only way to tell you are typing what you typed before. A
+masked field is also how "I can't restore" happens when the file is perfectly
+good and the typing was not, with nothing on screen able to say which.
+
+**If a restore refuses, check what sealed the file.** A backup written between
+2026-11-04 and 2026-11-08 needs the RECOVERY PHRASE in that box, not a
+password; `decryptBackup` branches on the header's `keySource` and the error
+names the case rather than saying the file is broken.
+
 **The confirm field is on SAVE only**, and `check:backup` asserts the guard is
 **in the handler**, before `encryptBackup`, rather than anywhere in the file.
 Its first version matched the comparison anywhere — which the template's own

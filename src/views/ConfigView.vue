@@ -261,7 +261,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div style="max-width:560px">
+  <!-- SIX CARDS IN ONE COLUMN AT 560px was a long scroll for five short
+       settings (2026-11-08: "on main Settings page you have many cards and
+       scrolling is long, redesign it so that it displays nicer").
+       A responsive grid: two columns where there is room, one on a phone, and
+       the danger zone always alone on the last row so it cannot sit beside an
+       ordinary setting. No new utility classes — check:vue would require any
+       text-/badge-/alert-/btn- name to exist in style.css, and these are
+       layout only. -->
+  <div class="settings-page">
     <div style="margin-bottom:24px">
       <h1>Settings</h1>
       <p class="text-dim text-sm" style="margin-top:2px">Your wallet preferences</p>
@@ -271,8 +279,9 @@ onMounted(async () => {
       <span class="spinner"></span> Loading config…
     </div>
 
+    <div v-else class="settings-grid">
     <!-- Per-user Dust Threshold preference (visible to all users) -->
-    <div v-else class="card">
+    <div class="card">
       <div class="card-header"><h2>Privacy — Dust Threshold</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
         <p class="text-dim text-sm" style="margin:0">
@@ -314,7 +323,7 @@ onMounted(async () => {
     </div>
 
     <!-- Trusted Devices -->
-    <div class="card" style="margin-top:20px">
+    <div class="card">
       <div class="card-header"><h2>Trusted Devices</h2></div>
       <div class="card-body">
         <p class="text-dim text-sm" style="margin:0 0 12px 0">
@@ -327,7 +336,7 @@ onMounted(async () => {
     <!-- Invite a friend. The phone's Settings → Account has had this all
          along; the browser not having it meant one account offering the
          feature on one device and not the other. -->
-    <div class="card" style="margin-top:20px">
+    <div class="card">
       <div class="card-header"><h2>Invite a friend</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
         <p class="text-dim text-sm" style="margin:0">
@@ -358,7 +367,7 @@ onMounted(async () => {
 
     <!-- Pointer to the existing password-reset path (login page), rather than a
          duplicate reset flow here. -->
-    <div class="card" style="margin-top:20px">
+    <div class="card">
       <div class="card-header"><h2>Password</h2></div>
       <div class="card-body">
         <p class="text-dim text-sm" style="margin:0">
@@ -377,7 +386,7 @@ onMounted(async () => {
          say which you had last used, is the failure the ⚙ menu itself exists
          to undo. -->
     <!-- Local key storage controls -->
-    <div class="card" style="margin-top:20px">
+    <div class="card">
       <div class="card-header"><h2>Local Wallet Keys</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <p class="text-dim text-sm" style="margin:0">
@@ -404,8 +413,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Close Account (danger zone) -->
-    <div class="card danger-zone" style="margin-top:20px">
+    </div><!-- /settings-grid -->
+
+    <!-- Close Account stands apart: full width, below everything, so a
+         destructive action never sits shoulder to shoulder with a preference. -->
+    <div class="card danger-zone settings-danger">
       <div class="card-header"><h2 style="color:#ff7b72">Close Account</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <p class="text-dim text-sm" style="margin:0">
@@ -448,4 +460,28 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.settings-page {
+  max-width: 1040px;
+}
+
+/* auto-fit rather than a fixed count: one column on a phone, two when the
+   viewport can hold them, with no breakpoint to keep in step with the theme. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+  align-items: start;   /* or every card in a row stretches to the tallest */
+}
+
+.settings-danger {
+  margin-top: 20px;
+}
+
+/* Below the grid's own minimum the browser already collapses to one column;
+   this just stops a 420px card overflowing a narrower phone. */
+@media (max-width: 460px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

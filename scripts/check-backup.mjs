@@ -550,6 +550,25 @@ console.log('the two backup screens say the same simple thing');
   // was never bypassed — an empty password throws before a key is derived —
   // but the field sat on the Settings page holding whatever had been typed to
   // SAVE a backup, so Restore afterwards asked nothing.
+  // NEITHER BUTTON IS DISABLED FOR MISSING INPUT. Reported as "you dropped
+  // Restore": both sat greyed out when the modal opened, because the password
+  // starts empty, and a dead control with no explanation is indistinguishable
+  // from one that is not there. They are live; the handlers say what is
+  // missing.
+  ok('the web buttons are only ever disabled while busy',
+    !/:disabled="[^"]*!password/.test(V) && !/:disabled="[^"]*password !== confirm/.test(V),
+    'greying a button out instead of explaining is how Restore went missing');
+  ok('and restore says what it needs before opening a picker',
+    /function startRestore[\s\S]{0,260}Enter the password/.test(V));
+
+  // AND THE PASSWORD IS NOT MASKED (2026-11-08, on the user's instruction).
+  // It is a per-file password with no checksum, typed once: seeing it is the
+  // only way to tell you are typing what you typed before, and a masked field
+  // is how "I can't restore" happens when the file is fine.
+  ok('the web does not mask the backup password',
+    !/type="password"/.test(V),
+    'a per-file password with no checksum has to be visible');
+
   ok('the web clears the password when the modal opens or closes',
     /watch\(\(\) => props\.show[\s\S]{0,200}password\.value = ''/.test(V),
     'a field that persists across save and restore prompts nobody');

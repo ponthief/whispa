@@ -71,11 +71,17 @@ async function walletRefs() {
 
 async function doSave() {
   if (busy.value) return
-  // Checked here as well as by the disabled button: a mismatch must never
-  // reach encryptBackup, which cannot tell a confirmed password from a typo
-  // and would seal a file nobody can open.
+  // The buttons are live whatever the fields hold, so every requirement is
+  // stated HERE rather than by greying something out. A dead control explains
+  // nothing; this says what is missing.
+  if (!password.value) {
+    say('Enter a password first — it is what will open the file.', true)
+    return
+  }
+  // A mismatch must never reach encryptBackup, which cannot tell a confirmed
+  // password from a typo and would seal a file nobody can open.
   if (password.value !== confirm.value) {
-    say('The two passwords do not match.', true)
+    say('Type the same password in both boxes to save.', true)
     return
   }
   busy.value = 'save'
@@ -108,6 +114,18 @@ async function doSave() {
   } finally {
     busy.value = null
   }
+}
+
+// Restore needs the password BEFORE the file picker, so say so rather than
+// opening a picker whose result is going to be refused.
+function startRestore() {
+  if (busy.value) return
+  if (!password.value) {
+    say('Enter the password you used when you saved the backup, then press this again.', true)
+    return
+  }
+  say('')
+  fileInput.value?.click()
 }
 
 async function onPickFile(ev) {
@@ -170,20 +188,28 @@ async function onPickFile(ev) {
           Backs up your labels and contacts.
         </p>
 
+        <!-- NOT MASKED, on the user's instruction (2026-11-08) and it is the
+             right call here. This is a per-file password typed once, not an
+             account credential, and it has no checksum — seeing it is the only
+             way to tell you are typing what you typed before. A masked field
+             is also how "I can't restore" happens: the file is fine, the
+             typing was not, and nothing on screen can say which. -->
         <div class="field">
           <label>Password</label>
-          <input class="input" type="password" v-model="password"
-                 placeholder="Password" autocomplete="new-password" />
+          <input class="input" type="text" v-model="password"
+                 placeholder="Password" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" />
         </div>
 
-        <!-- Confirm only matters when SAVING: a password has no checksum, so a
-             mistyped one seals a file nobody can ever open and nothing finds
-             out until a restore. A restore proves the password by opening the
-             file, so it does not need this. -->
-        <div class="field">
-          <label>Confirm password <span class="text-dim text-xs">(to save)</span></label>
-          <input class="input" type="password" v-model="confirm"
-                 placeholder="Type it again" autocomplete="new-password" />
+        <!-- Confirm only matters when SAVING: a mistyped password seals a file
+             nobody can ever open and nothing finds out until a restore. A
+             restore proves the password by opening the file, so it is hidden
+             until there is something to confirm. -->
+        <div v-if="password" class="field">
+          <label>Confirm password <span class="text-dim text-xs">(only to save)</span></label>
+          <input class="input" type="text" v-model="confirm"
+                 placeholder="Type it again" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" />
           <p v-if="confirm && password !== confirm"
              class="text-error text-xs" style="margin:6px 0 0">
             The two passwords do not match.
@@ -197,13 +223,17 @@ async function onPickFile(ev) {
           </p>
         </div>
 
+        <!-- NEITHER BUTTON IS EVER DISABLED FOR MISSING INPUT, which is what
+             "you dropped Restore" was: both sat greyed out on open, because
+             the password starts empty, and a dead button with no explanation
+             is indistinguishable from one that is not there. They are live,
+             and each says what it needs. Only `busy` disables them, because
+             two concurrent runs really are not possible. -->
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm"
-                  :disabled="busy || !password || password !== confirm" @click="doSave">
+          <button class="btn btn-primary btn-sm" :disabled="!!busy" @click="doSave">
             {{ busy === 'save' ? '…' : '↓ Save backup' }}
           </button>
-          <button class="btn btn-ghost btn-sm" :disabled="busy || !password"
-                  @click="fileInput?.click()">
+          <button class="btn btn-ghost btn-sm" :disabled="!!busy" @click="startRestore">
             {{ busy === 'restore' ? '…' : '↑ Restore from backup' }}
           </button>
           <input ref="fileInput" type="file" accept="application/json,.json"

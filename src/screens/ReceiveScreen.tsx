@@ -337,7 +337,7 @@ function ScanEntryRow({
         <Text style={styles.scanRowSub}>
           {bgOn
             ? 'The server keeps this wallet scanned. Scan here only if a payment seems late.'
-            : "The app catches up when you open it. Scan here if you've been away a while, or a payment seems late."}
+            : "The app scans when you open it. Scan here if you've been away a while, or a payment seems late."}
         </Text>
       </View>
       <Text style={styles.scanRowChevron}>›</Text>

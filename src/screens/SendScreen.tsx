@@ -1062,7 +1062,7 @@ export default function SendScreen() {
       // up either way.
       setCatchUpMsg(
         /recently|already|budget|too many/i.test(msg)
-          ? 'Already scanning — it will catch up shortly.'
+          ? 'Already scanning — it will finish shortly.'
           : msg,
       );
     } finally {
@@ -1323,7 +1323,7 @@ export default function SendScreen() {
             <View style={styles.scanBanner}>
               <ActivityIndicator color={colors.primary} size="small" />
               <Text style={styles.scanBannerText}>
-                Catching up
+                Scanning
                 {scanTot
                   ? ` — block ${groupThousands(scanCur)} of ${groupThousands(scanTot)}`
                   : ''}

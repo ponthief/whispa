@@ -648,7 +648,7 @@ export default function WalletScreen() {
                 <ActivityIndicator size="small" color={colors.primary} />
                 <View style={styles.scanTextWrap}>
                   <Text style={styles.scanTitle}>
-                    Catching up to the chain…
+                    Scanning the chain…
                     {scan.progress && scan.progress.total > 0
                       ? ` ${Math.min(
                           100,

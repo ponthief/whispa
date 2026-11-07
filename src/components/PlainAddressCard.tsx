@@ -270,7 +270,7 @@ export default function PlainAddressCard({ wallet }: Props) {
             <View style={styles.balanceBox}>
               <Text style={styles.balanceLabel}>Payment on its way</Text>
               <Text style={styles.balanceHint}>
-                Waiting for the chain index to catch up
+                Waiting for the chain index
               </Text>
             </View>
           ) : (

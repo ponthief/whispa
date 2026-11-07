@@ -184,7 +184,7 @@ function walletScanStatus(w) {
   const autoAt = lastAutoScanAt.value && lastAutoScanAt.value[w.id]
   const autoRecent = autoAt && (Date.now() - autoAt) < 120000
   if (running || autoRecent) {
-    return { kind: 'catching', text: `Catch-up scan running — about ${gap.toLocaleString()} block${gap === 1 ? '' : 's'} behind.` }
+    return { kind: 'catching', text: `Scanning — about ${gap.toLocaleString()} block${gap === 1 ? '' : 's'} behind.` }
   }
   return { kind: 'behind', gap, text: `${gap.toLocaleString()} block${gap === 1 ? '' : 's'} behind — go to Receive to scan.` }
 }
@@ -689,7 +689,7 @@ watch(swapCompletedAt, () => {
   <div>
     <!-- catch-up scan prompts (large gap since last scan) -->
     <div v-for="p in loginScanPrompts" :key="'lsp-' + p.id" class="alert alert-info" style="margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
-      <span class="text-sm"><b>{{ p.title }}</b> is {{ p.gap.toLocaleString() }} blocks behind. Scan to catch up?</span>
+      <span class="text-sm"><b>{{ p.title }}</b> is {{ p.gap.toLocaleString() }} blocks behind. Scan for payments?</span>
       <span class="flex gap-2" style="flex-shrink:0;">
         <button class="btn btn-primary btn-sm" @click="acceptLoginScan(p.id)">Scan now</button>
         <button class="btn btn-ghost btn-sm" @click="dismissLoginScan(p.id)">Later</button>

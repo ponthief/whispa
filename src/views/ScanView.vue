@@ -258,7 +258,7 @@ async function startScan() {
         const autoAt = lastAutoScanAt.value[selectedWallet.value]
         if (/recently|too many requests/i.test(msg) && autoAt && (Date.now() - autoAt) < 65000) {
           const secs = Math.max(1, 60 - Math.floor((Date.now() - autoAt) / 1000))
-          msg = `An automatic catch-up scan just ran for this wallet. You can scan again in about ${secs}s.`
+          msg = `A scan just ran automatically for this wallet. You can scan again in about ${secs}s.`
         }
         // Sync the client cooldown to the backend's "try again in N seconds" so
         // the button reflects the real server-side wait after a 429.

@@ -162,15 +162,15 @@ function _startBackgroundScan(auth, w, keys, fromHeight = null) {
       .then(() => {
         notifyScanStarted(w.id)
         lastAutoScanAt.value = { ...lastAutoScanAt.value, [w.id]: Date.now() }
-        pushToast('Catching your wallet up to the latest blocks…', { type: 'info', timeout: 4000 })
+        pushToast('Scanning the latest blocks…', { type: 'info', timeout: 4000 })
       })
       .catch((e) => {
         const msg = (e && (e.detail || e.message)) || ''
         // 429 = cooldown / another scan running / budget — benign for a catch-up.
         if (/recently|already running|budget|too many/i.test(msg)) {
-          pushToast('Catch-up scan skipped: ' + msg, { type: 'info', timeout: 5000 })
+          pushToast('Scan skipped: ' + msg, { type: 'info', timeout: 5000 })
         } else if (msg) {
-          pushToast('Catch-up scan failed: ' + msg, { type: 'warn' })
+          pushToast('Scan failed: ' + msg, { type: 'warn' })
         }
       })
   } catch { /* non-fatal */ }
@@ -242,7 +242,7 @@ export async function acceptLoginScan(walletId) {
   } catch { /* wallet list unavailable — the snapshot is all we have */ }
 
   _startBackgroundScan(auth, { id: walletId }, keys, fromHeight)
-  pushToast('Catch-up scan started.', { type: 'success' })
+  pushToast('Scan started.', { type: 'success' })
   dismissLoginScan(walletId)
 }
 

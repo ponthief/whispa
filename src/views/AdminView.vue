@@ -485,7 +485,7 @@ onBeforeUnmount(() => {
               <strong>{{ health.behind_by }}</strong> block(s).
               BlindBit at <span class="mono">{{ health.blindbit_height }}</span>,
               chain tip <span class="mono">{{ health.tip_height }}</span>.
-              New payments may not be detected until it catches up.
+              New payments may not be detected until it is back in sync.
             </div>
             <!-- UP but couldn't fetch tip to compare -->
             <div v-else-if="health && health.ok && health.in_sync === null" class="alert alert-info" style="margin:0">
@@ -602,7 +602,7 @@ onBeforeUnmount(() => {
             <div class="field">
               <label style="display:flex; align-items:center; gap:8px;">
                 <input type="checkbox" v-model="config.login_scan_enabled" />
-                Auto catch-up scan on wallet open
+                Scan automatically when a wallet is opened
               </label>
               <span class="text-dim text-xs">When a user opens their wallet, scan from where they left off so it doesn't fall behind.</span>
             </div>

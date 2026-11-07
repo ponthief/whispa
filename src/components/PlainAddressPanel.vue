@@ -382,7 +382,7 @@ async function runSetup() {
         <div class="balance">
           <template v-if="pendingSpend">
             <span class="text-dim text-xs">Payment on its way</span>
-            <span class="text-dim text-xs">Waiting for the chain index to catch up</span>
+            <span class="text-dim text-xs">Waiting for the chain index</span>
           </template>
           <template v-else>
             <span class="text-dim text-xs">Balance</span>

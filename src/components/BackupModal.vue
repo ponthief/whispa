@@ -421,23 +421,29 @@ async function openPending() {
                  :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
                  autocomplete="off" autocapitalize="off" spellcheck="false"
                  @keyup.enter="pending ? openPending() : doSave()" />
+          <!-- THE WEB CANNOT VERIFY THE PASSPHRASE, and says so rather than
+               implying a check it cannot do: verifying means deriving an SP
+               address from (seed, passphrase), and the seed is on the phone.
+               It sits under the field, not in the red box — that box is one
+               line now, and this is a note about this screen's limits rather
+               than a warning about the file. -->
+          <span v-if="!pending" class="text-dim text-xs">
+            This page cannot check the passphrase before saving.
+          </span>
         </div>
 
         <!-- Only while saving is the password the thing that can be lost. Once
              a file is in hand the question is what opens THAT file, and this
              warning would be answering the wrong one. -->
-        <!-- THE WEB CANNOT VERIFY THE PASSPHRASE, and says so rather than
-             implying a check it cannot do: verifying means deriving an SP
-             address from (seed, passphrase), and the seed is on the phone.
-             The phone leaves a wallet out when its passphrase does not match;
-             here a mistyped one seals a file that nothing will open. -->
+        <!-- ONE LINE (2026-11-08, on the user's instruction: "text in red is
+             too long: Encrypted with wallet passphrase. Store safely"). Same
+             line on the phone, for the usual reason. It ran to four clauses
+             here; a warning nobody finishes reading warns nobody, and what
+             decides what somebody does with the file is that the key is the
+             WALLET passphrase and the file is worth keeping safe. -->
         <div v-if="!pending" class="alert alert-error" style="padding:10px;border-radius:6px">
           <p class="text-sm" style="margin:0">
-            <strong>Use your wallet passphrase.</strong> It is the only thing
-            that opens the file, it is not stored anywhere, and no one —
-            including us — can recover it. Keep the file private: it holds
-            your wallets, so anyone with both can spend your coins. This page
-            cannot check the passphrase before saving.
+            Encrypted with wallet passphrase. Store safely.
           </p>
         </div>
 

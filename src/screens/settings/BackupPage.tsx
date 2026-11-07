@@ -434,17 +434,23 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             labels and is sealed with a password that exists nowhere else, so
             that password is the single point of failure for this file — and
             unlike the recovery phrase it protects nothing that spends. */}
-        {/* THE RED ONE SAYS WHAT THE FILE IS, which changed on 2026-11-08
-            when it started carrying recovery phrases. Anyone holding the file
-            and the passphrase can spend the coins — that is the cost of being
-            able to restore a wallet without typing twelve words, and it is
-            not something to leave anybody to work out. */}
+        {/* THE RED ONE IS ONE LINE (2026-11-08, on the user's instruction:
+            "text in red is too long: Encrypted with wallet passphrase. Store
+            safely"). It ran to three sentences — what the file holds, that
+            anyone with it and the passphrase can spend, and that nobody can
+            recover the passphrase. Every clause true, and a warning nobody
+            finishes reading warns nobody.
+
+            What the short line keeps is the pair that decides what somebody
+            does with the file: the key is the WALLET passphrase, not a
+            password this screen invented, and the file is worth storing
+            safely. What it drops is the spelled-out consequence. The line
+            above it ("Backs up your wallets and labels.") is what still says
+            a wallet is in there, which is why that one must not be shortened
+            as well. */}
         <Block>
           <Note kind="error">
-            Keep this file private. It holds your wallets, so anyone with the
-            file and your passphrase can spend your coins. Your passphrase is
-            not in it and is not stored anywhere — without it no one,
-            including us, can open the file.
+            Encrypted with wallet passphrase. Store safely.
           </Note>
         </Block>
       </Group>
@@ -470,8 +476,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             <Help>
               {pending
                 ? `The ${pending.info.asksFor} this file was saved with.`
-                : 'The passphrase your wallet was created with. A wallet it ' +
-                  'does not open is left out of the file.'}
+                : 'The passphrase your wallet was created with.'}
             </Help>
           </Block>
           {/* A FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND, so

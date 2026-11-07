@@ -875,9 +875,37 @@ could not state without saying *browser* on a product that is also a phone
 app. `check:backup` refuses either word on either screen, and the phone's
 status messages lost "on this phone" with them.
 
-**The red warning is about the password** on both: *"Remember this password.
-It is the only thing that opens the file, and no one — including us — can
-recover it."*
+**The red warning is ONE SENTENCE on both**, and the same one: *"Encrypted
+with wallet passphrase. Store safely."* (2026-11-08, on the user's
+instruction: *"text in red is too long"*, with that line given as the
+replacement.)
+
+It had grown to three clauses on the phone and four in the browser — what the
+file holds, that anyone with it and the passphrase can spend, that the
+passphrase is stored nowhere and nobody can recover it, and on the web that
+the page cannot check it. Each went in on its own merits and each was true,
+which is how a warning gets long: nothing in it was ever wrong enough to cut.
+A warning nobody finishes reading warns nobody.
+
+What the one line keeps is the pair that decides what somebody DOES with the
+file — the key is the wallet's own passphrase, not a password this screen
+invented, and the file is worth storing safely. What states the file's
+contents is the line above it, **"Backs up your wallets and labels."**, which
+is why that one must not be shortened in its turn: between the two, *this file
+plus that passphrase is the wallet* is still on screen. The web's *"This page
+cannot check the passphrase before saving"* moved under the field as dim help,
+because it is a fact about that screen's limits rather than a warning about
+the file.
+
+`check:backup` reads the **whole** red box and requires it to be exactly that
+sentence, on both. Asserting the sentence is merely present would say nothing
+about what grows back around it, which is precisely how it got long.
+
+And the phone's passphrase help lost *"A wallet it does not open is left out
+of the file."* (*"makes no sense… just drop it"*) — it described the save
+path's refusal, in front of a field that is also used to open files, where it
+read as a riddle. The behaviour is unchanged and still reported *after* a
+save, by name, which is where it means something.
 
 **Neither screen says where the coins live.** *"Your coins are not in this
 file… they live on the Bitcoin network"* went from the web on the user's

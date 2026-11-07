@@ -653,9 +653,38 @@ console.log('the two backup screens say the same simple thing');
   // recovery key" was.
   ok('and the web says so too',
     /Backs up your wallets and labels\./.test(copy(V)));
-  ok('and both warn that the file can spend',
-    /spend your coins/.test(copy(V)) && /spend your coins/.test(copy(P)),
-    'a file that holds a wallet has to say what it is');
+  // THE RED LINE IS ONE SENTENCE AND THE SAME ON BOTH (2026-11-08, on the
+  // user's instruction: "text in red is too long: Encrypted with wallet
+  // passphrase. Store safely"). It had grown to three or four clauses on each
+  // screen — what the file holds, who can spend it, that the passphrase
+  // cannot be recovered — and a warning nobody finishes reading warns nobody.
+  // Pinned as the exact sentence rather than by keywords, because what was
+  // wrong with the old one was its LENGTH, and a keyword test is satisfied by
+  // a paragraph that happens to contain the words.
+  const RED = 'Encrypted with wallet passphrase. Store safely.';
+  ok('the red line is the one short sentence, on both',
+    copy(V).includes(RED) && copy(P).includes(RED),
+    'a warning nobody finishes reading warns nobody');
+  // AND NOTHING ELSE IS IN THE RED BOX. Asserting the sentence is present
+  // says nothing about what grew back around it, which is exactly how this
+  // got long the first time — each clause was true and went in beside the
+  // last. The box's whole contents are read and bounded.
+  const redOf = (src, open, close, toTagEnd) => {
+    let i = src.indexOf(open);
+    if (i < 0) return null;
+    i += open.length;
+    // The web's opening tag carries attributes after the class, so the text
+    // starts at the end of that tag rather than at the end of the match.
+    if (toTagEnd) i = src.indexOf('>', i) + 1;
+    const j = src.indexOf(close, i);
+    return j < 0 ? null : src.slice(i, j)
+      .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  };
+  const webRed = redOf(copy(V), 'class="alert alert-error"', '</div>', true);
+  const phoneRed = redOf(copy(P), '<Note kind="error">', '</Note>', false);
+  ok('and the red box holds nothing but that sentence',
+    phoneRed === RED && webRed === RED,
+    'every clause that made it long was true; they went in one at a time');
 
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
     // AND DOES NOT PROMISE CONTACTS. The file has never held one: a Tango
@@ -671,12 +700,13 @@ console.log('the two backup screens say the same simple thing');
     ok(`${who} does not name a device`,
       !/\bphone\b/i.test(src) && !/\bbrowser\b/i.test(src),
       'there is no browser on the phone, and no phone in the browser');
-    // THE RED ONE. It used to be about losing the password; since the file
-    // can carry a wallet it is about what the file IS, which is the thing
-    // nobody should have to work out for themselves.
-    ok(`${who} says the secret is not stored and cannot be recovered`,
-      /not stored anywhere/.test(src) &&
-      /(no one|nobody)[^.]*including us/.test(src));
+    // What the red box says is pinned above, as one sentence. It used to
+    // carry "not stored anywhere" and "no one, including us, can recover it"
+    // as well, and those two assertions lived here; they went with the copy
+    // on 2026-11-08 when the user cut the warning to one line. The claim they
+    // protected is not gone from the product — nothing anywhere offers to
+    // recover a passphrase — but this screen no longer states it, and a check
+    // asserting a sentence the user deleted is a check that fails on purpose.
     ok(`${who} asks for the WALLET passphrase, by name`,
       /wallet passphrase/i.test(src),
       'the file key is the passphrase the wallet was created with');
@@ -688,14 +718,18 @@ console.log('the two backup screens say the same simple thing');
     /class="alert alert-error"/.test(V),
     'alert alone is the neutral box; this one has to read as a warning');
   ok('the phone warning uses the error note',
-    /<Note kind="error">\s*\n?\s*Keep this file private/.test(P));
+    /<Note kind="error">/.test(P));
 
-  // THE PHONE SAYS WHAT THE FILE IS. It carries recovery phrases, so the file
-  // plus the passphrase is the wallet — stated, not left to be worked out by
-  // somebody deciding where to put it.
-  ok('the phone says the file holds the wallets and can spend',
-    /holds your wallets/.test(copy(P)) && /spend your coins/.test(copy(P)),
-    'a file that can spend must say so where it is made');
+  // WHAT THE FILE IS, now that the red box no longer spells it out: the line
+  // above it says the backup carries WALLETS, which is the claim somebody
+  // needs in order to treat the file as worth protecting. That line is
+  // asserted on both screens above and must not be shortened in its turn —
+  // between it and the red sentence, "this file plus that passphrase is the
+  // wallet" is still on screen, and with neither it would not be.
+  ok('the first line is still what says a wallet is in there',
+    /Backs up your wallets and labels\./.test(copy(P)) &&
+    /Backs up your wallets and labels\./.test(copy(V)),
+    'the red line names the key; this one names the contents');
   // And the web says it CANNOT check the passphrase, because it cannot:
   // verifying means deriving an address from the seed, which is on the phone.
   // THE WEB STILL CANNOT CHECK THE PASSPHRASE — that needs a seed, which it

@@ -206,27 +206,26 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // from the file may belong to a wallet that has since been deleted and
       // added back, which gives it a new one.
       const live = await walletRefs().catch(() => []);
-      const { sections, skipped } = await applyBackup(payload as any, live);
-      const added = Object.values(sections).reduce((n, r) => n + r.added, 0);
-      // SAYS WHETHER IT RESTORED, AND STOPS (2026-11-08, on the user's
-      // instruction: "restore text is too long and meaningless, just say
-      // whether restored or not"), and the web modal says the same two
-      // things. The old line reported added, kept, re-matched wallets and
-      // leftovers at once — every number true, none of them the question.
-      // The two outcomes stay apart because they are different answers, and
-      // a section this client cannot store is still named rather than
-      // counted as restored.
+      const { skipped } = await applyBackup(payload as any, live);
+      // ONE WORD, and the web modal says the same (2026-11-08: "do not say
+      // Nothing new, Restored is fine"). The file IS restored whether or not
+      // anything changed — a merge that added nothing still means every label
+      // in it is now here, which is what the user came to find out. A section
+      // this client cannot store is still named rather than counted as
+      // restored.
       say(
-        [
-          added ? 'Restored.' : 'Nothing new — it was all already here.',
-          skipped.length ? `${skipped.join(', ')} left in the file.` : '',
-        ]
+        ['Restored.', skipped.length ? `${skipped.join(', ')} left in the file.` : '']
           .filter(Boolean)
           .join(' '),
       );
       // Done with. A FAILURE keeps it, so a wrong password is retyped against
       // the file already in hand rather than going back through the picker.
       setPending(null);
+      // AND THE PASSWORD GOES WITH IT, reported on the web as "after
+      // restoring, I clicked save backup w/o password and pop up
+      // disappeared": the field still held what had been typed to OPEN the
+      // file, so Save sealed a new backup with it, having asked nothing.
+      setPassword('');
     } catch (e: any) {
       say(e?.message || 'Could not read that backup.', true);
     } finally {

@@ -647,6 +647,14 @@ console.log('the two backup screens say the same simple thing');
         src.slice(src.indexOf(who === 'the web' ? 'pending.value = { text, info }'
                                                 : 'setPending({ text, info })'))),
       'the password that seals a new backup is not evidence about an old file');
+    // AND IT IS CLEARED AGAIN AFTER THE RESTORE. Reported as "after
+    // restoring, I clicked save backup w/o password and pop up disappeared":
+    // the field still held what had been typed to OPEN the file, so Save
+    // sealed a new backup with it and closed, having asked nothing. One field
+    // serving two operations has to be emptied between them, at BOTH ends.
+    ok(`${who} clears the field once a restore finishes`,
+      /'Restored\.'[\s\S]{0,400}(setPassword\(''\)|password\.value = '')/.test(src),
+      'otherwise Save seals a backup with the password typed to open one');
   }
 
   // AND THE PASSWORD IS NOT MASKED (2026-11-08, on the user's instruction).
@@ -689,9 +697,15 @@ console.log('the two backup screens say the same simple thing');
   // re-matched wallets and leftovers in one sentence; no count belongs in it
   // now. Both clients, because both carried the same sentence.
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
-    ok(`${who} says only whether the restore changed anything`,
-      /added \? 'Restored\.' : 'Nothing new/.test(src),
-      'added, kept and re-matched counts are true and not the question asked');
+    // ONE WORD (2026-11-08: "just say whether restored or not", then "do not
+    // say Nothing new, Restored is fine"). No count goes in it — added, kept
+    // and re-matched are all true and none is the question — and neither does
+    // the added/nothing-new branch this check used to pin: a merge that added
+    // nothing still means every label in that file is now here.
+    ok(`${who} says it restored, and says nothing else`,
+      /'Restored\.'/.test(src) && !/Nothing new/.test(src) &&
+      !/Restored \$\{/.test(src) && !/Restored \$\{added/.test(src),
+      'a count answers a question nobody asked');
     ok(`${who} still names a section it could not store`,
       /skipped\.length \?/.test(src),
       'dropping it would have the screen claim a restore it did not do');

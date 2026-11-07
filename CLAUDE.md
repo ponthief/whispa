@@ -510,6 +510,29 @@ reason argon2id stays readable.
 enforced on write; refusing an older file for failing today's policy would
 strand it.
 
+### The web's Settings page is Account, and the dust threshold is not on it
+
+Renamed 2026-11-08, on the user's instruction: *"we should probably rename it
+with Account as they are more account settings, except Privacy Dust Threshold
+which should be under Wallet"*. What is left on `ConfigView.vue` is the
+account itself — trusted devices, password, invites, local key recovery,
+closing it — and the nav says **Account**.
+
+The dust threshold was the one thing there about coins. It is now
+`components/DustThresholdModal.vue`, off the wallet card's ⚙ menu beside
+Backup, and **the phone already had it under Settings → Wallet**
+(`screens/settings/WalletPage.tsx`), so this is the usual rule applied rather
+than a new idea. It is **account-wide, not per-wallet** — the preference is
+stored on the user — which is the same thing the backup modal's copy has to
+say about itself, and the same reason the menu is where both live: the Wallets
+page is the page about coins, and the menu keeps a secondary control off the
+row holding Receive and Send.
+
+It **re-reads the preference on every open** rather than caching it. The
+threshold can be changed from the phone, and a value held from the last time
+the modal was opened would be a stale number on the one screen whose job is
+saying what is in force.
+
 ### Where it lives, and the one line both screens say
 
 **On the web it is a modal off the wallet card's ⚙ menu** (2026-11-08, on the
@@ -575,14 +598,16 @@ because that message is the only thing that says what went wrong, and
 `check:backup` asserts both directions (a close at the end of `doSave` would
 satisfy a naive check while throwing the error away).
 
-**The restore says whether it restored, and stops.** *"restore text is too
-long and meaningless — just say whether restored or not"*. It reported added,
-kept, re-matched wallets and leftovers in one four-clause sentence: every
-number true, none of them the question being asked. The two outcomes are still
-told apart — `Restored.` against `Nothing new — it was all already here.` —
-because a file whose every entry was already present changed nothing, and
-"Restored" over that reads as though something happened. A section this client
-cannot store is still named, briefly, for the reason it always was.
+**The restore says `Restored.` and nothing else.** *"restore text is too long
+and meaningless — just say whether restored or not"*, then *"do not say
+Nothing new, Restored is fine"*. It reported added, kept, re-matched wallets
+and leftovers in one four-clause sentence: every number true, none of them the
+question being asked. The added/nothing-new branch went for the same reason —
+the file IS restored whether or not anything changed, since a merge that added
+nothing still means every label in it is now here. "Nothing new" answered a
+different question (how much was already here) and read like a refusal. A
+section this client cannot store is still named, briefly, for the reason it
+always was.
 
 **Both halves are named wherever the feature is entered**: the wallet card's
 menu item, the modal's heading, the phone's Settings row and its page title all
@@ -614,7 +639,8 @@ cannot read is refused **before** a password is asked for, because making
 somebody type a secret for a file that was never going to open is the same
 mistake from the other end.
 
-**Choosing a file clears the password field**, every time. Opening it with
+**The password field is emptied between operations, at both ends.** Choosing
+a file clears it, every time. Opening it with
 whatever happened to be typed is exactly the bug that was reported in the first
 place — *"I was able to restore from file w/o being prompted for password"* —
 and it comes straight back the moment one session saves a backup and then
@@ -622,6 +648,12 @@ restores one. The password that seals a new backup is not evidence about an old
 file. For the same reason the button row belongs to the chosen file while one
 is waiting: Open and Cancel, no Save, which would otherwise seal a NEW backup
 under the password being typed to open an old one.
+
+A finished restore clears it too, which is a reported bug rather than
+symmetry for its own sake: *"after restoring, I clicked save backup w/o
+password and pop up disappeared"* — the field still held what had been typed
+to OPEN the file, so Save sealed a new backup with it and closed, having asked
+nothing. One field serving two operations has to be emptied between them.
 
 **A failed open keeps the file**, so a wrong password is retyped against what
 is already in hand; a successful one drops it.

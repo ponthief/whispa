@@ -88,7 +88,7 @@ async function doSave() {
   // stated HERE rather than by greying something out. A dead control explains
   // nothing; this says what is missing.
   if (!password.value) {
-    say('Enter a password first — it is what will open the file.', 'error')
+    say('A password is required to encrypt the backup file.', 'error')
     return
   }
   // ONE FIELD, NO CONFIRMATION (2026-11-08, on the user's instruction: "drop
@@ -212,25 +212,27 @@ async function openPending() {
     const { applyBackup } = await import('@/stores/backupdata')
     const payload = await decryptBackup(text, password.value,
       (f) => say(`Opening… ${Math.round(f * 100)}%`, 'info'))
-    const { sections, skipped } = applyBackup(payload, await walletRefs())
-    const added = Object.values(sections).reduce((n, r) => n + r.added, 0)
+    const { skipped } = applyBackup(payload, await walletRefs())
 
-    // SAYS WHETHER IT RESTORED, AND STOPS (2026-11-08, on the user's
-    // instruction: "restore text is too long and meaningless, just say
-    // whether restored or not"). It used to report added, kept, re-matched
-    // wallets and leftovers in one four-clause sentence — every number true,
-    // none of them the question being asked, which was "did it work".
+
+    // ONE WORD (2026-11-08: "restore text is too long and meaningless, just
+    // say whether restored or not", then "do not say Nothing new, Restored is
+    // fine"). It used to report added, kept, re-matched wallets and leftovers
+    // in one four-clause sentence — every number true, none of them the
+    // question being asked, which was "did it work".
     //
-    // The two outcomes are still told apart, because they are different
-    // answers: a file whose every entry was already present changed nothing,
-    // and "Restored" over that reads as though something happened.
+    // And the file IS restored whether or not anything changed: a merge that
+    // added nothing still means every label in that file is now here, which is
+    // what the user came to find out. Reporting "nothing new" answered a
+    // different question — how much of it was already here — and read like a
+    // refusal.
     //
     // The one thing kept past that is a section this client cannot store —
     // the phone's, in a file this one opened. Short, and by name, because
     // dropping it would have the screen claim a restore it did not do. It
     // appears only for a cross-client file.
     say([
-      added ? 'Restored.' : 'Nothing new — it was all already here.',
+      'Restored.',
       skipped.length ? `${skipped.join(', ')} left in the file.` : '',
     ].filter(Boolean).join(' '))
     // Done with: the Open button goes, and a second press cannot re-apply a
@@ -238,6 +240,13 @@ async function openPending() {
     // password is retyped against the file already in hand rather than
     // sending the user back through the picker.
     pending.value = null
+    // AND THE PASSWORD GOES WITH IT. Reported as "after restoring, I clicked
+    // save backup w/o password and pop up disappeared" — the field still held
+    // what had been typed to OPEN the file, so Save sealed a new backup with
+    // it and closed, having asked nothing. One field serving two operations
+    // must be emptied between them; it is the same rule as clearing it when a
+    // file is picked, from the other end.
+    password.value = ''
   } catch (e) {
     say(e?.message || 'Could not read that backup.', 'error')
   } finally {

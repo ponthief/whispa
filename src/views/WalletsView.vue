@@ -12,6 +12,7 @@ import EditWalletModal from '@/components/EditWalletModal.vue'
 import SeedInput from '@/components/SeedInput.vue'
 import PlainAddressPanel from '@/components/PlainAddressPanel.vue'
 import BackupModal from '@/components/BackupModal.vue'
+import DustThresholdModal from '@/components/DustThresholdModal.vue'
 
 // What each wallet's SegWit chain holds, reported by its own panel below.
 // ONE BALANCE, TWO POCKETS: "how much have I got" has a single answer, and
@@ -66,6 +67,15 @@ const showBackup = ref(false)
 function openBackup() {
   showBackup.value = true
 }
+// Dust protection, moved off the Settings page on 2026-11-08 ("Privacy Dust
+// Threshold should be under Wallet"). Account-wide like the backup, and here
+// for the same reason: this is the page about coins, and the menu is what
+// keeps a secondary control off the row holding Receive and Send.
+const showDust = ref(false)
+function openDust() {
+  showDust.value = true
+}
+
 // Client-side Silent Payments derivation — the same module the mobile app uses,
 // verified byte-for-byte against the backend. Keeps the seed on this device.
 import { deriveSilentPayment, generateMnemonic, isValidMnemonic, validateNewWalletPassphrase } from '@/services/spKeys'
@@ -943,6 +953,7 @@ watch(swapCompletedAt, () => {
                  to SAVE one reads as though there is nowhere to put a file
                  back. -->
             <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup &amp; Restore</button>
+            <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openDust)">🛡 Dust protection</button>
             <div class="wallet-menu-rule"></div>
             <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
           </div>
@@ -1231,6 +1242,7 @@ watch(swapCompletedAt, () => {
 
     <!-- QR modal -->
     <BackupModal :show="showBackup" @close="showBackup = false" />
+    <DustThresholdModal :show="showDust" @close="showDust = false" />
 
     <QrModal :show="showQr" :address="qrAddress" :title="qrTitle" :hr-address="qrHrAddress" @close="showQr = false" />
 

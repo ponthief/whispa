@@ -70,7 +70,9 @@ const baseNav = [
   ...(TANGO_ENABLED ? [{ name: 'tango', label: 'Tango', icon: '⇄' }] : []),
   { name: 'transactions', label: 'Activity', icon: '⇄' },
   { name: 'bitmail', label: 'BitMail',  icon: '⌖' },
-  { name: 'config',  label: 'Settings', icon: '⚙' },
+  // "Account", not "Settings" (2026-11-08) — what is on that page is the
+  // account itself; anything about coins lives with the coins.
+  { name: 'config',  label: 'Account', icon: '⚙' },
 ]
 // Admin portal nav — the only items shown in the admin build.
 const BITMAIL_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'

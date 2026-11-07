@@ -170,16 +170,9 @@ async function rejectRequest(req) {
 function fmtDate(ts) { return new Date(ts * 1000).toLocaleString() }
 
 
-// Per-user prefs (independent of admin's BlindbitConfig)
-const userPrefs = ref({
-  dust_threshold_sats:      null,    // user override (null = use admin default)
-  admin_default_dust:       5000,
-  effective_dust_threshold: 5000,
-})
-const dustInput   = ref(null)        // bound to the input field; null = no override
-const savingPref  = ref(false)
-const prefSaved   = ref(false)
-const prefError   = ref(null)
+// The per-user dust preference used to be loaded, edited and saved here. It
+// lives in components/DustThresholdModal.vue now, off the wallet card's menu,
+// and reads itself on every open — see the note in the template.
 
 async function loadMe() {
   try {
@@ -190,37 +183,6 @@ async function loadMe() {
   } finally {
     meLoading.value = false
   }
-}
-
-async function loadUserPrefs() {
-  try {
-    const p = await api.getUserPrefs(auth.inkey)
-    userPrefs.value = p
-    dustInput.value = p.dust_threshold_sats  // may be null
-  } catch (e) {
-    prefError.value = 'Could not load preferences: ' + e.message
-  }
-}
-
-async function saveUserPrefs() {
-  savingPref.value = true; prefError.value = null; prefSaved.value = false
-  try {
-    const payload = { dust_threshold_sats: (dustInput.value === '' || dustInput.value === null) ? null : Number(dustInput.value) }
-    const p = await api.updateUserPrefs(auth.inkey, payload)
-    userPrefs.value = p
-    dustInput.value = p.dust_threshold_sats
-    prefSaved.value = true
-    setTimeout(() => prefSaved.value = false, 3000)
-  } catch (e) {
-    prefError.value = e.message
-  } finally {
-    savingPref.value = false
-  }
-}
-
-async function resetUserPrefs() {
-  dustInput.value = null
-  await saveUserPrefs()
 }
 
 async function loadConfig() {
@@ -253,9 +215,8 @@ async function saveCfConfig() {
   finally { cfSaving.value = false }
 }
 
-onMounted(async () => {
+onMounted(() => {
   loading.value = false   // no admin config to fetch here anymore
-  await loadUserPrefs()
   loadMyWalletIds()
 })
 </script>
@@ -271,8 +232,11 @@ onMounted(async () => {
        layout only. -->
   <div class="settings-page">
     <div style="margin-bottom:24px">
-      <h1>Settings</h1>
-      <p class="text-dim text-sm" style="margin-top:2px">Your wallet preferences</p>
+      <!-- ACCOUNT, not Settings (2026-11-08: "we should probably rename it
+           with Account as they are more account settings"). What is left here
+           is the account itself; anything about coins lives with the coins. -->
+      <h1>Account</h1>
+      <p class="text-dim text-sm" style="margin-top:2px">Your sign-in, devices and invites</p>
     </div>
 
     <div v-if="loading" class="flex items-center gap-2 text-dim" style="padding:40px 0">
@@ -280,48 +244,12 @@ onMounted(async () => {
     </div>
 
     <div v-else class="settings-grid">
-    <!-- Per-user Dust Threshold preference (visible to all users) -->
-    <div class="card">
-      <div class="card-header"><h2>Privacy — Dust Threshold</h2></div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
-        <p class="text-dim text-sm" style="margin:0">
-          UTXOs at or below this amount received from senders unrelated to your wallet are flagged as suspected dust attacks and auto-frozen. Leave blank to use the server default of
-          <strong>{{ userPrefs.admin_default_dust?.toLocaleString() || 5000 }}</strong> sats.
-        </p>
-        <div class="field">
-          <label>Your dust threshold (sats)</label>
-          <input
-            class="input"
-            v-model.number="dustInput"
-            type="number"
-            min="0"
-            :placeholder="`${userPrefs.admin_default_dust || 5000} (server default)`"
-          />
-          <span class="text-dim text-xs">
-            Effective: <strong>{{ userPrefs.effective_dust_threshold?.toLocaleString() }}</strong> sats
-            <span v-if="userPrefs.dust_threshold_sats == null"> (using server default)</span>
-            <span v-else> (your override)</span>
-          </span>
-        </div>
-        <div v-if="prefError" class="alert alert-error">⚠ {{ prefError }}</div>
-        <div v-if="prefSaved" class="alert alert-success">✓ Preference saved.</div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" :disabled="savingPref" @click="saveUserPrefs">
-            <span v-if="savingPref" class="spinner" style="border-top-color:#000"></span>
-            {{ savingPref ? 'Saving…' : 'Save' }}
-          </button>
-          <button
-            class="btn btn-ghost"
-            :disabled="savingPref || userPrefs.dust_threshold_sats == null"
-            @click="resetUserPrefs"
-            title="Clear your override and use the server default"
-          >
-            Reset to default
-          </button>
-        </div>
-      </div>
-    </div>
-
+    <!-- The Dust Threshold card was here until 2026-11-08. It moved to the
+         wallet card's menu (components/DustThresholdModal.vue) on the user's
+         instruction: everything left on this page is about the ACCOUNT —
+         devices, password, invites, closing it — and that one was about
+         coins. The phone already had it under Settings → Wallet, so this is
+         the usual rule applied rather than a new idea. -->
     <!-- Trusted Devices -->
     <div class="card">
       <div class="card-header"><h2>Trusted Devices</h2></div>

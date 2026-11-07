@@ -15,7 +15,8 @@ const mod = await import(
   pathToFileURL(new URL('../src/services/backup.ts', import.meta.url).pathname).href
 );
 const { encryptBackup, decryptBackup, assertNoSecrets, backupFilename, KDF,
-        BACKUP_VERSION, KEY_SOURCE, normalizeBackupKey, remapWalletIds } = mod;
+        BACKUP_VERSION, KEY_SOURCE, normalizeBackupKey, remapWalletIds,
+        inspectBackupFile } = mod;
 const RAW = readFileSync(new URL('../src/services/backup.ts', import.meta.url), 'utf8');
 // Comments stripped before any source assertion. check-stealth.cjs learned this
 // the hard way — it counted a comment saying "DONT_KILL_APP is passed on every
@@ -176,6 +177,55 @@ console.log('a password is used verbatim, so the two clients agree without rules
   // must keep working — the section below opens one with it.
   ok('the phrase normaliser is still exported for older files',
     normalizeBackupKey('  Abandon   ABANDON\nabandon ') === 'abandon abandon abandon');
+}
+
+console.log('a chosen file can be read for what it wants, before any secret');
+{
+  // THE RESTORE TAKES THE FILE FIRST AND ASKS SECOND (2026-11-08). That needs
+  // something both clients can ask of a file with no password in hand, and
+  // this is it. EXERCISED, not read: the screens' question comes straight off
+  // what this returns, so a wrong answer here is a screen asking for the
+  // wrong secret.
+  const file = await encryptBackup(payload, PW);
+
+  const mine = inspectBackupFile(file);
+  ok('a file this build wrote is readable', mine.readable && !mine.problem);
+  ok('and is reported as encrypted', mine.encrypted === true);
+  ok('and asks for a password', mine.asksFor === 'password');
+
+  // A HEADER READ, NOT A VERIFICATION — which is exactly why the keySource can
+  // be edited here and still be reported. Nothing is trusted until the AEAD
+  // opens; the one job is deciding what to ask for, and a forged header costs
+  // a failed decrypt and nothing else.
+  for (const [source, asks] of [
+    ['recovery-phrase', 'recovery phrase'],
+    ['wallet-passphrase', 'wallet passphrase'],
+  ]) {
+    const relabelled = JSON.stringify({ ...JSON.parse(file), keySource: source });
+    ok(`a ${source} file asks for the ${asks}`,
+      inspectBackupFile(relabelled).asksFor === asks,
+      'the whole point of reading the file first is naming the right secret');
+  }
+
+  // Refused BEFORE a password is asked for, so nobody types a secret for a
+  // file that was never going to open.
+  for (const [what, text] of [
+    ['a file that is not JSON', 'not json at all'],
+    ['JSON that is not a backup', '{"hello":"world"}'],
+    ['a backup from a newer version', JSON.stringify({ ...JSON.parse(file), version: 99 })],
+    ['a cipher this build does not know',
+      JSON.stringify({ ...JSON.parse(file), cipher: 'rot13' })],
+  ]) {
+    const info = inspectBackupFile(text);
+    ok(`${what} is refused with a reason`, !info.readable && !!info.problem,
+      JSON.stringify(info));
+  }
+
+  // The checks it applies are decryptBackup's own, so a file the screen
+  // offered to open cannot then be refused by the thing that opens it.
+  const newer = JSON.stringify({ ...JSON.parse(file), version: 99 });
+  await refuses('and the same file is refused by the decrypt',
+    () => decryptBackup(newer, PW), 'backup_version');
 }
 
 console.log('a backup sealed with the recovery phrase still opens');
@@ -565,11 +615,39 @@ console.log('the two backup screens say the same simple thing');
   ok('the phone buttons are only ever disabled while busy',
     !/disabled=\{[^}]*!password/.test(P) && !/disabled=\{[^}]*password !== confirm/.test(P),
     'greying a button out instead of explaining is how Restore went missing');
-  ok('and restore says what it needs before opening a picker',
-    /function startRestore[\s\S]{0,260}Enter the password/.test(V));
-  ok('and the phone says it before opening the system picker',
-    /const onRestore[\s\S]{0,400}Enter the password[\s\S]{0,400}native\(\)\.open/.test(P),
-    'a picker whose result is going to be refused should not open');
+  // THE FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND (2026-11-08:
+  // "when restoring user selects the file and if the file is encrypted it
+  // should ask for a password"). These replace two assertions that pinned the
+  // opposite — that each client demanded a password BEFORE opening a picker —
+  // which was the best that could be done while the question came first, and
+  // is now the bug. Nothing is relaxed: the same two paths are pinned, from
+  // the other end.
+  ok('the web opens the picker without asking for anything first',
+    /function startRestore\(\)[^}]*\}/.test(copy(V)) &&
+    !/function startRestore\(\)[^}]*!password/.test(copy(V)),
+    'until a file is chosen there is nothing to ask about');
+  ok('the phone opens the picker without asking for anything first',
+    /const onPickFile = useCallback[\s\S]{0,300}native\(\)\.open\(\)/.test(copy(P)) &&
+    !/const onPickFile = useCallback[\s\S]{0,300}!password/.test(copy(P)));
+  for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
+    ok(`${who} inspects the file before asking for a secret`,
+      /inspectBackupFile/.test(src) && /info\.readable/.test(src),
+      'a file that was never going to open must not cost a typed password');
+    // ASKS FOR WHAT THE FILE WANTS, not for "a password" regardless. A backup
+    // written between 2026-11-04 and 2026-11-08 is sealed with the recovery
+    // phrase, and naming it is the whole reason the file is read first.
+    ok(`${who} asks for the secret the file names`,
+      /asksFor/.test(src) && /encrypted/.test(src));
+    // CHOOSING A FILE ALWAYS ASKS. Opening it with whatever happened to be in
+    // the field is the bug that started all of this — "I was able to restore
+    // from file w/o being prompted for password" — and it comes straight back
+    // the moment one session saves a backup and then restores one.
+    ok(`${who} clears the field so picking a file always asks`,
+      /[Pp]ending[\s\S]{0,900}(setPassword\(''\)|password\.value = '')/.test(
+        src.slice(src.indexOf(who === 'the web' ? 'pending.value = { text, info }'
+                                                : 'setPending({ text, info })'))),
+      'the password that seals a new backup is not evidence about an old file');
+  }
 
   // AND THE PASSWORD IS NOT MASKED (2026-11-08, on the user's instruction).
   // It is a per-file password with no checksum, typed once: seeing it is the
@@ -647,17 +725,23 @@ console.log('the two backup screens say the same simple thing');
     const next = rest.slice(1).search(/\n(async function|  const on[A-Z]|}, \[)/);
     return (next < 0 ? rest : rest.slice(0, next + 1)).replace(/\s+/g, ' ');
   };
+  //
+  // ONE FIELD (2026-11-08: "drop confirm password field, one field is
+  // sufficient"). This replaces the pair that pinned the confirmation box —
+  // which was the checksum a password does not have, and is gone by
+  // instruction. What takes its place is the rule that still runs, and it is
+  // pinned the same way: in the handler, ahead of encryptBackup.
   for (const [who, src, fn] of [
     ['the web', V, 'async function doSave'],
     ['the phone', P, 'const onExport'],
   ]) {
-    ok(`${who} asks for the password twice to save`, /[Cc]onfirm password/.test(src));
+    ok(`${who} asks for the password once`, !/confirm/i.test(copy(src)),
+      'the second box went; the unmasked field is what is left to check with');
     const body = handler(src, fn);
-    // `.value` on the web (refs), bare on the phone (useState).
-    const guard = /password(\.value)? !== confirm(\.value)?/.exec(body);
-    ok(`${who} refuses to save when the two do not match`,
-      !!guard && guard.index < body.indexOf('encryptBackup('),
-      'the disabled button is not enough; encryptBackup cannot tell a typo');
+    const guard = body.indexOf('validateBackupPassword(');
+    ok(`${who} applies the password rule before sealing anything`,
+      guard >= 0 && guard < body.indexOf('encryptBackup('),
+      'the only check left on a password typed once');
   }
 
   // Both give the restore the account's wallets, which is what lets a

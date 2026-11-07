@@ -471,10 +471,13 @@ that have not stopped being true:
 
 - **A password has no checksum.** `isValidMnemonic` refused a mistyped phrase
   before anything was encrypted. A mistyped password seals a file nobody can
-  ever open, and nothing finds out until a restore. **Both export screens ask
-  for it twice**, and that confirm field is not politeness — it is the
-  checksum we gave up. Checked in the handler as well as by the disabled
-  button, because `encryptBackup` cannot tell a confirmed password from a typo.
+  ever open, and nothing finds out until a restore. There was a confirm field
+  for it; **it went on 2026-11-08** (*"drop confirm password field, one field
+  is sufficient"*), so nothing checks the typing at all now. What stands in
+  its place is that the field is **not masked** — what was typed can be read
+  back before pressing Save, which is a weaker check than a second box and not
+  nothing. `validateBackupPassword` still runs in the handler ahead of
+  `encryptBackup`, and length is all it can judge.
 - **It is one more thing to lose.** The phrase was already written down
   somewhere; this is a new secret that exists only for this file.
 
@@ -592,13 +595,48 @@ is nowhere to put a file back.
 password; `decryptBackup` branches on the header's `keySource` and the error
 names the case rather than saying the file is broken.
 
-**The confirm field is on SAVE only**, and `check:backup` asserts the guard is
-**in the handler**, before `encryptBackup`, rather than anywhere in the file.
-Its first version matched the comparison anywhere — which the template's own
-`v-if` and `:disabled` bindings satisfy — so deleting the guard inside the
-save function left the check green. A disabled button is a hint; the handler
-is the only thing `encryptBackup` sits behind. (The web compares
-`password.value`, the phone `password`, so the pattern allows both.)
+**The restore takes the FILE first and asks for the password second**
+(2026-11-08, on the user's instruction: *"when restoring user selects the file
+and if the file is encrypted it should ask for a password"*). Pressing Restore
+opens the picker and demands nothing: until a file has been chosen there is
+nothing to ask about, and a screen that has not seen the file **cannot say
+which secret that file wants** — which is the whole of it, because a backup
+written between 2026-11-04 and 2026-11-08 wants the recovery phrase.
+
+`inspectBackupFile` is what makes that possible: a read of the authenticated
+header fields with no secret in hand, reporting whether the file is readable,
+whether it is encrypted, and what to ask for. It is **a read, not a
+verification** — nothing in it is trustworthy until the AEAD opens, and a
+forged header costs one failed decrypt and nothing else. Its header checks are
+`decryptBackup`'s own (`readEnvelope`, shared), so a file the screen offered to
+open cannot then be refused by the thing that opens it. A file this build
+cannot read is refused **before** a password is asked for, because making
+somebody type a secret for a file that was never going to open is the same
+mistake from the other end.
+
+**Choosing a file clears the password field**, every time. Opening it with
+whatever happened to be typed is exactly the bug that was reported in the first
+place — *"I was able to restore from file w/o being prompted for password"* —
+and it comes straight back the moment one session saves a backup and then
+restores one. The password that seals a new backup is not evidence about an old
+file. For the same reason the button row belongs to the chosen file while one
+is waiting: Open and Cancel, no Save, which would otherwise seal a NEW backup
+under the password being typed to open an old one.
+
+**A failed open keeps the file**, so a wrong password is retyped against what
+is already in hand; a successful one drops it.
+
+`check:backup` asserts the password rule runs **in the handler**, before
+`encryptBackup`, rather than anywhere in the file. The confirm-guard version of
+that check matched the comparison anywhere — which the template's own `v-if`
+and `:disabled` bindings satisfied — so deleting the guard inside the save
+function left it green. A disabled button is a hint; the handler is the only
+thing `encryptBackup` sits behind.
+
+**Three message tones, not two.** Once the screen started asking for things,
+`ok`/`error` was not enough: *"This backup is encrypted, enter its password"*
+rendered in the green of a finished job reads as though something already
+succeeded. Prompts and progress are neutral; green is for outcomes.
 
 **A restore re-keys by sp_address, never by the id in the file.** This is the
 bug the objection surfaced. `wallet_id = urlsafe_short_hash()` at create time,

@@ -327,11 +327,68 @@ export async function encryptBackup(
   return JSON.stringify({ ...header, ct: base64.encode(ct) }, null, 2) + '\n';
 }
 
-export async function decryptBackup(
-  text: string,
-  password: string,
-  onProgress?: KdfProgress,
-): Promise<BackupPayload> {
+/**
+ * Everything about a file that can be known WITHOUT the secret.
+ *
+ * This exists so a restore can take the file FIRST and ask for the password
+ * second (2026-11-08, on the user's instruction: "when restoring user selects
+ * the file and if the file is encrypted it should ask for a password"). Asking
+ * first meant typing a password at a screen that had not yet seen the file,
+ * and so could not say which secret that particular file wants — the question
+ * came before the only thing that could answer it.
+ *
+ * It is a READ OF AUTHENTICATED HEADER FIELDS, not a verification: nothing
+ * here is trustworthy until the AEAD opens. Its one job is deciding what to
+ * ask for. A forged header can therefore make the screen ask the wrong
+ * question, which costs a failed decrypt and nothing else.
+ */
+export type BackupFileInfo = {
+  /** A WhiSPa backup this build knows how to read. */
+  readable: boolean;
+  /** It carries a ciphertext, so a secret is needed to open it. */
+  encrypted: boolean;
+  /** What the header says sealed it, verbatim. */
+  keySource: string;
+  /** What to ask the user for, in the words the screen should use. */
+  asksFor: 'password' | 'recovery phrase' | 'wallet passphrase';
+  /** Why it cannot be read, when it cannot. */
+  problem: string | null;
+};
+
+export function inspectBackupFile(text: string): BackupFileInfo {
+  const info: BackupFileInfo = {
+    readable: false,
+    encrypted: false,
+    keySource: '',
+    asksFor: 'password',
+    problem: null,
+  };
+  try {
+    const env = readEnvelope(text);
+    info.readable = true;
+    info.encrypted = typeof env.ct === 'string' && env.ct.length > 0;
+    info.keySource = typeof env.keySource === 'string' ? env.keySource : '';
+    // The two legacy schemes are named so the screen can ask for the right
+    // thing up front, instead of the user discovering it from a failed
+    // decrypt. See the comment on PHRASE_KEY_SOURCE for the dates.
+    info.asksFor =
+      info.keySource === PHRASE_KEY_SOURCE
+        ? 'recovery phrase'
+        : info.keySource === PASSPHRASE_KEY_SOURCE
+          ? 'wallet passphrase'
+          : 'password';
+  } catch (e: any) {
+    info.problem = e?.message || 'That file is not a WhiSPa backup.';
+  }
+  return info;
+}
+
+/**
+ * The header checks, shared so that what `inspectBackupFile` will accept and
+ * what `decryptBackup` will accept cannot drift — a file the screen offered to
+ * open and then refused would be the worst of both.
+ */
+function readEnvelope(text: string): any {
   let env: any;
   try {
     env = JSON.parse(text);
@@ -358,6 +415,15 @@ export async function decryptBackup(
   if (env.cipher !== 'xchacha20poly1305' || !READABLE_KDFS.includes(env.kdf?.name)) {
     throw new BackupError('backup_unknown_crypto', 'That backup uses encryption this app does not know.');
   }
+  return env;
+}
+
+export async function decryptBackup(
+  text: string,
+  password: string,
+  onProgress?: KdfProgress,
+): Promise<BackupPayload> {
+  const env = readEnvelope(text);
 
   const k = env.kdf;
   let salt: Uint8Array;

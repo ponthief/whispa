@@ -85,7 +85,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       );
       const total = countItems(payload);
       if (!total) {
-        say('Nothing to back up yet — no labels on this phone.', true);
+        say('Nothing to back up yet.', true);
         return;
       }
       // Checked here as well as by the disabled button: a mismatch must never
@@ -149,19 +149,15 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         [
           added
             ? `Restored ${added} of ${total} label${total === 1 ? '' : 's'}.`
-            : `Nothing to add — everything in that file was already on this phone.`,
+            : `Nothing to add — all ${total} were already here.`,
           kept ? `${kept} were already here and were left alone.` : '',
           remapped
             ? `${remapped} wallet${remapped === 1 ? '' : 's'} had been removed and ` +
               'added back; their labels were re-matched.'
             : '',
-          // Said rather than counted as restored. A backup from the web app
-          // carries sections this phone has nothing to put them in.
-          skipped.length
-            ? `This phone does not use ${skipped.join(', ')}, so ${
-                skipped.length === 1 ? 'that was' : 'those were'
-              } left in the file.`
-            : '',
+          // Said rather than counted as restored. A backup from the other
+          // client carries sections this one has nothing to put them in.
+          skipped.length ? `${skipped.join(', ')} were left in the file.` : '',
         ]
           .filter(Boolean)
           .join(' '),
@@ -176,12 +172,14 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
   return (
     <Page title="Backup" onBack={onBack}>
       <Group title="What this saves">
+        {/* ONE LINE, and the same one the web modal uses (2026-11-08, on the
+            user's instruction: "text must be really simple: backup labels,
+            contacts"). "What only this phone knows" went with it — the two
+            screens were each naming their own device, which is a distinction
+            the reader does not need and which the web could not state without
+            saying "browser". What it saves is what it saves. */}
         <Block first>
-          <Help>
-            Use this if your phone is lost or stolen, or if you reinstall the
-            app. It saves what only this phone knows: your transaction labels,
-            SegWit address labels and pinned contacts.
-          </Help>
+          <Help>Backs up your labels and contacts.</Help>
         </Block>
         {/* The "your coins are not in this file, they live on the Bitcoin
             network and come back from your recovery phrase" paragraph was

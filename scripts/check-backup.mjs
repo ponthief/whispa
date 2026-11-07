@@ -486,63 +486,49 @@ console.log('every WhiSPa wallet has a passphrase, including imported ones');
     'a comment that contradicts the code is worse than no comment');
 }
 
-console.log('the backup screens say what the file is for, and name one secret');
+console.log('the two backup screens say the same simple thing');
 {
-  const V = readFileSync(new URL('../src/views/ConfigView.vue', import.meta.url), 'utf8');
+  // THE WEB'S BACKUP IS A MODAL OFF THE WALLET CARD'S GEAR MENU since
+  // 2026-11-08, not a card on the Settings page. If this path ever goes
+  // stale the checks below pass against a file nobody renders, so it is read
+  // by name here and the Settings page is asserted NOT to carry a second copy.
+  const V = readFileSync(new URL('../src/components/BackupModal.vue', import.meta.url), 'utf8');
   const P = readFileSync(new URL('../src/screens/settings/BackupPage.tsx', import.meta.url), 'utf8');
-  // Template and JSX text only — a comment explaining WHY the passphrase is not
-  // named would otherwise fail the check that it is not named. The same trap
-  // check-stealth.cjs hit with DONT_KILL_APP, and this file hit with
-  // Math.random(), so it is stripped here too.
-  // Whitespace collapsed as well, because a sentence that wraps across two
-  // source lines is the same sentence on screen — matching it without this
-  // fails on where the editor happened to break the line.
+  const CFG = readFileSync(new URL('../src/views/ConfigView.vue', import.meta.url), 'utf8');
+  const WALLETS = readFileSync(new URL('../src/views/WalletsView.vue', import.meta.url), 'utf8');
+
+  // Comments stripped AND whitespace collapsed: a comment explaining why a
+  // word is absent would otherwise fail the check that it is absent, and a
+  // sentence that wraps across two source lines is one sentence on screen.
   const copy = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\/\/[^\n]*/g, '')
     .replace(/\s+/g, ' ');
 
+  // ONE LINE, THE SAME ONE, on both (2026-11-08: "text must be really simple:
+  // backup labels, contacts"). Each screen used to name its own device —
+  // "what only this phone knows", "what only this browser knows" — which is a
+  // distinction the reader does not need and which the web could not state
+  // without saying "browser" on a product that is also a phone app.
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
-    ok(`${who} says what it saves`,
-      /transaction labels/.test(src) && /pinned contacts/.test(src));
-    // THE RED ONE, and it is about the PASSWORD since 2026-11-08. It opens the
-    // file, it exists nowhere else, and losing it loses the file's contents.
+    ok(`${who} says what it saves, in one line`,
+      /Backs up your labels and contacts/.test(src));
+    ok(`${who} does not name a device`,
+      !/\bphone\b/i.test(src) && !/\bbrowser\b/i.test(src),
+      'there is no browser on the phone, and no phone in the browser');
+    // THE RED ONE, about the password: it opens the file, exists nowhere
+    // else, and nobody can recover it.
     ok(`${who} warns in red about losing the password`,
       /Remember this password/.test(src) &&
       /only thing that opens the file/.test(src));
-    // ONE SECRET ON SCREEN. "passphrase" belongs to importing a wallet, and
-    // naming it here was what made this screen hard to follow.
     ok(`${who} never says "passphrase" on screen`,
       !/passphrase/i.test(src),
       'the screen asks for one secret: a password for this file');
-  }
-
-  // SCOPED TO THE PHONE, by instruction (2026-11-08): "the text says if phone
-  // is lost or stolen, that means it should not be in the web app". The
-  // browser is not a phone, so its copy talks about a new computer and
-  // cleared site data instead.
-  ok('the phone says when to use it',
-    /lost or stolen/.test(copy(P)) && /reinstall/.test(copy(P)));
-  ok('the web does NOT talk about phones',
-    !/\bphone\b/i.test(copy(V)),
-    'a browser is not a phone, and saying so was the reported bug');
-  ok('and the web says what it IS about instead',
-    /new computer/.test(copy(V)) || /clearing site data/.test(copy(V)));
-
-  // DROPPED FROM THE WEB, by the same instruction: "do not mention that coins
-  // are not in the file and where they live". The phone keeps it — it was not
-  // part of the report, and there it sits beside the lost-or-stolen line that
-  // makes a reader wonder about their coins in the first place.
-  ok('the web does not discuss where the coins live',
-    !/coins are not in this file/.test(copy(V)) && !/Bitcoin network/.test(copy(V)));
-
-  // NEITHER SCREEN ASKS FOR THE RECOVERY PHRASE ANY MORE. That is the whole
-  // point of the change: a backup of labels does not justify typing the one
-  // secret that cannot be reissued, and every extra screen those words appear
-  // on is another place they can be seen or phished.
-  for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
     ok(`${who} never asks for the recovery phrase`,
-      !/recovery phrase/i.test(src), src.match(/.{0,60}recovery phrase.{0,60}/i)?.[0]);
+      !/recovery phrase/i.test(src),
+      src.match(/.{0,60}recovery phrase.{0,60}/i)?.[0]);
+    ok(`${who} does not discuss where the coins live`,
+      !/coins are not in this file/.test(src) && !/Bitcoin network/.test(src));
   }
 
   ok('the web warning uses the red alert style',
@@ -551,34 +537,69 @@ console.log('the backup screens say what the file is for, and name one secret');
   ok('the phone warning uses the error note',
     /<Note kind="error">\s*\n?\s*Remember this password/.test(P));
 
-  // THE CONFIRM FIELD IS THE CHECKSUM A PASSWORD DOES NOT HAVE. A mistyped
-  // phrase was refused by BIP-39 before anything was encrypted; a mistyped
-  // password seals a file nobody can ever open and nothing finds out until a
-  // restore. Export only — a restore proves the password by opening the file.
-  for (const [who, src] of [['the web', V], ['the phone', P]]) {
-    ok(`${who} asks for the password twice on export`,
-      /Confirm password/.test(src));
-    ok(`${who} refuses to export when the two do not match`,
-      /password !== (bkPassword2\.value|confirm)/.test(src.replace(/\s+/g, ' ')) ||
-      /bkPassword !== bkPassword2/.test(src),
+  // WHERE IT LIVES ON THE WEB. Moved out of Settings into the wallet card's
+  // gear menu; two screens offering one thing, with nothing to say which you
+  // last used, is the failure that menu exists to undo.
+  ok('the wallet card menu opens it', /openBackup/.test(WALLETS) && /BackupModal/.test(WALLETS));
+  ok('and the Settings page no longer carries its own copy',
+    !/encryptBackup|decryptBackup/.test(CFG),
+    'the backup lives in one place on the web');
+
+  // THE PASSWORD DOES NOT SURVIVE THE MODAL. This is the reported bug: "I was
+  // able to restore from file w/o being prompted for password". The crypto
+  // was never bypassed — an empty password throws before a key is derived —
+  // but the field sat on the Settings page holding whatever had been typed to
+  // SAVE a backup, so Restore afterwards asked nothing.
+  ok('the web clears the password when the modal opens or closes',
+    /watch\(\(\) => props\.show[\s\S]{0,200}password\.value = ''/.test(V),
+    'a field that persists across save and restore prompts nobody');
+
+  // THE CONFIRM FIELD IS THE CHECKSUM A PASSWORD DOES NOT HAVE, on save only:
+  // a restore proves the password by opening the file, and an older file may
+  // be sealed with something else entirely.
+  //
+  // ASSERTED ON THE HANDLER, not on the file. The first version of this check
+  // matched `password !== confirm` anywhere, which the template's own
+  // `v-if` and `:disabled` bindings satisfy — so deleting the guard inside
+  // the save function left it green. A disabled button is a hint; the handler
+  // is the only thing encryptBackup is behind.
+  const handler = (src, name) => {
+    const at = src.indexOf(name);
+    if (at < 0) return '';
+    const rest = src.slice(at);
+    const next = rest.slice(1).search(/\n(async function|  const on[A-Z]|}, \[)/);
+    return (next < 0 ? rest : rest.slice(0, next + 1)).replace(/\s+/g, ' ');
+  };
+  for (const [who, src, fn] of [
+    ['the web', V, 'async function doSave'],
+    ['the phone', P, 'const onExport'],
+  ]) {
+    ok(`${who} asks for the password twice to save`, /[Cc]onfirm password/.test(src));
+    const body = handler(src, fn);
+    // `.value` on the web (refs), bare on the phone (useState).
+    const guard = /password(\.value)? !== confirm(\.value)?/.exec(body);
+    ok(`${who} refuses to save when the two do not match`,
+      !!guard && guard.index < body.indexOf('encryptBackup('),
       'the disabled button is not enough; encryptBackup cannot tell a typo');
   }
 
-  // The browser has no phrase of its own — keyvault.js keeps derived keys only
-  // — so the export asks for one. It must NOT start persisting it.
-  ok('the web export asks for a backup password', /bkPassword/.test(V));
-  ok('and the browser never stores it',
-    !/localStorage\.setItem\([^)]*(bkPassword|[Pp]hrase)/.test(V) &&
-    !/vaultStore\([^)]*bkPassword/.test(V),
-    'a typed phrase that gets persisted is a new secret in IndexedDB');
-  // Both clients hand the live wallet list to applyBackup, which is what makes
-  // the re-key possible at all.
+  // Both give the restore the account's wallets, which is what lets a
+  // re-added wallet get its SegWit labels back.
   for (const [who, src] of [['the web', V], ['the phone', P]]) {
+    // Named differently on the two sides (the phone binds it to `live`
+    // first), so this asserts the LIST REACHES applyBackup rather than one
+    // spelling of the call.
+    const flat = src.replace(/\s+/g, ' ');
     ok(`${who} gives the restore the account's current wallets`,
-      /applyBackup\([^)]*(walletRefs|live)/.test(src.replace(/\s+/g, ' ')),
+      /applyBackup\([^)]*(walletRefs|live)/.test(flat) && /walletRefs/.test(flat),
       'without them a re-added wallet files its labels under a dead id');
   }
+
+  ok('and the web never stores the password',
+    !/localStorage\.setItem\([^)]*password/i.test(V),
+    'a typed password that gets persisted is a new secret in the browser');
 }
+
 
 console.log('the web collector never reaches the key vault');
 {

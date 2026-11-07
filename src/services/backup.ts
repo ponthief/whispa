@@ -247,7 +247,7 @@ async function kdfKey(
   onProgress?: KdfProgress,
 ): Promise<Uint8Array> {
   if (!password) {
-    throw new BackupError('backup_no_password', 'A backup needs your recovery phrase.');
+    throw new BackupError('backup_no_password', 'A backup needs a password.');
   }
   const pw = enc.encode(password);
   const opts = { dkLen: spec.dkLen ?? 32, asyncTick: 20, onProgress };

@@ -417,10 +417,10 @@ utxos and tnxs are removed from the backend. restoring them in the app won't
 restore them on the server."*
 
 **What it is for**: the device-only data goes and nothing can rebuild it —
-transaction labels, SegWit address labels, pinned contacts. The phone's copy
-names the three ways that happens there (lost, stolen, reinstalled); the web's
-names its own (a new computer, cleared site data), because a browser is not a
-phone. `services/backup.ts` does the crypto; each client supplies its
+transaction labels, SegWit address labels, pinned contacts. Neither screen
+lists the ways that happens any more; see "Where it lives" below for why both
+now say one line and name no device. `services/backup.ts` does the crypto;
+each client supplies its
 own collector because the two store this differently — the web in
 `localStorage` under `thrilla_*_v1`, the phone in the platform keychain under
 named services.
@@ -507,31 +507,49 @@ reason argon2id stays readable.
 enforced on write; refusing an older file for failing today's policy would
 strand it.
 
-### What the two screens say, and what they stopped saying
+### Where it lives, and the one line both screens say
+
+**On the web it is a modal off the wallet card's ⚙ menu** (2026-11-08, on the
+user's instruction), `components/BackupModal.vue`. It was a card on the
+Settings page; nothing is left there, because two screens offering one thing
+with nothing to say which you last used is the failure that menu exists to
+undo. It is **account-wide, not per-wallet** — labels and pinned contacts
+cover every wallet, so whichever card's menu opens it, one file is one backup.
+The menu is where people look; the copy is what states the scope.
+
+**The password does not survive the modal.** Reported as *"I was able to
+restore from file w/o being prompted for password"*. The crypto was never
+bypassed — an empty password throws before a key is derived — but the field
+sat on the Settings page holding whatever had been typed to SAVE a backup, so
+pressing Restore straight afterwards opened the file having asked nothing. A
+field that persists across two different operations is a field nobody is
+prompted by. It is cleared on open and on close.
+
+**One line, the same line, on both: *"Backs up your labels and contacts."***
+(*"text must be really simple: backup labels, contacts"*.) Each screen used to
+name its own device — "what only this phone knows", "what only this browser
+knows" — which is a distinction the reader does not need and which the web
+could not state without saying *browser* on a product that is also a phone
+app. `check:backup` refuses either word on either screen, and the phone's
+status messages lost "on this phone" with them.
 
 **The red warning is about the password** on both: *"Remember this password.
-It is the only thing that opens the file, it is not stored anywhere, and no
-one — including us — can recover it or the file's contents without it."*
-
-**The web app does not mention phones** (2026-11-08, reported: *"the text says
-if phone is lost or stolen, that means it should not be in the web app"*). A
-browser is not a phone. Its copy names what the equivalent loss is there — a
-new computer, or cleared site data.
+It is the only thing that opens the file, and no one — including us — can
+recover it."*
 
 **Neither screen says where the coins live.** *"Your coins are not in this
-file and do not need to be. They live on the Bitcoin network, and your wallet
-finds them again from your recovery phrase"* went from the web on the user's
-instruction, and from the phone as a consequence rather than by request: it
-was the last line naming the recovery phrase, and leaving it would undo the
-point of no longer asking for one. What it defended against — somebody reading
-this as a wallet backup — the first line already handles by saying what IS
-saved.
+file… they live on the Bitcoin network"* went from the web on the user's
+instruction and from the phone as a consequence: it was the last line naming
+the recovery phrase, and leaving it would undo the point of no longer asking
+for one.
 
-`check:backup` pins all of that, and the absence of the word "passphrase" in
-template and JSX text, having stripped comments AND collapsed whitespace
-first: a sentence that wraps across two source lines is the same sentence on
-screen, and matching it without that fails on where the editor broke the line.
-
+**The confirm field is on SAVE only**, and `check:backup` asserts the guard is
+**in the handler**, before `encryptBackup`, rather than anywhere in the file.
+Its first version matched the comparison anywhere — which the template's own
+`v-if` and `:disabled` bindings satisfy — so deleting the guard inside the
+save function left the check green. A disabled button is a hint; the handler
+is the only thing `encryptBackup` sits behind. (The web compares
+`password.value`, the phone `password`, so the pattern allows both.)
 
 **A restore re-keys by sp_address, never by the id in the file.** This is the
 bug the objection surfaced. `wallet_id = urlsafe_short_hash()` at create time,

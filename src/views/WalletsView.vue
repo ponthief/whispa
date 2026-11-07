@@ -11,6 +11,7 @@ import QrModal from '@/components/QrModal.vue'
 import EditWalletModal from '@/components/EditWalletModal.vue'
 import SeedInput from '@/components/SeedInput.vue'
 import PlainAddressPanel from '@/components/PlainAddressPanel.vue'
+import BackupModal from '@/components/BackupModal.vue'
 
 // What each wallet's SegWit chain holds, reported by its own panel below.
 // ONE BALANCE, TWO POCKETS: "how much have I got" has a single answer, and
@@ -57,6 +58,13 @@ function closeMenu() {
 function fromMenu(fn, ...args) {
   closeMenu()
   return fn(...args)
+}
+
+// Backup, opened from any card's menu. Account-wide rather than per-wallet, so
+// it takes no wallet argument — see the note beside the menu item.
+const showBackup = ref(false)
+function openBackup() {
+  showBackup.value = true
 }
 // Client-side Silent Payments derivation — the same module the mobile app uses,
 // verified byte-for-byte against the backend. Keeps the seed on this device.
@@ -924,6 +932,12 @@ watch(swapCompletedAt, () => {
               :title="bgScan[w.id] ? 'Server keeps this wallet synced while you\'re away (knows the scan key). Click to turn off.' : 'Let the server keep this wallet synced in the background (uploads scan key — detection only).'"
               @click="fromMenu(toggleBgScan, w)"
             >{{ bgBusy[w.id] ? '🔄 Background scanning: …' : (bgScan[w.id] ? '🔄 Background scanning: On' : '🔄 Background scanning: Off') }}</button>
+            <!-- Backup moved here from the Settings page on 2026-11-08, on the
+                 user's instruction. It is ACCOUNT-WIDE, not per-wallet: labels
+                 and pinned contacts cover every wallet, so whichever card's
+                 menu opens it, one file is one backup. The menu is where
+                 people look; the modal's copy is what says the scope. -->
+            <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup</button>
             <div class="wallet-menu-rule"></div>
             <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
           </div>
@@ -1211,6 +1225,8 @@ watch(swapCompletedAt, () => {
     </div>
 
     <!-- QR modal -->
+    <BackupModal :show="showBackup" @close="showBackup = false" />
+
     <QrModal :show="showQr" :address="qrAddress" :title="qrTitle" :hr-address="qrHrAddress" @close="showQr = false" />
 
     <!-- Edit wallet modal -->

@@ -786,6 +786,141 @@ console.log('the two backup screens say the same simple thing');
 }
 
 
+console.log('the SP labels on the server travel in the file too');
+{
+  // THE REPORTED MISS (2026-11-08): "just restored a file where label for
+  // segwit address tnx got restored, but not for SP tnx label — if we are
+  // only backing up labels, it's not really a wallet backup, is it?"
+  //
+  // A SegWit label is device-only and was in the file; an SP coin's label is
+  // silnt.utxos.label, written through PUT /api/v1/utxos/{txid}/label, and was
+  // not. Nothing on either screen could say which of somebody's labels would
+  // come back.
+  //
+  // EXERCISED against a fake api, which is the whole reason serverLabels.ts
+  // takes one: no network, and every branch here is a branch that produces a
+  // restore that looks like it worked.
+  const { collectServerLabels, applyServerLabels } = await import(
+    pathToFileURL(new URL('../src/services/serverLabels.ts', import.meta.url).pathname).href);
+
+  const makeApi = (state) => ({
+    calls: [],
+    async getUtxos(_k, wid) { return { utxos: state.utxos[wid] || [] }; },
+    async updateUtxoLabel(_k, txid, label, wid) {
+      this.calls.push(['utxo', wid, txid, label]);
+      const row = (state.utxos[wid] || []).find((u) => u.txid === txid);
+      if (!row) { const e = new Error('no coin from that transaction yet'); e.status = 404; throw e; }
+      row.label = label;
+    },
+    async getWalletAddresses(_k, wid) { return { addresses: state.addrs[wid] || [] }; },
+    async updateAddressLabel(_k, wid, id, label) {
+      this.calls.push(['addr', wid, id, label]);
+      const row = (state.addrs[wid] || []).find((a) => a.id === id);
+      if (!row) throw new Error('gone');
+      row.label = label;
+    },
+  });
+
+  const state = {
+    utxos: { w1: [
+      { txid: 'tx-a', vout: 0, label: 'rent' },
+      { txid: 'tx-b', vout: 0, label: '' },
+    ] },
+    addrs: { w1: [{ id: 'addr-row-1', sp_address: 'sp1qalice', label: 'alice' }] },
+  };
+  const api = makeApi(state);
+  const refs = [{ id: 'w1', spAddress: 'sp1qmine' }];
+
+  const taken = await collectServerLabels(api, 'inkey', refs);
+  ok('an SP coin label is collected', taken.coinLabels?.w1?.['tx-a'] === 'rent');
+  ok('and a coin with no label is not', !('tx-b' in (taken.coinLabels?.w1 || {})));
+  ok('a labelled SP address is collected', taken.addressLabels?.w1?.sp1qalice === 'alice');
+
+  // The wallet was deleted and added back, so its id changed — the same
+  // problem segwitLabels has, solved the same way.
+  state.utxos['w2-new'] = [{ txid: 'tx-a', vout: 0, label: 'something else' }];
+  state.addrs['w2-new'] = [{ id: 'addr-row-9', sp_address: 'sp1qalice', label: '' }];
+  const api2 = makeApi(state);
+  const r = await applyServerLabels(api2, 'inkey', taken, { w1: 'w2-new' },
+    [{ id: 'w2-new', spAddress: 'sp1qmine' }]);
+  ok('a coin label is restored under the wallet\'s NEW id',
+    state.utxos['w2-new'][0].label === 'rent' && r.coinLabels.added === 1,
+    JSON.stringify(r));
+  ok('and an address label by the address, under the id the server holds now',
+    state.addrs['w2-new'][0].label === 'alice' &&
+    api2.calls.some((c) => c[0] === 'addr' && c[2] === 'addr-row-9'),
+    'the row id in the file is the OLD server id and cannot be used');
+
+  // Already equal: no call at all. This talks to a server, so a no-op PUT is
+  // a round trip spent saying nothing.
+  const api3 = makeApi(state);
+  const again = await applyServerLabels(api3, 'inkey', taken, { w1: 'w2-new' },
+    [{ id: 'w2-new', spAddress: 'sp1qmine' }]);
+  ok('restoring the same labels again sends nothing',
+    api3.calls.length === 0 && again.coinLabels.kept === 1 && again.addressLabels.kept === 1);
+
+  // THE CASE THAT WOULD OTHERWISE LOOK LIKE A FAILED RESTORE: the wallet is
+  // back but its coins have not been scanned yet, so there is nothing to
+  // label. Counted as pending and reported — "scan, then restore again" — not
+  // swallowed, and not an error.
+  const bare = { utxos: { w3: [] }, addrs: { w3: [] } };
+  const api4 = makeApi(bare);
+  const r4 = await applyServerLabels(api4, 'inkey', taken, { w1: 'w3' },
+    [{ id: 'w3', spAddress: 'sp1qmine' }]);
+  ok('a label whose coin is not scanned yet is pending, not failed',
+    r4.coinLabels.pending === 1 && r4.coinLabels.failed === 0);
+  ok('and it is not even attempted, since the read already answered',
+    api4.calls.length === 0);
+  ok('an address not yet re-created is pending too',
+    r4.addressLabels.pending === 1 && r4.addressLabels.failed === 0);
+
+  // A wallet the account no longer has at all: the labels stay in the file.
+  const r5 = await applyServerLabels(makeApi(bare), 'inkey', taken, {}, []);
+  ok('a wallet that is not on the account leaves its labels in the file',
+    r5.coinLabels.pending === 1 && r5.coinLabels.added === 0);
+
+  // One wallet that cannot be read must not cost the backup the others.
+  const brokenApi = {
+    async getUtxos(_k, wid) { if (wid === 'bad') throw new Error('boom'); return { utxos: [{ txid: 'tx-z', label: 'kept' }] }; },
+    async updateUtxoLabel() {},
+  };
+  // Caught here so a regression reports as a FAILED CHECK rather than as the
+  // script dying — a stack trace says something broke, a named failure says
+  // which rule went.
+  let partial = null;
+  let threw = null;
+  try {
+    partial = await collectServerLabels(brokenApi, 'k', [{ id: 'bad' }, { id: 'good' }]);
+  } catch (e) {
+    threw = e;
+  }
+  ok('a wallet that cannot be read does not cost the others',
+    !threw && partial?.coinLabels?.good?.['tx-z'] === 'kept' && !partial?.coinLabels?.bad,
+    threw ? `it threw: ${threw.message}` : JSON.stringify(partial));
+
+  // The phone has no labelled-address api at all, and must not invent one.
+  const phoneish = { async getUtxos() { return { utxos: [] }; }, async updateUtxoLabel() {} };
+  const none = await collectServerLabels(phoneish, 'k', [{ id: 'w1' }]);
+  ok('a client without the address api writes no addressLabels section',
+    !('addressLabels' in none));
+  ok('and applying one it cannot write is not an error',
+    JSON.stringify(await applyServerLabels(phoneish, 'k',
+      { addressLabels: { w1: { sp1qalice: 'alice' } } }, {}, [{ id: 'w1' }])) === '{}');
+
+  // And neither client reports these as sections it did not understand.
+  const { applyBackup: webApply } = await import(
+    pathToFileURL(new URL('../src/stores/backupdata.js', import.meta.url).pathname).href);
+  const withServer = { app: 'whispa', payloadVersion: 1, exportedAt: 0,
+    sections: { coinLabels: { w1: { 'tx-a': 'rent' } }, addressLabels: { w1: {} } } };
+  ok('the web does not report the server sections as left in the file',
+    webApply(withServer, []).skipped.length === 0);
+  const RNB = readFileSync(new URL('../src/services/backupData.ts', import.meta.url), 'utf8');
+  ok('and neither does the phone',
+    /SERVER_SECTIONS = \['coinLabels', 'addressLabels'\]/.test(RNB) &&
+    /KNOWN_SECTIONS = \['txLabels', 'segwitLabels', \.\.\.SERVER_SECTIONS\]/.test(RNB),
+    'a section that WAS restored must not be reported as dropped');
+}
+
 console.log('the web collector never reaches the key vault');
 {
   const WEB = readFileSync(new URL('../src/stores/backupdata.js', import.meta.url), 'utf8');

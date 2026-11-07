@@ -112,8 +112,14 @@ async function doSave() {
   try {
     const { encryptBackup, backupFilename } = await import('@/services/backup')
     const { collectBackup, describeBackup } = await import('@/stores/backupdata')
+    const { collectServerLabels } = await import('@/services/serverLabels')
 
-    const payload = collectBackup(await walletRefs())
+    const refs = await walletRefs()
+    // The SERVER-side labels too, as of 2026-11-08. An SP coin's label is
+    // silnt.utxos.label and a labelled address's is wallet_addresses.label;
+    // neither was in the file, so a restore brought back a SegWit label and
+    // not an SP one, by a rule invisible from the outside.
+    const payload = collectBackup(refs, await collectServerLabels(api, auth.inkey, refs))
     const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
     if (!total) {
       say('Nothing to back up yet.', 'error')
@@ -208,11 +214,25 @@ async function openPending() {
   busy.value = 'restore'
   say('Opening… 0%', 'info')
   try {
-    const { decryptBackup } = await import('@/services/backup')
+    const { decryptBackup, remapWalletIds } = await import('@/services/backup')
     const { applyBackup } = await import('@/stores/backupdata')
+    const { applyServerLabels } = await import('@/services/serverLabels')
     const payload = await decryptBackup(text, password.value,
       (f) => say(`Opening… ${Math.round(f * 100)}%`, 'info'))
-    const { skipped } = applyBackup(payload, await walletRefs())
+    const live = await walletRefs()
+    const { skipped } = applyBackup(payload, live)
+    // The server-side half, over the network and therefore after the local
+    // one: a failure here must not cost the labels that were already written.
+    const srv = await applyServerLabels(
+      api, auth.inkey, payload.sections || {},
+      remapWalletIds(payload.wallets, live), live)
+    // NAMED APART from the `pending` ref holding the chosen FILE. It was
+    // `pending` for one build, which shadowed the ref inside this function:
+    // the restore itself worked and then `pending.value = null` threw
+    // "Cannot create property 'value' on number '0'", so the file and the
+    // password were both left sitting in the modal. tsc catches this on the
+    // phone and cannot here, and no check would — it took running it.
+    const pendingLabels = (srv.coinLabels?.pending || 0) + (srv.addressLabels?.pending || 0)
 
 
     // ONE WORD (2026-11-08: "restore text is too long and meaningless, just
@@ -233,6 +253,14 @@ async function openPending() {
     // appears only for a cross-client file.
     say([
       'Restored.',
+      // The one thing worth a second sentence: a label whose coin is not
+      // here yet. The coins come back from the chain, so this is the normal
+      // state between adding a wallet back and finishing a rescan, and
+      // "restore again after" is the useful thing to say.
+      pendingLabels
+        ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
+          'coins scanned first — scan, then restore again.'
+        : '',
       skipped.length ? `${skipped.join(', ')} left in the file.` : '',
     ].filter(Boolean).join(' '))
     // Done with: the Open button goes, and a second press cannot re-apply a

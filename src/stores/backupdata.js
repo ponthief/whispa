@@ -52,6 +52,11 @@ const NESTED_BY_WALLET = 'segwitLabels'
 // useful half: a new browser inherits the trust anchor.
 const NEVER_OVERWRITTEN = ['bitmailPins']
 
+// Sections that live on the SERVER, carried in the same file and applied by
+// services/serverLabels.ts rather than by applyBackup. Named here so this
+// module does not report them as sections it did not understand.
+export const SERVER_SECTIONS = ['coinLabels', 'addressLabels']
+
 // Every other `thrilla_*` key this app stores, with the reason it is not in a
 // backup. Listed rather than merely absent so that "is this left out on
 // purpose?" has an answer — and check:backup asserts the partition is TOTAL:
@@ -120,9 +125,16 @@ function readJson(key) {
  * references only: { id, title, network, spAddress }. It is what lets a
  * restore recognise a wallet that has been deleted and re-added under a new
  * id. Nothing in it is secret.
+ *
+ * `serverSections` is what services/serverLabels.ts read from the SERVER —
+ * coinLabels and addressLabels. They are passed in rather than fetched here
+ * because this module knows about localStorage and nothing else, and because
+ * the caller already has the api and the key. Without them a backup restores
+ * a SegWit label and not an SP one, which is what "if we are only backing up
+ * labels, it's not really a wallet backup" was about.
  */
-export function collectBackup(wallets = []) {
-  const sections = {}
+export function collectBackup(wallets = [], serverSections = {}) {
+  const sections = { ...(serverSections || {}) }
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
     const v = readJson(key)
     if (v && Object.keys(v).length) sections[name] = v
@@ -230,7 +242,10 @@ export function applyBackup(payload, live = []) {
     report[name] = { added, kept, conflicts, failed: false }
   }
 
-  const known = Object.keys(BACKUP_KEYS)
+  // The server-side sections are KNOWN but not applied here: applyServerLabels
+  // does that, over the network, from the same payload. Listing them stops
+  // them being reported as "left in the file" when they were in fact restored.
+  const known = [...Object.keys(BACKUP_KEYS), ...SERVER_SECTIONS]
   return {
     sections: report,
     skipped: Object.keys(sections).filter(s => !known.includes(s)),

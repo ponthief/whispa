@@ -8,9 +8,11 @@ import {
   decryptBackup,
   encryptBackup,
   inspectBackupFile,
+  remapWalletIds,
   validateBackupPassword,
 } from '@services/backup';
 import { applyBackup, collectBackup, countItems } from '@services/backupData';
+import { applyServerLabels, collectServerLabels } from '@services/serverLabels';
 import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 
 // The backup screen.
@@ -106,9 +108,14 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     setBusy('export');
     say(null);
     try {
+      const refs = await walletRefs();
+      // The SERVER-side coin labels too (2026-11-08). silnt.utxos.label is
+      // where an SP coin's label lives, and it was not in the file, so a
+      // restore brought back a SegWit label and not an SP one.
       const payload = await collectBackup(
         Platform.OS === 'ios' ? 'ios' : 'android',
-        await walletRefs(),
+        refs,
+        inkey ? await collectServerLabels(api as any, inkey, refs) : {},
       );
       const total = countItems(payload);
       if (!total) {
@@ -136,7 +143,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     // and would encrypt against a string the user never typed. lint caught the
     // same shape once already; it is what CLAUDE.md records about the network
     // check that passed for the exact case it existed to refuse.
-  }, [password, walletRefs]);
+  }, [inkey, password, walletRefs]);
 
   // THE PICKER OPENS STRAIGHT AWAY. Nothing is asked for first: until a file
   // has been chosen there is nothing to ask about.
@@ -207,6 +214,16 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // added back, which gives it a new one.
       const live = await walletRefs().catch(() => []);
       const { skipped } = await applyBackup(payload as any, live);
+      // The server-side half, over the network and therefore after the local
+      // one: a failure here must not cost the labels already written.
+      const srv = inkey
+        ? await applyServerLabels(
+            api as any, inkey, (payload as any).sections || {},
+            remapWalletIds((payload as any).wallets, live), live)
+        : {};
+      // Named apart from the `pending` FILE above — this one counts labels.
+      const pendingLabels =
+        (srv.coinLabels?.pending || 0) + (srv.addressLabels?.pending || 0);
       // ONE WORD, and the web modal says the same (2026-11-08: "do not say
       // Nothing new, Restored is fine"). The file IS restored whether or not
       // anything changed — a merge that added nothing still means every label
@@ -214,7 +231,17 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // this client cannot store is still named rather than counted as
       // restored.
       say(
-        ['Restored.', skipped.length ? `${skipped.join(', ')} left in the file.` : '']
+        [
+          'Restored.',
+          // A label whose coin is not here yet. The coins come back from the
+          // chain, so this is the normal state between adding a wallet back
+          // and finishing a rescan.
+          pendingLabels
+            ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
+              'coins scanned first — scan, then restore again.'
+            : '',
+          skipped.length ? `${skipped.join(', ')} left in the file.` : '',
+        ]
           .filter(Boolean)
           .join(' '),
       );
@@ -231,7 +258,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(null);
     }
-  }, [password, pending, walletRefs]);
+  }, [inkey, password, pending, walletRefs]);
 
   return (
     <Page title="Backup & Restore" onBack={onBack}>

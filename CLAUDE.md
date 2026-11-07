@@ -454,9 +454,58 @@ a view over it. Of its columns, `amount`, `priv_key_tweak`, `pub_key`,
 **do come back** after a delete — import the phrase, rescan, the chain is the
 authority. Only three columns are original user data: `label`, `frozen` and
 `freeze_reason`, plus the address labels behind
-`PUT /wallet/{id}/addresses/{addressId}/label`. **Those are what a wallet
-delete actually destroys and none of them is in the backup** — a real gap, and
-the one place this feature could still usefully grow.
+`PUT /wallet/{id}/addresses/{addressId}/label`.
+
+**The two label sets are in the backup now** (2026-11-08), which closes most of
+that gap. It was reported from the outside: *"just restored a file where label
+for segwit address tnx got restored, but not for SP tnx label — if we are only
+backing up labels, it's not really a wallet backup, is it?"* Exactly right, and
+the split was invisible: a SegWit label is device-only and was in the file; an
+SP coin's label is `silnt.utxos.label` and was not. A backup that restores half
+of somebody's labels, by a rule nobody can see, is worse than one that says it
+restores none.
+
+`services/serverLabels.ts` reads and writes them through the same endpoints the
+UI uses, so the server stays the authority and every ownership check still runs
+there. The **api is injected** rather than imported: the two clients have their
+own api modules with the same function names, the file has to typecheck under
+both tsconfigs, and a check can drive it with a fake and no network. Sections
+are keyed **per wallet** and remapped through `remapWalletIds` for the usual
+reason, by **txid** within a wallet for a coin (what the endpoint takes, and a
+fact about the chain) and by **address** for a labelled address.
+
+Three things it has to get right, each of which otherwise produces a restore
+that looks like it worked:
+
+- **A label whose coin is not scanned yet is `pending`, not failed.** The
+  endpoint 404s when the wallet holds no coin from that txid, which is the
+  normal state between adding a wallet back and finishing a rescan — the coins
+  come from the chain. Both screens say so: *"N labels need their coins scanned
+  first — scan, then restore again."* The same goes for a labelled address,
+  which a scan does not recreate at all because the user made it.
+- **An address row's id is the SERVER's**, so the one in the file is stale by
+  definition after a wallet is re-added. The match is on the address.
+- **A label already equal to the file's is not written.** This talks to a
+  server, so a no-op PUT is a round trip spent saying nothing.
+
+`frozen` and `freeze_reason` are deliberately still out. A label is a note and a
+freeze flag decides what can be SPENT, so restoring a stale one either unfreezes
+a coin somebody froze after the backup or freezes one they released — a backup
+file quietly changing the spendable balance is a different kind of risk and
+wants its own decision.
+
+**Labelled SP addresses are web-only**, so the phone writes no `addressLabels`
+section and ignores one it finds. Both clients name the server sections as
+KNOWN, or a section that WAS restored would be reported as left in the file.
+
+And the bug this nearly shipped with is the reason to run things: the web
+modal's new counter was called `pending`, which **shadowed the ref holding the
+chosen file**. The restore itself worked and then `pending.value = null` threw
+*"Cannot create property 'value' on number '0'"*, leaving the file and the
+password sitting in the modal — the save-without-a-password bug, back. `tsc`
+catches that shape on the phone and cannot in a `.vue` file, `check:vue` does
+not look for it, and no behavioural check would have seen it. Driving the real
+modal in Chromium did.
 
 **The file carries no key material at all.** Not the recovery phrase, not the
 passphrase, not an xprv, spend key or scan key. `assertNoSecrets` walks the

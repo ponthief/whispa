@@ -49,17 +49,29 @@ export type BackupPayloadShape = {
 };
 
 /** The sections this client can actually put back. */
-const KNOWN_SECTIONS = ['txLabels', 'segwitLabels'];
+// The server-side sections travel in the same file and are applied by
+// services/serverLabels.ts, not here. Named so this module does not report
+// them as sections it did not understand — addressLabels included, which this
+// client never writes (labelled SP addresses are a web feature) but must not
+// claim to have dropped.
+const SERVER_SECTIONS = ['coinLabels', 'addressLabels'];
+const KNOWN_SECTIONS = ['txLabels', 'segwitLabels', ...SERVER_SECTIONS];
 
 export async function collectBackup(
   source: 'android' | 'ios' = 'android',
   wallets: BackupWallet[] = [],
+  // What services/serverLabels.ts read from the SERVER. Passed in rather than
+  // fetched here because this module reaches for the keychain and nothing
+  // else, and the caller already holds the api and the key. Without them a
+  // backup carries a SegWit label and not an SP coin's, which is what "if we
+  // are only backing up labels, it's not really a wallet backup" was about.
+  serverSections: BackupSections = {},
 ): Promise<BackupPayloadShape> {
   const [txLabels, segwitLabels] = await Promise.all([
     loadTxLabels(),
     loadSegwitLabels(),
   ]);
-  const sections: BackupSections = {};
+  const sections: BackupSections = { ...(serverSections || {}) };
   if (txLabels && Object.keys(txLabels).length) sections.txLabels = txLabels;
   if (segwitLabels && Object.keys(segwitLabels).length) sections.segwitLabels = segwitLabels;
 

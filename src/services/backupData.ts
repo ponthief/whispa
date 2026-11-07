@@ -1,5 +1,6 @@
 import { remapWalletIds } from './backup';
 import type { BackupWalletRef } from './backup';
+import { countRestorableWallets } from './walletBackup';
 import { loadSegwitLabels, persistSegwitLabels } from './segwitLabels';
 import { loadTxLabels, persistTxLabels } from './txLabels';
 
@@ -216,5 +217,12 @@ function countSection(v: unknown): number {
 
 export function countItems(payload: BackupPayloadShape): number {
   const s = payload?.sections || {};
-  return Object.values(s).reduce((n: number, v) => n + countSection(v), 0);
+  // THE WALLETS COUNT TOO. This counted label sections alone, so a wallet
+  // with no labels on it — a fresh install, which is exactly who needs a
+  // backup — was told "Nothing to back up yet" and could not write a file,
+  // while the wallet it would have restored sat right there.
+  return (
+    Object.values(s).reduce((n: number, v) => n + countSection(v), 0) +
+    countRestorableWallets(payload)
+  );
 }

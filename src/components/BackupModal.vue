@@ -132,7 +132,13 @@ async function doSave() {
     // neither was in the file, so a restore brought back a SegWit label and
     // not an SP one, by a rule invisible from the outside.
     const payload = collectBackup(withKeys, await collectServerLabels(api, auth.inkey, refs))
+    // THE WALLETS COUNT, not just the labels. This counted label sections
+    // alone, so a wallet with no labels on it — a fresh install, which is
+    // exactly who needs a backup — got "Nothing to back up yet" and could not
+    // write a file, while the wallet it would have restored sat right there.
+    const { countRestorableWallets } = await import('@/services/walletBackup')
     const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
+      + countRestorableWallets(payload)
     if (!total) {
       say('Nothing to back up yet.', 'error')
       return
@@ -242,12 +248,50 @@ async function openPending() {
     const { decryptBackup, remapWalletIds } = await import('@/services/backup')
     const { applyBackup } = await import('@/stores/backupdata')
     const { applyServerLabels } = await import('@/services/serverLabels')
+    const { restoreWallets } = await import('@/services/walletBackup')
+    const { deriveSilentPayment, spAddressFromKeys } = await import('@/services/spKeys')
     const payload = await decryptBackup(text, password.value,
       (f) => say(`Opening… ${Math.round(f * 100)}%`, 'info'))
-    const live = await walletRefs()
+    // STAGES, not one message that sits there. Reported 2026-11-08: "there is
+    // no progress when opening file, user not aware that it's restoring". The
+    // KDF reports a percentage and then stops — and everything after it is
+    // network calls that said nothing at all, so the longest part of a restore
+    // looked like a hang. Each stage names what is happening to what.
+    say('Reading your wallets…', 'info')
+    let live = await walletRefs()
+
+    // THE WEB RESTORES WALLETS TOO, which it did not for one build — it
+    // applied labels and nothing else, so "restore" on this side could never
+    // answer "still asks for recovery key". It can create the wallet and put
+    // keys in its own vault; those are the two things a restore is.
+    let walletReport = null
+    const fileWallets = payload.wallets || []
+    if (fileWallets.length) {
+      say('Restoring wallets…', 'info')
+      walletReport = await restoreWallets({
+        deriveSilentPayment,
+        spAddressFromKeys,
+        createWallet: (data) => api.createSilntWallet(auth.inkey, data),
+        // The store takes these POSITIONALLY; walletBackup hands an object.
+        storeWalletKeys: (id, k) =>
+          auth.storeWalletKeys(id, k.scanSecret, k.spendKey, k.refundAddress, k.sweepAccount),
+        // THE BROWSER DELIBERATELY NEVER STORES THE WORDS (keyvault.js holds
+        // derived keys only), so there is nothing to write and nothing to go
+        // looking for. `hasSeed` says true to mean "this client needs no
+        // seed" — without it a phone backup, which carries a phrase, would be
+        // re-adopted on every restore for ever, hunting for something this
+        // client is never going to have.
+        saveSeed: async () => true,
+        hasSeed: async () => true,
+        hasKeys: async (id) => !!(await auth.getWalletKeys(id)),
+      }, password.value, fileWallets, live)
+      if (walletReport.created.length) live = await walletRefs().catch(() => live)
+    }
     const { skipped } = applyBackup(payload, live)
+
     // The server-side half, over the network and therefore after the local
     // one: a failure here must not cost the labels that were already written.
+    say('Restoring labels…', 'info')
     const srv = await applyServerLabels(
       api, auth.inkey, payload.sections || {},
       remapWalletIds(payload.wallets, live), live)
@@ -276,8 +320,26 @@ async function openPending() {
     // the phone's, in a file this one opened. Short, and by name, because
     // dropping it would have the screen claim a restore it did not do. It
     // appears only for a cross-client file.
+    const madeWallets = walletReport?.created.length || 0
+    const gotKeys = walletReport?.adopted.length || 0
+    const noKeys = walletReport?.noPhrase || 0
+    const walletTrouble = [
+      ...(walletReport?.mismatched || []).map(w => `${w.title} (its keys do not match it)`),
+      ...(walletReport?.failed || []).map(w => `${w.title} (${w.message})`),
+    ]
     say([
       'Restored.',
+      madeWallets
+        ? `${madeWallets} wallet${madeWallets === 1 ? '' : 's'} restored — scan to find their coins.`
+        : '',
+      gotKeys
+        ? `${gotKeys} wallet${gotKeys === 1 ? '' : 's'} got their keys back — scan to find their coins.`
+        : '',
+      walletTrouble.length ? `Not restored: ${walletTrouble.join(', ')}.` : '',
+      noKeys
+        ? `${noKeys} wallet${noKeys === 1 ? '' : 's'} in this file could not be ` +
+          'restored: it carries no keys for them. Save a new backup and use that.'
+        : '',
       // The one thing worth a second sentence: a label whose coin is not
       // here yet. The coins come back from the chain, so this is the normal
       // state between adding a wallet back and finishing a rescan, and

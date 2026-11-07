@@ -848,6 +848,24 @@ console.log('the two backup screens say the same simple thing');
   // asks for recovery key" would come straight back, with every unit of the
   // logic passing. The same wiring gap as the phone's hasKeys deps, one
   // report later.
+  // AND THE WEB RESTORES WALLETS, not only labels. For one build its restore
+  // applied labels and nothing else, so "restore" on that side could never
+  // answer "still asks for recovery key" whatever the file held.
+  // And both screens ASK that question before refusing to save.
+  ok('the web counts wallets before refusing to save',
+    /countRestorableWallets/.test(copy(V)),
+    'counting labels alone refuses to back up a wallet that has none');
+  ok('the phone counts them too',
+    /countItems/.test(copy(P)),
+    'countItems adds the wallets in; a screen bypassing it would not');
+
+  ok('the web restore puts wallets back, not just labels',
+    /restoreWallets/.test(copy(V)) && /storeWalletKeys/.test(copy(V)),
+    'a restore that only writes labels cannot fix a wallet with no keys');
+  ok('and Recover Keys offers the backup file',
+    /Restore from backup file/.test(copy(WALLETS)),
+    'the screen somebody reaches when a wallet cannot scan needs the file');
+
   ok('the web puts the collected keys into the payload it seals',
     /collectWalletKeys/.test(copy(V)) && /collectBackup\(withKeys/.test(copy(V)),
     'collecting them and then sealing the plain refs restores nothing');
@@ -1466,6 +1484,58 @@ console.log('the web collector never reaches the key vault');
   ok('the collector picks up what is there', taken.sections.txLabels?.tx1 === 'rent');
   // The wallet list is what a restore matches on. It used to be accepted as an
   // argument and then dropped on the floor, so the payload never carried it.
+  // THE WEB'S MAP CARRIES THE WALLET HALF TOO. Exercised, not read, and on
+  // BOTH clients — the phone's version of this check existed and the web's
+  // did not, so the identical bug (a map that rebuilds each wallet from named
+  // fields and silently drops the rest) ate the keys a day after it ate the
+  // phrase. "It said that file contains no keys!! how is that possible when
+  // the keys must be in the browser!!" — they were; this threw them away.
+  {
+    const vaultKeys = { scanSecret: 'sc', spendKey: 'sp',
+                        refundAddress: 'rf', sweepAccount: 'sw' };
+    const carried = collectBackup([
+      { id: 'w1', title: 'Main', network: 'signet', spAddress: 'sp1qmine',
+        lastHeight: 909, keys: vaultKeys },
+    ]);
+    const w = carried.wallets[0];
+    ok('the web carries the wallet KEYS it is handed',
+      w.keys?.scanSecret === 'sc' && w.keys?.spendKey === 'sp',
+      'collecting them and then dropping them is a file with no wallet in it');
+    ok('and the sweep account and refund address with them',
+      w.keys?.sweepAccount === 'sw' && w.keys?.refundAddress === 'rf');
+    ok('and the birth height',
+      w.lastHeight === 909,
+      'a restored wallet rescans from here, or loses its history');
+    // And it still rebuilds rather than passing through, so a caller's stray
+    // field cannot ride along into the file.
+    const stray = collectBackup([
+      { id: 'w1', title: 'M', network: 'signet', spAddress: 'sp1q', inkey: 'SECRET' },
+    ]);
+    ok('and nothing the caller was carrying rides along',
+      !('inkey' in stray.wallets[0]),
+      'the map is explicit on purpose; that is the half that must not change');
+  }
+
+  // A WALLET IS SOMETHING TO BACK UP, on its own. Both screens counted only
+  // the LABEL sections before deciding, so a wallet with no labels on it — a
+  // fresh install, which is exactly who needs a backup most — was told
+  // "Nothing to back up yet" and could not write a file at all, while the
+  // wallet it would have restored sat right there.
+  {
+    const { countRestorableWallets } = await import(
+      pathToFileURL(new URL('../src/services/walletBackup.ts', import.meta.url).pathname).href);
+    ok('a wallet carrying keys counts as something to back up',
+      countRestorableWallets({ wallets: [{ keys: { scanSecret: 'a', spendKey: 'b' } }] }) === 1);
+    ok('and one carrying a phrase',
+      countRestorableWallets({ wallets: [{ mnemonic: 'abandon about' }] }) === 1);
+    // But a bare reference restores nothing, and counting it would let an
+    // empty file claim to hold something.
+    ok('a wallet reference with neither is not counted',
+      countRestorableWallets({ wallets: [{ id: 'w', title: 'T' }] }) === 0);
+    ok('and a payload with no wallets at all is zero',
+      countRestorableWallets({}) === 0 && countRestorableWallets({ wallets: 'nope' }) === 0);
+  }
+
   ok('and records the wallets the labels belong to',
     taken.wallets?.[0]?.spAddress === 'sp1qmain');
   ok('and nothing secret rides along with them',
@@ -1576,8 +1646,14 @@ console.log('the phone collector reads labels and nothing else');
   // the file carried the phrase; sealing the file with the phrase instead
   // removed the reason to read one. The narrowing is deliberate both times —
   // neither direction was a failure made to go away.
-  ok('it imports the label services and the shared backup module, nothing else',
-    JSON.stringify([...new Set(imports)]) === JSON.stringify(['backup', 'segwitLabels', 'txLabels']),
+  // `walletBackup` joined the list on 2026-11-08, for `countRestorableWallets`
+  // alone — the arithmetic that stops a wallet with no labels being told
+  // there is nothing to back up. It is a pure function over the payload and
+  // reaches no storage, so the thing this assertion is really about — that
+  // the collector cannot go and FETCH key material — is unchanged.
+  ok('it imports the label services and the shared backup modules, nothing else',
+    JSON.stringify([...new Set(imports)]) ===
+      JSON.stringify(['backup', 'segwitLabels', 'txLabels', 'walletBackup']),
     `imports: ${[...new Set(imports)].join(', ')}`);
   // The keystore is never read by the collector. The derived keys come back
   // from the phrase, the phrase is the file's key rather than its cargo, and

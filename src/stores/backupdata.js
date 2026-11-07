@@ -139,6 +139,22 @@ export function collectBackup(wallets = [], serverSections = {}) {
     const v = readJson(key)
     if (v && Object.keys(v).length) sections[name] = v
   }
+  // FIELD BY FIELD, and every field named on purpose: this rebuilds the
+  // objects rather than passing them through, so nothing the caller happens to
+  // be carrying rides into the file by accident.
+  //
+  // WHICH MEANS A FIELD THE FILE NEEDS HAS TO BE ADDED HERE. This dropped
+  // `keys` and `lastHeight` on the floor for one build — the modal collected
+  // the vault keys, verified each one against its wallet's own SP address, and
+  // then this threw them away one line later. The file looked perfectly
+  // normal, carried no wallet, and the phone said so: "it said that file
+  // contains no keys!! how is that possible when the keys must be in the
+  // browser!!"
+  //
+  // It is the SECOND time this exact map ate the wallet half of a backup. The
+  // phone's collector did it with `mnemonic` the day before, and the check
+  // written for that only looked at the phone's file — so the same bug, in the
+  // other client, walked straight past it. check:backup asserts both now.
   const refs = (wallets || [])
     .filter(w => w && w.id)
     .map(w => ({
@@ -146,6 +162,9 @@ export function collectBackup(wallets = [], serverSections = {}) {
       title: w.title || 'Wallet',
       network: w.network || '',
       spAddress: w.spAddress || '',
+      ...(typeof w.lastHeight === 'number' ? { lastHeight: w.lastHeight } : {}),
+      ...(w.keys ? { keys: w.keys } : {}),
+      ...(w.mnemonic ? { mnemonic: w.mnemonic } : {}),
     }))
   return {
     app: 'whispa',

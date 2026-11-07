@@ -233,6 +233,24 @@ export async function collectWalletKeys(
   return { keys, leftOut };
 }
 
+/**
+ * How many wallets a payload can actually restore.
+ *
+ * WHY THE SCREENS NEED THIS: both counted only the LABEL sections before
+ * deciding whether there was anything to save, so a wallet with no labels on
+ * it — a fresh install, which is exactly who needs a backup most — was told
+ * "Nothing to back up yet" and could not write a file at all. The wallet was
+ * the whole point of the file by then.
+ *
+ * A wallet record with neither a phrase nor keys is not counted: it restores
+ * nothing, and counting it would let an empty file claim to hold something.
+ */
+export function countRestorableWallets(payload: any): number {
+  const list = payload?.wallets;
+  if (!Array.isArray(list)) return 0;
+  return list.filter((w: any) => w?.mnemonic || (w?.keys?.scanSecret && w?.keys?.spendKey)).length;
+}
+
 export type RestoreDeps = {
   /**
    * The SP address a pair of private keys adds up to. Needed to verify the

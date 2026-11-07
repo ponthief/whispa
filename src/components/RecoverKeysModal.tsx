@@ -9,12 +9,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { NativeModules } from 'react-native';
 import * as api from '@services/api';
-import { storeWalletKeys } from '@services/secureKeys';
-import { deriveSilentPayment, isValidMnemonic } from '@services/spKeys';
+import { hasWalletKeys, storeWalletKeys } from '@services/secureKeys';
+import { deriveSilentPayment, isValidMnemonic, spAddressFromKeys } from '@services/spKeys';
+import { decryptBackup, inspectBackupFile } from '@services/backup';
+import { restoreWallets } from '@services/walletBackup';
+import { hasSeed } from '@services/seedVault';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
 import { saveSeed } from '@services/seedVault';
 import { usePlainStatus } from '@stores/plainStatus';
+import { useAuthStore } from '@stores/authStore';
 import SeedInput from './SeedInput';
 import { colors } from '@/theme';
 
@@ -37,6 +42,18 @@ export default function RecoverKeysModal({
   const [passphrase, setPassphrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A BACKUP FILE IS THE OTHER WAY OUT OF THIS SCREEN (2026-11-08, on the
+  // user's instruction: "should move restore under recover keys as user
+  // should be able to fully restore wallet from there"). This is where
+  // somebody lands when a wallet cannot scan, and until now the only exit was
+  // typing twelve words — which is exactly what a backup exists to avoid.
+  //
+  // The file is held here while its passphrase is typed into the field that
+  // is already on this screen. Every step is the shared service the Backup
+  // screen uses; what is local is the ten lines of order.
+  const inkey = useAuthStore((st) => st.inkey);
+  const [file, setFile] = useState<null | { text: string; asksFor: string }>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -45,6 +62,85 @@ export default function RecoverKeysModal({
       setError(null);
     }
   }, [visible, wallet]);
+
+  // Pick the file. Nothing is asked for first: until one is chosen there is
+  // nothing to ask about, and the file's own header says which secret it
+  // wants — the same rule the Backup screen follows.
+  const pickBackup = useCallback(async () => {
+    setError(null);
+    setNote(null);
+    setBusy(true);
+    try {
+      const mod = (NativeModules as any).BackupFile;
+      if (!mod) throw new Error('This build cannot open files.');
+      const text: string | null = await mod.open();
+      if (!text) return;            // backing out is not an error
+      const info = inspectBackupFile(text);
+      if (!info.readable) throw new Error(info.problem || 'That is not a backup.');
+      setFile({ text, asksFor: info.asksFor });
+      setPassphrase('');
+      setNote(`Enter the ${info.asksFor} this backup was saved with, then press Open.`);
+    } catch (e: any) {
+      setError(e?.message || 'Could not read that file.');
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const openBackup = useCallback(async () => {
+    if (!file) return;
+    if (!passphrase) {
+      setError(`Enter the ${file.asksFor} for this file.`);
+      return;
+    }
+    if (!inkey) {
+      setError('Sign in again before restoring.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      setNote('Opening…');
+      const payload: any = await decryptBackup(file.text, passphrase,
+        (f) => setNote(`Opening… ${Math.round(f * 100)}%`));
+      setNote('Restoring wallets…');
+      const live = (await api.getSilntWallets(inkey).catch(() => []) as any[])
+        .map((w: any) => ({ id: w.id, spAddress: w.sp_address || '' }));
+      const r = await restoreWallets(
+        {
+          deriveSilentPayment,
+          spAddressFromKeys,
+          createWallet: (data) => api.createSilntWallet(inkey, data) as any,
+          storeWalletKeys,
+          saveSeed,
+          hasKeys: hasWalletKeys,
+          hasSeed,
+          onCreated: resetCatchUp,
+        },
+        passphrase, payload.wallets || [], live);
+      const done = r.created.length + r.adopted.length;
+      if (!done) {
+        const why = r.mismatched.length
+          ? 'its keys do not match this wallet'
+          : r.noPhrase
+            ? 'that file carries no keys — save a new backup and use that'
+            : r.failed.length
+              ? r.failed[0].message
+              : 'this device already had everything in it';
+        setError(`Nothing to restore: ${why}.`);
+        setNote(null);
+        return;
+      }
+      setFile(null);
+      setNote(null);
+      onRecovered();
+    } catch (e: any) {
+      setError(e?.message || 'Could not open that backup.');
+      setNote(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [file, inkey, passphrase, onRecovered]);
 
   const onSubmit = useCallback(async () => {
     setError(null);
@@ -113,8 +209,40 @@ export default function RecoverKeysModal({
           <ScrollView keyboardShouldPersistTaps="handled">
             <Text style={styles.heading}>Recover wallet keys</Text>
             <Text style={styles.sub}>
-              Enter this wallet's 12-word recovery phrase to restore its keys on
-              this device. Keys stay on-device — they're never sent to the server.
+              Restore this wallet from a backup file, or enter its 12-word
+              recovery phrase. Keys stay on-device — they're never sent to the
+              server.
+            </Text>
+
+            {/* THE FILE FIRST (2026-11-08: "should move restore under recover
+                keys as user should be able to fully restore wallet from
+                there"). This is the screen somebody reaches when a wallet
+                cannot scan, and the only way out of it used to be typing
+                twelve words — which is the thing a backup exists to avoid. */}
+            <TouchableOpacity
+              style={[styles.primaryBtn, busy && styles.btnDisabled]}
+              onPress={file ? openBackup : pickBackup}
+              disabled={busy}>
+              {busy && note ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  {file ? '🔓 Open backup' : '↑ Restore from backup file'}
+                </Text>
+              )}
+            </TouchableOpacity>
+            {note ? <Text style={styles.hint}>{note}</Text> : null}
+            {file ? (
+              <TouchableOpacity
+                style={styles.linkBtn}
+                onPress={() => { setFile(null); setNote(null); }}
+                disabled={busy}>
+                <Text style={styles.linkBtnText}>Choose a different file</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <Text style={[styles.hint, { textAlign: 'center', marginTop: 10 }]}>
+              or
             </Text>
 
             <Text style={styles.label}>Recovery phrase (12 words)</Text>
@@ -133,11 +261,13 @@ export default function RecoverKeysModal({
               placeholderTextColor={colors.faint}
               autoCapitalize="none"
               autoCorrect={false}
-              secureTextEntry
+              secureTextEntry={!file}
             />
             <Text style={styles.hint}>
-              If this wallet was created with a BIP-39 passphrase, enter the exact
-              same one. Leave blank otherwise.
+              {file
+                ? `This is also the ${file.asksFor} that opens the backup file above.`
+                : 'If this wallet was created with a BIP-39 passphrase, enter ' +
+                  'the exact same one. Leave blank otherwise.'}
             </Text>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}

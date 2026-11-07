@@ -547,13 +547,61 @@ wallet, a key not under `keys`, an xprv, a **passphrase** anywhere at all
 (it is this file's key, and a key inside the thing it opens is no key) — is
 still refused in both directions.
 
-**The one that nearly shipped silently**: `backupData.ts`'s collector rebuilds
-each wallet from named fields, so for one build it collected every phrase,
-verified it, and then **dropped it one line later**. The file looked perfectly
-normal and restored no wallets at all. `check:backup` asserts the map carries
-`mnemonic` and `lastHeight` now, and that the collector still cannot go and
-FETCH a phrase — the separation that survives the change is that the screen
+**The one that nearly shipped silently, TWICE**: each collector rebuilds its
+wallet records from named fields, and both of them dropped the field that is
+the whole point. `backupData.ts` collected every phrase, verified it, and
+**discarded it one line later**; a day after that was fixed,
+`backupdata.js` was found doing the identical thing to the web's `keys` —
+collected from the vault, checked against the wallet's own SP address, then
+rebuilt into an object with four named fields and gone. Both files looked
+perfectly normal and restored no wallets at all, which is the fourth *"still
+cannot restore"* and the one that reported *"it said that file contains no
+keys!! how is that possible when the keys must be in the browser!!"*.
+
+The second one is the more useful lesson: the check written for the first was
+**one-sided**. It asserted the phone's map carried `mnemonic` and `lastHeight`
+and said nothing about the web's, so the same bug in the other client was
+green. `check:backup` now exercises **both** collectors end to end — seal a
+file from each and assert the wallet record that comes out carries what that
+client has to carry — and still asserts that neither can go and FETCH key
+material: the separation that survives every change here is that the SCREEN
 reads and verifies it and hands it in.
+
+**A wallet is something to back up on its own.** `countItems` counted label
+sections, so a device with wallets and no labels — a fresh install, which is
+precisely who needs this — was told **"Nothing to back up yet."** and could
+not write a file, with the wallet it would have restored sitting on screen
+behind the modal. `countRestorableWallets` is what both screens add in, and it
+counts a record that could actually restore something (a phrase, or a scan
+key and a spend key) rather than any wallet reference, since the reference
+list has always carried every wallet on the account for the id remapping.
+
+**The web restore now puts the wallets back too.** It read `sections` and
+nothing else, so even once the file carried keys the browser applied labels
+and left the wallet keyless — the same report from the other end.
+`BackupModal.vue` calls `restoreWallets` before the labels, as the phone does,
+through an adapter: the web's `storeWalletKeys` takes positional arguments,
+and `saveSeed`/`hasSeed` answer true because a browser stores no phrase and a
+restore must not report one missing that the file was never going to carry.
+
+**Restore is offered from Recover Keys as well**, on the user's instruction
+(*"should move restore under recover keys as user should be able to fully
+restore wallet from there, leave backup where it is"*) — `WalletsView.vue`'s
+recover modal and `RecoverKeysModal.tsx` both open a file, inspect it, ask for
+the passphrase and restore. That is where somebody looks when the badge says
+their keys are missing, which is the state a replaced phone is in. It is
+offered from the Backup & Restore screen too rather than moved out of it:
+Recover Keys renders ONLY while keys are missing, so a restore that lived
+there alone would be unreachable on a working wallet — which is the case for
+restoring labels onto one.
+
+**And an open reports its progress.** The KDF runs for seconds and the restore
+screens said nothing until it finished, reported as *"there is no progress
+when opening file, user not aware that it's restoring"*. Both ends now render
+the throttled percentage and then the stage, which is the same argument
+`throttleKdfProgress` already makes about the save side: a job with no visible
+progress is indistinguishable from a hang, and the KDF is the slowest thing
+either client does.
 
 **What it was before**: added 2026-11-03, cut back on 2026-11-04 after the user
 put the objection that made it necessary — *"if user deletes app or wallet, the

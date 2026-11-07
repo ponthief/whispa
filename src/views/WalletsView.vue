@@ -551,6 +551,15 @@ const recoverHeight     = ref('')
 const recoverLoading  = ref(false)
 const recoverError    = ref(null)
 
+// Hands the whole job to the Backup & Restore modal, which already knows how
+// to open a file, ask for what sealed it, and put wallets and labels back.
+// Recovering keys IS restoring a backup when you have one, and a second
+// implementation of that here is the duplicate this avoids.
+function recoverFromBackup() {
+  showRecover.value = false
+  showBackup.value = true
+}
+
 function openRecoverKeys(wallet) {
   recoverTarget.value     = wallet
   recoverMnemonic.value   = ''
@@ -1210,9 +1219,22 @@ watch(swapCompletedAt, () => {
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
           <p class="text-dim text-sm">
-            Re-enter your mnemonic to restore the scan and spend keys for <strong>{{ recoverTarget.title }}</strong>.
-            Keys will be stored locally on this device only — never sent to or stored on the server.
+            Restore the scan and spend keys for <strong>{{ recoverTarget.title }}</strong>
+            from a backup file, or re-enter your recovery phrase. Keys are
+            stored on this device only — never sent to or stored on the server.
           </p>
+
+          <!-- A BACKUP FILE IS THE FIRST OPTION HERE (2026-11-08, on the
+               user's instruction: "should move restore under recover keys as
+               user should be able to fully restore wallet from there"). This
+               is the screen somebody reaches when a wallet cannot scan, and
+               until now the only way out of it was typing twelve words. The
+               file is the answer for anyone who has one, so it goes above the
+               phrase rather than beside it. -->
+          <button class="btn btn-primary" @click="recoverFromBackup">
+            ↑ Restore from backup file
+          </button>
+          <div class="text-dim text-xs" style="text-align:center">or</div>
 
           <div class="field">
             <label>Mnemonic</label>

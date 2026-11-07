@@ -48,17 +48,32 @@ export default function RecoverKeysModal({
   // somebody lands when a wallet cannot scan, and until now the only exit was
   // typing twelve words — which is exactly what a backup exists to avoid.
   //
-  // The file is held here while its passphrase is typed into the field that
-  // is already on this screen. Every step is the shared service the Backup
-  // screen uses; what is local is the ten lines of order.
+  // A CHOSEN FILE TAKES OVER THE SCREEN, and that is a fix rather than a
+  // layout preference. The file's secret first shared the wallet-passphrase
+  // field further down the sheet, which read on screen as no prompt at all:
+  // "it didn't prompt me for a passphrase, there was no field where to enter
+  // it — clicked Open file and then got warned to enter passphrase but below
+  // where the seed phrase text is". Exactly so. The Open button sat ABOVE the
+  // field it needed, with a 12-word input in between, so the only way to find
+  // the field was to press Open, fail, and read the error.
+  //
+  // So the two routes out of this screen are never on screen together: with a
+  // file in hand the sheet is the file, its secret, and Open, in that order,
+  // and the phrase form is one tap away. A field doing double duty for two
+  // different secrets is also how the backup screen's own
+  // "restored without being prompted for a password" bug happened.
   const inkey = useAuthStore((st) => st.inkey);
   const [file, setFile] = useState<null | { text: string; asksFor: string }>(null);
+  const [filePass, setFilePass] = useState('');
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       setMnemonic('');
       setPassphrase('');
+      setFile(null);
+      setFilePass('');
+      setNote(null);
       setError(null);
     }
   }, [visible, wallet]);
@@ -78,8 +93,10 @@ export default function RecoverKeysModal({
       const info = inspectBackupFile(text);
       if (!info.readable) throw new Error(info.problem || 'That is not a backup.');
       setFile({ text, asksFor: info.asksFor });
-      setPassphrase('');
-      setNote(`Enter the ${info.asksFor} this backup was saved with, then press Open.`);
+      // Emptied on every pick, for the reason the Backup screen states: a
+      // secret typed for one file is not evidence about the next one.
+      setFilePass('');
+      setNote(null);
     } catch (e: any) {
       setError(e?.message || 'Could not read that file.');
     } finally {
@@ -89,7 +106,7 @@ export default function RecoverKeysModal({
 
   const openBackup = useCallback(async () => {
     if (!file) return;
-    if (!passphrase) {
+    if (!filePass) {
       setError(`Enter the ${file.asksFor} for this file.`);
       return;
     }
@@ -101,7 +118,7 @@ export default function RecoverKeysModal({
     setBusy(true);
     try {
       setNote('Opening…');
-      const payload: any = await decryptBackup(file.text, passphrase,
+      const payload: any = await decryptBackup(file.text, filePass,
         (f) => setNote(`Opening… ${Math.round(f * 100)}%`));
       setNote('Restoring wallets…');
       const live = (await api.getSilntWallets(inkey).catch(() => []) as any[])
@@ -117,7 +134,7 @@ export default function RecoverKeysModal({
           hasSeed,
           onCreated: resetCatchUp,
         },
-        passphrase, payload.wallets || [], live);
+        filePass, payload.wallets || [], live);
       const done = r.created.length + r.adopted.length;
       if (!done) {
         const why = r.mismatched.length
@@ -131,7 +148,10 @@ export default function RecoverKeysModal({
         setNote(null);
         return;
       }
+      // A FINISHED RESTORE DROPS BOTH; a failed one keeps the file, so a
+      // mistyped secret is retyped against what is already in hand.
       setFile(null);
+      setFilePass('');
       setNote(null);
       onRecovered();
     } catch (e: any) {
@@ -140,7 +160,7 @@ export default function RecoverKeysModal({
     } finally {
       setBusy(false);
     }
-  }, [file, inkey, passphrase, onRecovered]);
+  }, [file, inkey, filePass, onRecovered]);
 
   const onSubmit = useCallback(async () => {
     setError(null);
@@ -214,77 +234,139 @@ export default function RecoverKeysModal({
               server.
             </Text>
 
-            {/* THE FILE FIRST (2026-11-08: "should move restore under recover
-                keys as user should be able to fully restore wallet from
-                there"). This is the screen somebody reaches when a wallet
-                cannot scan, and the only way out of it used to be typing
-                twelve words — which is the thing a backup exists to avoid. */}
-            <TouchableOpacity
-              style={[styles.primaryBtn, busy && styles.btnDisabled]}
-              onPress={file ? openBackup : pickBackup}
-              disabled={busy}>
-              {busy && note ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>
-                  {file ? '🔓 Open backup' : '↑ Restore from backup file'}
-                </Text>
-              )}
-            </TouchableOpacity>
-            {note ? <Text style={styles.hint}>{note}</Text> : null}
             {file ? (
-              <TouchableOpacity
-                style={styles.linkBtn}
-                onPress={() => { setFile(null); setNote(null); }}
-                disabled={busy}>
-                <Text style={styles.linkBtnText}>Choose a different file</Text>
-              </TouchableOpacity>
-            ) : null}
+              /* A FILE IS IN HAND: this sheet is now about that file, and the
+                 order is the fix — what was chosen, the secret it asks for,
+                 then Open. The button used to sit above the field it needed
+                 with a 12-word input in between, so the prompt was invisible
+                 until pressing Open produced an error naming it. */
+              <>
+                <Text style={styles.label}>Backup file</Text>
+                <Text style={styles.hint}>
+                  Ready to open. Enter the {file.asksFor} this backup was saved
+                  with.
+                </Text>
 
-            <Text style={[styles.hint, { textAlign: 'center', marginTop: 10 }]}>
-              or
-            </Text>
+                <Text style={styles.label}>
+                  {file.asksFor.charAt(0).toUpperCase() + file.asksFor.slice(1)}{' '}
+                  for this file
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={filePass}
+                  onChangeText={setFilePass}
+                  placeholder={`The ${file.asksFor} that opens it`}
+                  placeholderTextColor={colors.faint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  // Not masked, for the reason the Backup screen gives: a
+                  // per-file secret with no checksum, typed once, where seeing
+                  // it is the only way to tell you typed what you typed before.
+                  secureTextEntry={false}
+                  onSubmitEditing={openBackup}
+                />
 
-            <Text style={styles.label}>Recovery phrase (12 words)</Text>
-            <SeedInput
-              value={mnemonic}
-              onChangeText={setMnemonic}
-              placeholder="word1 word2 word3 …"
-            />
+                {note ? <Text style={styles.hint}>{note}</Text> : null}
+                {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <Text style={styles.label}>Passphrase</Text>
-            <TextInput
-              style={styles.input}
-              value={passphrase}
-              onChangeText={setPassphrase}
-              placeholder="Leave blank if none"
-              placeholderTextColor={colors.faint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry={!file}
-            />
-            <Text style={styles.hint}>
-              {file
-                ? `This is also the ${file.asksFor} that opens the backup file above.`
-                : 'If this wallet was created with a BIP-39 passphrase, enter ' +
-                  'the exact same one. Leave blank otherwise.'}
-            </Text>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                  onPress={openBackup}
+                  disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>🔓 Open backup</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.linkBtn}
+                  onPress={pickBackup}
+                  disabled={busy}>
+                  <Text style={styles.linkBtnText}>Choose a different file</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.linkBtn}
+                  onPress={() => {
+                    setFile(null);
+                    setFilePass('');
+                    setNote(null);
+                    setError(null);
+                  }}
+                  disabled={busy}>
+                  <Text style={styles.linkBtnText}>
+                    Use a recovery phrase instead
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
+                  <Text style={styles.linkBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* THE FILE FIRST (2026-11-08: "should move restore under recover
+                 keys as user should be able to fully restore wallet from
+                 there"). This is the screen somebody reaches when a wallet
+                 cannot scan, and the only way out of it used to be typing
+                 twelve words — which is the thing a backup exists to avoid. */
+              <>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                  onPress={pickBackup}
+                  disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>
+                      ↑ Restore from backup file
+                    </Text>
+                  )}
+                </TouchableOpacity>
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+                <Text style={[styles.hint, { textAlign: 'center', marginTop: 10 }]}>
+                  or
+                </Text>
 
-            <TouchableOpacity
-              style={[styles.primaryBtn, busy && styles.btnDisabled]}
-              onPress={onSubmit}
-              disabled={busy}>
-              {busy ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>Recover Keys</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
-              <Text style={styles.linkBtnText}>Cancel</Text>
-            </TouchableOpacity>
+                <Text style={styles.label}>Recovery phrase (12 words)</Text>
+                <SeedInput
+                  value={mnemonic}
+                  onChangeText={setMnemonic}
+                  placeholder="word1 word2 word3 …"
+                />
+
+                <Text style={styles.label}>Passphrase</Text>
+                <TextInput
+                  style={styles.input}
+                  value={passphrase}
+                  onChangeText={setPassphrase}
+                  placeholder="Leave blank if none"
+                  placeholderTextColor={colors.faint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                />
+                <Text style={styles.hint}>
+                  If this wallet was created with a BIP-39 passphrase, enter the
+                  exact same one. Leave blank otherwise.
+                </Text>
+
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                  onPress={onSubmit}
+                  disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Recover Keys</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
+                  <Text style={styles.linkBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </ScrollView>
         </View>
       </View>

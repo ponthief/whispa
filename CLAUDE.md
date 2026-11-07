@@ -595,6 +595,31 @@ Recover Keys renders ONLY while keys are missing, so a restore that lived
 there alone would be unreachable on a working wallet — which is the case for
 restoring labels onto one.
 
+**And on the phone a chosen file TAKES OVER that sheet**, which is a fix
+rather than a layout preference. Reported the moment it shipped: *"recovered
+from web to mobile via Recover screen, but it didn't prompt me for a
+passphrase — there was no field where to enter it. Clicked Open file and then
+got warned to enter passphrase, but below where the seed phrase text is."*
+The file's secret shared the wallet-passphrase field at the bottom of the
+sheet, so **the Open button sat above the field it needed**, with a 12-word
+input in between — and the only way to find the field was to press Open, fail,
+and read the error naming it. A restore that works on the second press, after
+an error, is a restore nobody would have found.
+
+Two things fix it and `check:backup` pins both, because either alone leaves
+the bug in: the file's secret is **its own state** (`filePass`), and the field
+is rendered **before the button that consumes it**. With a file in hand the
+phrase form is not on screen at all — the two routes out of this screen are
+alternatives, and one field standing for two different secrets is the same
+shape as the backup screen's own *"restored without being prompted for a
+password"*. One tap goes back to the phrase, named, because hiding a form is
+only safe while something says how to return to it.
+
+The web has none of this: its Recover Keys modal hands over to `BackupModal`,
+which already asks for the file first and the secret second. The phone keeps
+it inline because there is nowhere to hand it to — the Settings page is not
+somewhere a modal can send somebody mid-recovery.
+
 **And an open reports its progress.** The KDF runs for seconds and the restore
 screens said nothing until it finished, reported as *"there is no progress
 when opening file, user not aware that it's restoring"*. Both ends now render

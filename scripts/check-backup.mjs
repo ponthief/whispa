@@ -866,6 +866,37 @@ console.log('the two backup screens say the same simple thing');
     /Restore from backup file/.test(copy(WALLETS)),
     'the screen somebody reaches when a wallet cannot scan needs the file');
 
+  // THE PROMPT HAS TO BE ABOVE THE BUTTON THAT NEEDS IT. Reported 2026-11-08:
+  // "it didn't prompt me for a passphrase, there was no field where to enter
+  // it — clicked Open file and then got warned to enter passphrase but below
+  // where the seed phrase text is". The file's secret shared the wallet
+  // passphrase field at the bottom of the sheet, with a 12-word input between
+  // it and the Open button, so the only way to find the field was to press
+  // Open and read the error. Two assertions, because either alone passes a
+  // layout with the bug in it: the field is its OWN state, and it is rendered
+  // BEFORE the button that consumes it.
+  const RK = copy(readFileSync(
+    new URL('../src/components/RecoverKeysModal.tsx', import.meta.url), 'utf8'));
+  ok("the file's secret is not the wallet's passphrase field",
+    /setFilePass|filePass/.test(RK) && /decryptBackup\(file\.text, filePass/.test(RK),
+    'one field for two different secrets is how a prompt goes unseen');
+  ok('and it is on screen above the button that opens the file',
+    RK.indexOf('value={filePass}') > 0 &&
+    RK.indexOf('value={filePass}') < RK.indexOf('Open backup'),
+    'a button above the field it needs reads as no prompt at all');
+  // The phrase form sits in the OTHER arm of the same conditional: a `) : (`
+  // between the Open button and the 12-word input is what says the two are
+  // alternatives rather than one sheet holding both. Both routes on screen
+  // together is what let one field stand for two different secrets.
+  const openAt = RK.indexOf('Open backup');
+  const elseAt = RK.indexOf(') : (', openAt);
+  ok('and the phrase form is not under it while a file is held',
+    openAt > 0 && elseAt > 0 && elseAt < RK.indexOf('<SeedInput'),
+    'both routes on one sheet is what made the shared field ambiguous');
+  ok('with one tap back to the phrase for somebody who has no file',
+    /Use a recovery phrase instead/.test(RK),
+    'hiding the form is only safe while something says how to get back to it');
+
   ok('the web puts the collected keys into the payload it seals',
     /collectWalletKeys/.test(copy(V)) && /collectBackup\(withKeys/.test(copy(V)),
     'collecting them and then sealing the plain refs restores nothing');

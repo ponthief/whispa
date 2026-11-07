@@ -627,7 +627,13 @@ console.log('the two backup screens say the same simple thing');
   const copy = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\/\/[^\n]*/g, '')
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    // JOINED STRING LITERALS READ AS ONE SENTENCE, because they are one on
+    // screen. A line that wraps as `'Save a ' + 'new backup'` is a single
+    // phrase to the user and two to a regex, so every copy assertion here was
+    // one reformat away from a false failure — and the way that gets "fixed"
+    // is by loosening the assertion until it stops meaning anything.
+    .replace(/(['"`])\s*\+\s*\1/g, '');
 
   // ONE LINE, THE SAME ONE, on both (2026-11-08: "text must be really simple:
   // backup labels, contacts"). Each screen used to name its own device —
@@ -827,6 +833,30 @@ console.log('the two backup screens say the same simple thing');
   ok('the phone tells the restore what this device already has',
     /hasKeys: hasWalletKeys/.test(copy(P)) && /\bhasSeed\b/.test(copy(P)),
     'without them every restore rewrites keystore entries that were fine');
+  // EVERY WALLET IN THE FILE IS ACCOUNTED FOR ON SCREEN. This is the third
+  // "restore didn't work, it still says wallet keys need recovery"; the first
+  // two were bugs in what the restore DID, and this one is what it SAYS.
+  // noPhrase was counted and never mentioned, so a file carrying wallet
+  // records with no phrase in them — a web backup, an older build, or a
+  // wallet left out at save time — restored nothing and said "Restored."
+  // A silent no-op is indistinguishable from a broken feature.
+  for (const [what, pattern] of [
+    // The SENTENCE, not the variable. The first version of this matched
+    // /noPhrase/, which the declaration satisfies — so deleting the branch
+    // that reports it left the check green, which is the same failure the
+    // confirm-field guard had.
+    ['a wallet record with no phrase in it', /no recovery phrase in it, so it could not be restored/],
+    ['a file with no wallet records at all', /holds no wallets/],
+    ['wallets that needed nothing done', /nothing needed restoring/],
+    ['wallets whose phrase does not match', /do not match it/],
+  ]) {
+    ok(`the phone says what happened to ${what}`, pattern.test(copy(P)),
+      'counted and not mentioned is how a no-op reads as a failure');
+  }
+  ok('and tells the user where the fix is for a file with no phrases',
+    /Save a new backup from this app/.test(copy(P)),
+    'the fix is on the save side, on a phone that holds the phrase');
+
   ok('and it reports the wallets that got their keys back',
     /adopted/.test(copy(P)) && /got their keys back/.test(copy(P)),
     'the reinstall case is the common one and has to say it happened');
@@ -1029,6 +1059,17 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
         [{ ...wallets[0], mnemonic: SEED_A }], onAccount);
       ok(`a wallet missing ${what} here is adopted`, partial.adopted.length === 1);
     }
+
+    // A WALLET ON THE ACCOUNT WITH NO PHRASE IN THE FILE IS `noPhrase`, NOT
+    // `skipped`. It used to be counted as skipped, which the screen reports
+    // as "already set up on this device, nothing needed restoring" — said to
+    // somebody whose device has no keys, holding a file that could never have
+    // provided them. That is a restore reporting success for doing nothing,
+    // and it is the likeliest shape of the third "restore didn't work".
+    const noWords = await restoreWallets(fresh, PASS, [{ ...wallets[0] }], onAccount);
+    ok('a wallet on the account with no phrase in the file is NOT called skipped',
+      noWords.noPhrase === 1 && noWords.skipped === 0,
+      JSON.stringify(noWords));
 
     // A caller that cannot answer errs towards storing. Writing keys that are
     // already right costs nothing; leaving a wallet unusable is the report.

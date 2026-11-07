@@ -309,6 +309,23 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           (w) => `${w.title} (its phrase and this passphrase do not match it)`),
         ...(walletReport?.failed || []).map((w) => `${w.title} (${w.message})`),
       ];
+
+      // EVERY WALLET IN THE FILE IS ACCOUNTED FOR, out loud.
+      //
+      // This is the third report of "restore didn't work, it still says
+      // wallet keys need recovery", and the first two were real bugs in what
+      // the restore DID. This one is about what it SAYS: `noPhrase` — a file
+      // that carries wallet records with no recovery phrase in them — was
+      // counted and then never mentioned, so a backup saved by the web app,
+      // or by a build from before phrases were carried, or one whose wallet
+      // was left out at save time because its passphrase did not match,
+      // restored nothing and reported "Restored."
+      //
+      // A silent no-op is indistinguishable from a broken feature, and the
+      // user has no way to tell which file they are holding. Now the screen
+      // says which case it is and what to do about it.
+      const noPhrase = walletReport?.noPhrase || 0;
+      const unchanged = walletReport?.skipped || 0;
       say(
         [
           'Restored.',
@@ -329,6 +346,29 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             : '',
           walletTrouble.length
             ? `Not restored: ${walletTrouble.join(', ')}.`
+            : '',
+          // THE CASE THAT USED TO BE SILENT. The file knows about the wallet
+          // and carries no phrase for it, so there is nothing here to restore
+          // one from — and the fix is on the SAVE side, on a phone that holds
+          // the phrase.
+          noPhrase
+            ? `${noPhrase} wallet${noPhrase === 1 ? ' in this file has' : 's in this file have'} ` +
+              'no recovery phrase in it, so it could not be restored. That ' +
+              'file was saved by the web app, or by an older version, or its ' +
+              'passphrase did not match when it was saved. Save a new backup ' +
+              'from this app.'
+            : '',
+          // And the no-op, said rather than left to look like a failure: the
+          // wallets were already here and already working.
+          !madeWallets && !gotKeys && !noPhrase && !walletTrouble.length && unchanged
+            ? `${unchanged} wallet${unchanged === 1 ? ' was' : 's were'} already ` +
+              'set up on this device, so nothing needed restoring.'
+            : '',
+          // A file with no wallet records at all — every backup written
+          // before 2026-11-08, and every one the web app writes.
+          !fileWallets.length
+            ? 'This file holds no wallets, only labels. Save a new backup ' +
+              'from this app to include your wallets.'
             : '',
           // A label whose coin is not here yet. The coins come back from the
           // chain, so this is the normal state between adding a wallet back

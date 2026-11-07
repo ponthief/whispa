@@ -485,6 +485,31 @@ would look like it worked:
 the labels land on the wallets this restore just made instead of being remapped
 to nothing.
 
+**EVERY WALLET IN THE FILE IS ACCOUNTED FOR ON SCREEN**, and that is the third
+*"still asks for wallet keys recovery"*. The first two were bugs in what the
+restore DID; this one was what it SAID. Two halves:
+
+- `noPhrase` — a file carrying wallet records with **no recovery phrase in
+  them** — was counted and then never mentioned, so a backup from the web app,
+  or from a build before phrases were carried, or one whose wallet was left out
+  at save time, restored nothing and reported `Restored.`
+- Worse, a wallet in that state **that was still on the account** was counted
+  as `skipped`, which reads as *"already set up on this device, nothing needed
+  restoring"* — said to somebody whose device has no keys, holding a file that
+  could never have supplied them. `skipped` now means only what `alreadyUsable`
+  returned true for; anything else with no phrase is `noPhrase`.
+
+A silent no-op is indistinguishable from a broken feature, and nothing on the
+screen let the user tell which file they were holding. It now names the case
+and where the fix is: *"…has no recovery phrase in it, so it could not be
+restored… Save a new backup from this app."* A file with no `wallets` section
+at all says so too.
+
+Worth remembering when the next report comes in: **the message is the first
+diagnostic.** Three rounds of this were spent guessing between "the build is
+old", "the file is old" and "the code is wrong", and the screen could have said
+which from the start.
+
 **And `assertNoSecrets` now permits exactly one path**: `wallets[n].mnemonic`,
 matched on the PATH rather than the key name. Relaxing the name test instead
 would have let a phrase through at `sections.txLabels.mnemonic` on the way back

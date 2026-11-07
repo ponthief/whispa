@@ -278,10 +278,20 @@ export async function restoreWallets(
       continue;
     }
 
+    // NO PHRASE IN THE FILE FOR A WALLET THAT NEEDS ONE.
+    //
+    // Counted as `noPhrase` whether or not the account still has the wallet,
+    // and that distinction is what made the message lie: it used to count an
+    // on-the-account wallet as `skipped`, which the screen reports as "already
+    // set up, nothing needed restoring" — said to somebody whose device has no
+    // keys, holding a file that could never have provided them. A wallet that
+    // genuinely needed nothing has already returned above, at `alreadyUsable`.
+    //
+    // This is the likeliest shape of the third "restore didn't work" report: a
+    // file written by the web app, or by a build from before phrases were
+    // carried, or one whose wallet was left out at save time.
     if (!w.mnemonic) {
-      // A web-written file. Nothing to adopt with and nothing to create from.
-      if (existing) report.skipped++;
-      else report.noPhrase++;
+      report.noPhrase++;
       continue;
     }
 

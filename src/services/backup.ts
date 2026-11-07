@@ -258,21 +258,25 @@ const FORBIDDEN_KEY =
   /mnemonic|seed[_ -]?phrase|recovery[_ -]?phrase|passphrase|xprv|privkey|private_?key|spendkey|scankey|secret/i;
 
 /**
- * THE ONE PLACE A PHRASE MAY SIT: `payload.wallets[n].mnemonic`.
+ * THE ONLY PLACES KEY MATERIAL MAY SIT, and they are both under one wallet:
  *
- * Exactly that path, matched on the path rather than on the key name, so a
- * `mnemonic` anywhere else in the payload is still refused — including one at
- * `sections.txLabels.mnemonic`, which the name test alone would have let
- * through on the way back IN if the test were relaxed instead.
+ *   payload.wallets[n].mnemonic     the phrase, from the phone
+ *   payload.wallets[n].keys.*       the derived keys, from the web
  *
- * This is how the file brings a wallet back on a new phone (2026-11-08, on the
- * user's instruction), and it is the whole of what makes the file a bearer
- * instrument: file plus passphrase is the wallet. The phrase only reaches this
- * path after the typed passphrase has been VERIFIED to derive that wallet's
- * own SP address, so a file sealed under a secret that cannot open it is not a
- * state this can get into.
+ * Matched on the PATH rather than on the key name, so a `mnemonic` or a
+ * `spendKey` anywhere else is still refused — including at
+ * `sections.txLabels.mnemonic`, which relaxing the NAME test would have let
+ * through on the way back in, where the payload is whatever a file says it is.
+ *
+ * This is what makes the file a bearer instrument: file plus passphrase is the
+ * wallet, by either route. The phone's phrase only reaches its path after the
+ * typed passphrase has been verified to derive that wallet's own SP address;
+ * the web's keys only reach theirs after being checked to ADD UP to it
+ * (`spAddressFromKeys`), which is the same test from the other side and the
+ * only one a browser can run.
  */
-const PHRASE_IS_ALLOWED_AT = /^payload\.wallets\[\d+\]\.mnemonic$/;
+const KEY_MATERIAL_IS_ALLOWED_AT =
+  /^payload\.wallets\[\d+\]\.(mnemonic|keys\.(scanSecret|spendKey|sweepAccount|refundAddress))$/;
 
 export function assertNoSecrets(value: unknown, path = 'payload'): void {
   if (value === null || typeof value !== 'object') return;
@@ -282,12 +286,12 @@ export function assertNoSecrets(value: unknown, path = 'payload'): void {
   }
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     const here = `${path}.${k}`;
-    if (FORBIDDEN_KEY.test(k) && !PHRASE_IS_ALLOWED_AT.test(here)) {
+    if (FORBIDDEN_KEY.test(k) && !KEY_MATERIAL_IS_ALLOWED_AT.test(here)) {
       throw new BackupError(
         'backup_would_carry_a_secret',
-        `Refusing a backup containing "${here}". A wallet's recovery phrase ` +
-          `belongs at wallets[n].mnemonic and nowhere else — no passphrase, ` +
-          `no xprv, no scan or spend key, anywhere.`,
+        `Refusing a backup containing "${here}". Key material belongs at ` +
+          `wallets[n].mnemonic or wallets[n].keys and nowhere else — and the ` +
+          `passphrase, which is this file's key, belongs nowhere at all.`,
       );
     }
     assertNoSecrets(v, here);
@@ -619,12 +623,31 @@ export type BackupWalletRef = {
    */
   lastHeight?: number;
   /**
-   * The recovery phrase, on a backup written by the PHONE. This is the one
-   * place in a payload where key material is allowed, and `assertNoSecrets`
-   * permits exactly this path and no other. The browser never writes it: its
-   * vault holds derived keys and has never held the words.
+   * The recovery phrase, on a backup written by the PHONE, which is the only
+   * client that holds one.
    */
   mnemonic?: string;
+  /**
+   * The DERIVED keys, on a backup written by the WEB.
+   *
+   * The browser generates a phrase at wallet creation, shows it once and never
+   * stores it — `keyvault.js` keeps `{ scanSecret, spendKey, refundAddress,
+   * sweepAccount }`. So a web backup cannot carry a phrase, and for one build
+   * it therefore carried nothing: reported 2026-11-08 as "saved backup in web
+   * app and restored in mobile and still asks for recovery key… in mobile,
+   * after restore it was saying that the recovery phrase is not there — there
+   * is no recovery phrase, just the passphrase!!"
+   *
+   * These keys are exactly what `storeWalletKeys` takes, so they make the
+   * wallet scan and spend on the new device. What they cannot do is show the
+   * recovery phrase afterwards — but the browser never had it to give.
+   */
+  keys?: {
+    scanSecret: string;
+    spendKey: string;
+    refundAddress: string;
+    sweepAccount: string;
+  };
 };
 
 /**

@@ -15,7 +15,7 @@ import { applyBackup, collectBackup, countItems } from '@services/backupData';
 import { collectWalletSeeds, restoreWallets } from '@services/walletBackup';
 import { hasSeed, readSeed, saveSeed } from '@services/seedVault';
 import { hasWalletKeys, storeWalletKeys } from '@services/secureKeys';
-import { deriveSilentPayment } from '@services/spKeys';
+import { deriveSilentPayment, spAddressFromKeys } from '@services/spKeys';
 import { resetCatchUp } from '../../hooks/useCatchUpScan';
 import { applyServerLabels, collectServerLabels } from '@services/serverLabels';
 import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
@@ -265,6 +265,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         walletReport = await restoreWallets(
           {
             deriveSilentPayment,
+            // Verifies the keys a WEB backup carries, where there is no
+            // phrase to re-derive from.
+            spAddressFromKeys,
             createWallet: (data) => api.createSilntWallet(inkey, data) as any,
             storeWalletKeys,
             saveSeed,
@@ -351,12 +354,15 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           // and carries no phrase for it, so there is nothing here to restore
           // one from — and the fix is on the SAVE side, on a phone that holds
           // the phrase.
+          // NOT "no recovery phrase" ANY MORE, which is what a web backup got
+          // told until 2026-11-08: "there is no recovery phrase, just the
+          // passphrase!!" — correct, and the file had keys in it the whole
+          // time. A file reaching this now carries neither, so it is an old
+          // one, and what to do about it is the only useful thing to say.
           noPhrase
-            ? `${noPhrase} wallet${noPhrase === 1 ? ' in this file has' : 's in this file have'} ` +
-              'no recovery phrase in it, so it could not be restored. That ' +
-              'file was saved by the web app, or by an older version, or its ' +
-              'passphrase did not match when it was saved. Save a new backup ' +
-              'from this app.'
+            ? `${noPhrase} wallet${noPhrase === 1 ? '' : 's'} in this file ` +
+              'could not be restored: it carries no keys for them. It was ' +
+              'saved by an older version — save a new backup and use that.'
             : '',
           // And the no-op, said rather than left to look like a failure: the
           // wallets were already here and already working.
@@ -368,7 +374,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           // before 2026-11-08, and every one the web app writes.
           !fileWallets.length
             ? 'This file holds no wallets, only labels. Save a new backup ' +
-              'from this app to include your wallets.'
+              'from the app or the web app to include them.'
             : '',
           // A label whose coin is not here yet. The coins come back from the
           // chain, so this is the normal state between adding a wallet back

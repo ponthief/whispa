@@ -42,6 +42,19 @@ export interface SilentPaymentKeys {
 // default 90-char limit must be raised.
 const BECH32M_LIMIT = 1023;
 
+/** The inverse of toHex, for a key read back out of a vault or a file. */
+function fromHex(hex: string): Uint8Array {
+  const clean = (hex || '').trim().toLowerCase().replace(/^0x/, '');
+  if (clean.length % 2 !== 0 || /[^0-9a-f]/.test(clean)) {
+    throw new Error('Not a hex key.');
+  }
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
 function toHex(u8: Uint8Array): string {
   let s = '';
   for (let i = 0; i < u8.length; i++) s += u8[i].toString(16).padStart(2, '0');
@@ -301,6 +314,31 @@ export function deriveRefundAddress(
 // Derive the Silent Payments address + scan/spend private keys from a mnemonic.
 // `network` picks the BIP-352 coin type + address HRP (mainnet → 0/'sp',
 // otherwise → 1/'tsp'), matching the backend exactly.
+/**
+ * The SP address a pair of PRIVATE keys adds up to.
+ *
+ * The same encoding `deriveSilentPayment` ends with, from the other direction:
+ * it needs no mnemonic and no passphrase, so the BROWSER can run it. That is
+ * the whole reason it exists — `keyvault.js` holds `{ scanSecret, spendKey, … }`
+ * and has never held the words, so the web can neither re-derive an address
+ * from a seed nor check a passphrase. It CAN check that the keys it is about
+ * to put in a backup are the keys of the wallet it says they belong to, which
+ * is the check that actually matters for restoring one.
+ */
+export function spAddressFromKeys(
+  scanSecret: string,
+  spendKey: string,
+  network: string,
+): string {
+  const hrp = network === 'mainnet' ? 'sp' : 'tsp';
+  const scanPub = secp256k1.getPublicKey(fromHex(scanSecret), true);
+  const spendPub = secp256k1.getPublicKey(fromHex(spendKey), true);
+  const payload = new Uint8Array(scanPub.length + spendPub.length);
+  payload.set(scanPub, 0);
+  payload.set(spendPub, scanPub.length);
+  return bech32m.encode(hrp, [0, ...bech32m.toWords(payload)], BECH32M_LIMIT);
+}
+
 export function deriveSilentPayment(
   mnemonic: string,
   passphrase: string,

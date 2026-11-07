@@ -438,13 +438,40 @@ gives a different wallet. A wallet that fails is **left out and named on
 screen**, because sealing a phrase under a secret that cannot open it produces
 a file that looks perfectly fine and restores nothing.
 
-**The phone only, and not by choice.** `seedVault` holds the phrase there; the
-browser's `keyvault.js` holds `{ scanSecret, spendKey, refundAddress,
-sweepAccount }` and has never held the words, so the web can neither carry a
-phrase nor verify a passphrase. It seals with the same passphrase so one file
-opens on either client, says *"Save a backup from the app to include your
-wallets"*, and says in as many words that it **cannot check the passphrase**
-before saving.
+**Both clients carry a wallet, by different routes**, and getting that wrong
+cost a fourth report: *"saved backup in web app and restored in mobile and
+still asks for recovery key… in mobile, after restore it was saying that the
+recovery phrase is not there — there is no recovery phrase, just the
+passphrase!!"*
+
+Correct on every count, and the file had what the phone needed the whole time.
+The browser DOES generate a phrase at wallet creation — `WalletsView` calls
+`generateMnemonic()`, derives from it, shows it once and never stores it. What
+`keyvault.js` keeps is `{ scanSecret, spendKey, refundAddress, sweepAccount }`.
+So a web backup cannot carry a phrase, and for one build it therefore carried
+**no wallet at all**, while the browser was holding exactly what
+`storeWalletKeys` takes.
+
+- A **phone** file carries `wallets[n].mnemonic`.
+- A **web** file carries `wallets[n].keys` — the derived keys. They make the
+  wallet scan and spend on the new device. The one thing they cannot do
+  afterwards is show a recovery phrase, and the browser never had one to give.
+
+`spAddressFromKeys` (in `spKeys.ts`) is what makes the web half honest: the
+same bech32m encoding `deriveSilentPayment` ends with, from the other
+direction, so it needs no seed and no passphrase. The browser still **cannot
+check the passphrase** and says so; what it can check is that the keys it is
+sealing add up to that wallet's own SP address, which is the test that decides
+whether the file can restore anything. A wallet whose keys are missing or do
+not match is left out and named, exactly as the phone leaves out one its
+passphrase does not open — and a save that left one out keeps the modal open
+to say which.
+
+**`alreadyUsable` asks for a seed only when the FILE has a phrase.** Demanding
+one for a file that could never carry one makes every later restore try again
+and report a missing phrase that was never missing from the file's point of
+view — which is how *"it says the recovery phrase is not there"* reached
+somebody who had only ever used the web app.
 
 `services/walletBackup.ts` is both halves, with every dependency injected —
 keystore, derivation and api — so it typechecks under both tsconfigs and a
@@ -510,12 +537,15 @@ diagnostic.** Three rounds of this were spent guessing between "the build is
 old", "the file is old" and "the code is wrong", and the screen could have said
 which from the start.
 
-**And `assertNoSecrets` now permits exactly one path**: `wallets[n].mnemonic`,
-matched on the PATH rather than the key name. Relaxing the name test instead
-would have let a phrase through at `sections.txLabels.mnemonic` on the way back
-in, where the payload is whatever a file says it is. Everything else — a
-phrase one level deeper inside a wallet, a passphrase, an xprv, a scan or
-spend key, anywhere — is still refused in both directions.
+**And `assertNoSecrets` permits exactly two paths**, both under one wallet:
+`wallets[n].mnemonic` and `wallets[n].keys.{scanSecret,spendKey,sweepAccount,
+refundAddress}` — matched on the PATH rather than the key name. Relaxing the
+name test instead would have let a phrase through at
+`sections.txLabels.mnemonic` on the way back in, where the payload is whatever
+a file says it is. Everything else — a phrase one level deeper inside a
+wallet, a key not under `keys`, an xprv, a **passphrase** anywhere at all
+(it is this file's key, and a key inside the thing it opens is no key) — is
+still refused in both directions.
 
 **The one that nearly shipped silently**: `backupData.ts`'s collector rebuilds
 each wallet from named fields, so for one build it collected every phrase,

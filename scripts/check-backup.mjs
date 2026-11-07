@@ -646,9 +646,16 @@ console.log('the two backup screens say the same simple thing');
   // single line claiming the same scope on both would be false on one of them.
   ok('the phone says it saves wallets as well as labels',
     /Backs up your wallets and labels\./.test(copy(P)));
-  ok('and the web says where to get the wallets',
-    /Backs up your labels\./.test(copy(V)) && /from the app/.test(copy(V)),
-    'a web backup has no phrase in it, and must not imply otherwise');
+  // BOTH SCREENS SAY WALLETS NOW, because both files carry one — the phone's
+  // by its phrase, the web's by the derived keys its vault holds. The web
+  // said "labels" for one build and carried no wallet at all, which is what
+  // "saved backup in web app and restored in mobile and still asks for
+  // recovery key" was.
+  ok('and the web says so too',
+    /Backs up your wallets and labels\./.test(copy(V)));
+  ok('and both warn that the file can spend',
+    /spend your coins/.test(copy(V)) && /spend your coins/.test(copy(P)),
+    'a file that holds a wallet has to say what it is');
 
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
     // AND DOES NOT PROMISE CONTACTS. The file has never held one: a Tango
@@ -691,8 +698,12 @@ console.log('the two backup screens say the same simple thing');
     'a file that can spend must say so where it is made');
   // And the web says it CANNOT check the passphrase, because it cannot:
   // verifying means deriving an address from the seed, which is on the phone.
+  // THE WEB STILL CANNOT CHECK THE PASSPHRASE — that needs a seed, which it
+  // has never had. It CAN check that the keys it is sealing belong to the
+  // wallet, which is a different and more useful guarantee, and it says which
+  // of the two it is making.
   ok('the web says it cannot check the passphrase before saving',
-    /cannot check it before saving/.test(copy(V)));
+    /cannot check the passphrase before saving/.test(copy(V)));
 
   // WHERE IT LIVES ON THE WEB. Moved out of Settings into the wallet card's
   // gear menu; two screens offering one thing, with nothing to say which you
@@ -794,7 +805,8 @@ console.log('the two backup screens say the same simple thing');
     const end = body.indexOf('function startRestore');
     const save = end < 0 ? body : body.slice(0, end);
     ok('the web closes the modal once a backup is saved',
-      /saved = true/.test(save) && /if \(saved\) emit\('close'\)/.test(save));
+      /saved = true/.test(save) && /if \(saved && !left\) emit\('close'\)/.test(save),
+      'a save that left a wallet out stays open and says which');
     ok('and leaves it open when the save failed',
       !/catch[^}]*emit\('close'\)/.test(save),
       'the error message is the only thing that says what went wrong');
@@ -830,6 +842,22 @@ console.log('the two backup screens say the same simple thing');
   // storing when it cannot tell, so a screen that omits these still restores
   // — it just rewrites keys that were already correct. These are what make a
   // restore onto the phone that MADE the backup a no-op.
+  // THE WEB ACTUALLY PUTS ITS KEYS IN THE FILE. collectWalletKeys returning
+  // them is worth nothing if the payload is built from the plain refs —
+  // which is how "saved backup in web app and restored in mobile and still
+  // asks for recovery key" would come straight back, with every unit of the
+  // logic passing. The same wiring gap as the phone's hasKeys deps, one
+  // report later.
+  ok('the web puts the collected keys into the payload it seals',
+    /collectWalletKeys/.test(copy(V)) && /collectBackup\(withKeys/.test(copy(V)),
+    'collecting them and then sealing the plain refs restores nothing');
+  ok('and it verifies them against the wallet before doing so',
+    /spAddressFromKeys/.test(copy(V)),
+    'the browser cannot check the passphrase; this is the check it can make');
+  ok('and says which wallet it had to leave out',
+    /could not be included/.test(copy(V)),
+    'a file that cannot restore a wallet must say so before anyone relies on it');
+
   ok('the phone tells the restore what this device already has',
     /hasKeys: hasWalletKeys/.test(copy(P)) && /\bhasSeed\b/.test(copy(P)),
     'without them every restore rewrites keystore entries that were fine');
@@ -845,7 +873,7 @@ console.log('the two backup screens say the same simple thing');
     // /noPhrase/, which the declaration satisfies — so deleting the branch
     // that reports it left the check green, which is the same failure the
     // confirm-field guard had.
-    ['a wallet record with no phrase in it', /no recovery phrase in it, so it could not be restored/],
+    ['a wallet record with no keys in it', /could not be restored: it carries no keys for them/],
     ['a file with no wallet records at all', /holds no wallets/],
     ['wallets that needed nothing done', /nothing needed restoring/],
     ['wallets whose phrase does not match', /do not match it/],
@@ -853,9 +881,9 @@ console.log('the two backup screens say the same simple thing');
     ok(`the phone says what happened to ${what}`, pattern.test(copy(P)),
       'counted and not mentioned is how a no-op reads as a failure');
   }
-  ok('and tells the user where the fix is for a file with no phrases',
-    /Save a new backup from this app/.test(copy(P)),
-    'the fix is on the save side, on a phone that holds the phrase');
+  ok('and tells the user where the fix is for a file with no keys',
+    /save a new backup and use that/.test(copy(P)),
+    'the fix is on the save side, from either client');
 
   ok('and it reports the wallets that got their keys back',
     /adopted/.test(copy(P)) && /got their keys back/.test(copy(P)),
@@ -930,7 +958,7 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
   // sealed under a passphrase that cannot open it, a wallet recreated at an
   // address nobody can reach, or a second copy of a wallet that was already
   // there.
-  const { collectWalletSeeds, restoreWallets } = await import(
+  const { collectWalletSeeds, collectWalletKeys, restoreWallets } = await import(
     pathToFileURL(new URL('../src/services/walletBackup.ts', import.meta.url).pathname).href);
 
   const PASS = 'correct horse battery';
@@ -1070,6 +1098,85 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
     ok('a wallet on the account with no phrase in the file is NOT called skipped',
       noWords.noPhrase === 1 && noWords.skipped === 0,
       JSON.stringify(noWords));
+
+    // ── A WEB BACKUP: KEYS, NO PHRASE ─────────────────────────────────
+    //
+    // "Saved backup in web app and restored in mobile and still asks for
+    // recovery key… after restore it was saying that the recovery phrase is
+    // not there — there is no recovery phrase, just the passphrase!!"
+    //
+    // Correct, and the file had what the phone needed all along. The browser
+    // generates a phrase at wallet creation, shows it once and never keeps it
+    // — keyvault.js holds the DERIVED KEYS — so a web backup could not carry
+    // a phrase, and this treated that as nothing to restore.
+    {
+      const addrFor = (k) => `sp1q-${k.scanSecret}-${k.spendKey}`;
+      const vaultKeys = { scanSecret: 'scan1', spendKey: 'spend1',
+                          refundAddress: 'refund', sweepAccount: 'sweep' };
+      const webWallet = { id: 'web', title: 'From the web', network: 'signet',
+                          spAddress: addrFor(vaultKeys), lastHeight: 77, keys: vaultKeys };
+      const spAddressFromKeys = (sc, sp) => addrFor({ scanSecret: sc, spendKey: sp });
+
+      const got = [];
+      const webDeps = {
+        ...api, spAddressFromKeys,
+        storeWalletKeys: async (id, k) => { got.push([id, k]); return true; },
+        saveSeed: async () => { throw new Error('a web file has no phrase to save'); },
+        hasKeys: async () => false, hasSeed: async () => false,
+      };
+      const onAcct = [{ id: 'server-side', spAddress: webWallet.spAddress }];
+      const r = await restoreWallets(webDeps, PASS, [webWallet], onAcct);
+      ok('a web backup restores the wallet from its KEYS',
+        r.adopted.length === 1 && r.noPhrase === 0, JSON.stringify(r));
+      ok('and the keys land against the id the account holds',
+        got[0]?.[0] === 'server-side' && got[0]?.[1].scanSecret === 'scan1');
+      // saveSeed throws in this fake: a web restore must never call it, and
+      // an empty seed written "for symmetry" is a wallet that claims it can
+      // show a recovery phrase and then shows nothing.
+      ok('and no seed is written, since there is none', r.failed.length === 0);
+
+      // IT MUST NOT LOOP. alreadyUsable asks for a seed as well when the file
+      // HAS a phrase; demanding one for a file that never could carry one
+      // makes every later restore try again and report a missing phrase that
+      // was never missing from the file's point of view.
+      const settled = { ...webDeps, hasKeys: async () => true, hasSeed: async () => false };
+      const again = await restoreWallets(settled, PASS, [webWallet], onAcct);
+      ok('restoring a web backup twice is a no-op, not a loop',
+        again.skipped === 1 && again.adopted.length === 0, JSON.stringify(again));
+      // But a PHONE file still wants the seed stored, so the same device
+      // state is NOT "already usable" for one that carries a phrase.
+      const phoneFile = [{ ...wallets[0], mnemonic: SEED_A }];
+      const wantsSeed = await restoreWallets(
+        { ...api, hasKeys: async () => true, hasSeed: async () => false },
+        PASS, phoneFile, [{ id: 'x', spAddress: wallets[0].spAddress }]);
+      ok('while a phone backup with a phrase still stores the seed',
+        wantsSeed.adopted.length === 1 && wantsSeed.skipped === 0);
+
+      // KEYS THAT DO NOT ADD UP TO THE ADDRESS THE FILE CLAIMS. For a phrase
+      // the derivation already proved it; for keys this is the only check
+      // there is, and without it a hand-edited file puts working-looking keys
+      // on a wallet they do not open — a success nobody can tell from a
+      // failure until a payment never arrives.
+      const crossed = [{ ...webWallet, keys: { ...vaultKeys, spendKey: 'somebody-elses' } }];
+      const bad = await restoreWallets(webDeps, PASS, crossed, []);
+      ok('keys that do not derive the file\'s own address are refused',
+        bad.mismatched.length === 1 && bad.created.length === 0);
+
+      // AND THE COLLECT SIDE, which is what the browser runs.
+      const vault = { web: vaultKeys };
+      const coll = await collectWalletKeys(
+        { getWalletKeys: async (id) => vault[id] || null, spAddressFromKeys },
+        [webWallet, { id: 'nokeys', title: 'No keys here', network: 'signet', spAddress: 'sp1qelse' }]);
+      ok('the web collects the keys it holds', !!coll.keys.web);
+      ok('and leaves out a wallet whose keys it does not have',
+        !coll.keys.nokeys && coll.leftOut.some((w) => w.id === 'nokeys'));
+      const wrongVault = { web: { ...vaultKeys, spendKey: 'not-this-wallet' } };
+      const mis = await collectWalletKeys(
+        { getWalletKeys: async () => wrongVault.web, spAddressFromKeys }, [webWallet]);
+      ok('and leaves out keys that are not that wallet\'s',
+        !mis.keys.web && mis.leftOut.length === 1,
+        'putting the wrong keys in the file is a restore that cannot work');
+    }
 
     // A caller that cannot answer errs towards storing. Writing keys that are
     // already right costs nothing; leaving a wallet unusable is the report.

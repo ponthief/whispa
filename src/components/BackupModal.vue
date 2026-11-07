@@ -109,17 +109,29 @@ async function doSave() {
   busy.value = 'save'
   say('')
   let saved = false
+  let left = ''
   try {
     const { encryptBackup, backupFilename } = await import('@/services/backup')
     const { collectBackup, describeBackup } = await import('@/stores/backupdata')
     const { collectServerLabels } = await import('@/services/serverLabels')
+    const { collectWalletKeys } = await import('@/services/walletBackup')
+    const { spAddressFromKeys } = await import('@/services/spKeys')
 
     const refs = await walletRefs()
+    // THE WALLETS, as far as a browser can carry them: the derived keys from
+    // the vault, verified to add up to each wallet's own SP address. The
+    // phrase is not here to carry — keyvault.js has never held the words —
+    // and for one build that meant a web backup carried no wallet at all,
+    // reported as "saved backup in web app and restored in mobile and still
+    // asks for recovery key".
+    const { keys, leftOut } = await collectWalletKeys(
+      { getWalletKeys: (id) => auth.getWalletKeys(id), spAddressFromKeys }, refs)
+    const withKeys = refs.map(w => (keys[w.id] ? { ...w, keys: keys[w.id] } : w))
     // The SERVER-side labels too, as of 2026-11-08. An SP coin's label is
     // silnt.utxos.label and a labelled address's is wallet_addresses.label;
     // neither was in the file, so a restore brought back a SegWit label and
     // not an SP one, by a rule invisible from the outside.
-    const payload = collectBackup(refs, await collectServerLabels(api, auth.inkey, refs))
+    const payload = collectBackup(withKeys, await collectServerLabels(api, auth.inkey, refs))
     const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
     if (!total) {
       say('Nothing to back up yet.', 'error')
@@ -143,13 +155,26 @@ async function doSave() {
     // dialog the user now has to dismiss is a step for no information. It
     // stays open on failure, because that message IS the information.
     saved = true
+    // Named, not swallowed: a wallet whose keys this browser does not hold is
+    // one the file cannot restore, and the person needs to know which before
+    // they rely on it.
+    if (leftOut.length) {
+      left = leftOut.map(w => w.title).join(', ')
+    }
   } catch (e) {
     say(e?.message || 'Could not save the backup.', 'error')
   } finally {
     // Cleared BEFORE the close, so a parent that ignores the event is not
     // left holding a modal stuck on 'save'.
     busy.value = null
-    if (saved) emit('close')
+    // A clean save closes the modal; one that left a wallet out stays open
+    // and says which, because that is the half the download cannot tell you.
+    if (saved && !left) emit('close')
+    else if (saved) {
+      say(`Saved, but ${left} could not be included — its keys are not here. ` +
+        'Use Recover Keys on that wallet first, or save the backup from the ' +
+        'app.', 'error')
+    }
   }
 }
 
@@ -303,15 +328,19 @@ async function openPending() {
              removed even if it tried, and saying "contacts" promised exactly
              that. What the word was reaching for was the BitMail pins, which
              are tamper evidence rather than an address book. -->
-        <!-- LABELS ONLY HERE, and the phone's file says wallets, because the
-             browser cannot carry a phrase: keyvault.js holds { scanSecret,
-             spendKey, refundAddress, sweepAccount } and has never held the
-             words. It seals with the same passphrase, so one file opens on
-             either client — a phone's backup restores its wallets here only
-             as far as this client can, which is their labels. -->
+        <!-- WALLETS, by the only route a browser has: keyvault.js holds
+             { scanSecret, spendKey, refundAddress, sweepAccount } and has
+             never held the words, so the file carries the derived KEYS. They
+             are what makes a wallet scan and spend on a new phone — the one
+             thing they cannot do afterwards is show a recovery phrase, and
+             the browser never had one to give.
+
+             It said "labels" here for one build, and a web backup carried no
+             wallet at all: "saved backup in web app and restored in mobile
+             and still asks for recovery key… there is no recovery phrase,
+             just the passphrase!!" -->
         <p class="text-dim text-sm" style="margin:0">
-          Backs up your labels. Save a backup from the app to include your
-          wallets.
+          Backs up your wallets and labels.
         </p>
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm
@@ -344,8 +373,9 @@ async function openPending() {
           <p class="text-sm" style="margin:0">
             <strong>Use your wallet passphrase.</strong> It is the only thing
             that opens the file, it is not stored anywhere, and no one —
-            including us — can recover it. This page cannot check it before
-            saving.
+            including us — can recover it. Keep the file private: it holds
+            your wallets, so anyone with both can spend your coins. This page
+            cannot check the passphrase before saving.
           </p>
         </div>
 

@@ -49,7 +49,15 @@ export type BackupWalletRef = {
    * restore exists to recover.
    */
   lastHeight?: number;
+  /** The phrase, from a PHONE backup. */
   mnemonic?: string;
+  /**
+   * The derived keys, from a WEB backup — the browser has never held a
+   * phrase, so this is what it can give. They make the wallet scan and spend
+   * on the new device; what they cannot do is show a recovery phrase
+   * afterwards, and the browser never had one to put in.
+   */
+  keys?: Omit<SilentPaymentKeysLike, 'spAddress'>;
 };
 
 export type SilentPaymentKeysLike = {
@@ -88,10 +96,22 @@ export type LeftOut = {
  * a write — rather than towards leaving a wallet unusable, which is the whole
  * of the report this exists for.
  */
-async function alreadyUsable(deps: RestoreDeps, walletId: string): Promise<boolean> {
-  if (!deps.hasKeys || !deps.hasSeed) return false;
+async function alreadyUsable(
+  deps: RestoreDeps,
+  walletId: string,
+  fileHasPhrase: boolean,
+): Promise<boolean> {
+  if (!deps.hasKeys) return false;
   try {
-    return (await deps.hasKeys(walletId)) && (await deps.hasSeed(walletId));
+    if (!(await deps.hasKeys(walletId))) return false;
+    // A file with no phrase in it cannot supply a seed, so a device that has
+    // the keys has had everything that file holds. Asking for a seed as well
+    // would make every restore from a web backup try again, for ever, and
+    // report a missing phrase that was never missing from the file's point of
+    // view — which is exactly how "it says the recovery phrase is not there"
+    // reached somebody who had only ever used the web app.
+    if (!fileHasPhrase) return true;
+    return deps.hasSeed ? await deps.hasSeed(walletId) : false;
   } catch {
     return false;
   }
@@ -153,7 +173,74 @@ export async function collectWalletSeeds(
   return { seeds, leftOut };
 }
 
+/**
+ * The derived keys a WEB backup carries, read out of the browser's vault.
+ *
+ * Verified before they go in: `spAddressFromKeys` must give the address the
+ * account holds for that wallet. The browser cannot check the PASSPHRASE —
+ * that needs a seed, which it has never had — so this is the check it can
+ * make, and it is the one that decides whether the file can restore anything.
+ * A wallet whose keys are missing or do not add up is left out and named,
+ * exactly as the phone leaves out one its passphrase does not open.
+ */
+export async function collectWalletKeys(
+  deps: {
+    getWalletKeys(walletId: string): Promise<Omit<SilentPaymentKeysLike, 'spAddress'> | null>;
+    spAddressFromKeys(scanSecret: string, spendKey: string, network: string): string;
+  },
+  wallets: BackupWalletRef[],
+): Promise<{
+  keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>>;
+  leftOut: LeftOut[];
+}> {
+  const keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>> = {};
+  const leftOut: LeftOut[] = [];
+
+  for (const w of wallets || []) {
+    if (!w?.id) continue;
+    const title = w.title || 'Wallet';
+    let k: Omit<SilentPaymentKeysLike, 'spAddress'> | null = null;
+    try {
+      k = await deps.getWalletKeys(w.id);
+    } catch {
+      k = null;
+    }
+    // No keys in this browser — the usual reason is that they were never
+    // recovered here, which is the same state the wallet card's "Recover
+    // Keys" badge reports.
+    if (!k?.scanSecret || !k?.spendKey) {
+      leftOut.push({ id: w.id, title, reason: 'no-seed' });
+      continue;
+    }
+    try {
+      const derived = deps.spAddressFromKeys(k.scanSecret, k.spendKey, w.network || 'mainnet');
+      if (!sameAddress(derived, w.spAddress)) {
+        leftOut.push({ id: w.id, title, reason: 'passphrase' });
+        continue;
+      }
+    } catch {
+      leftOut.push({ id: w.id, title, reason: 'passphrase' });
+      continue;
+    }
+    keys[w.id] = {
+      scanSecret: k.scanSecret,
+      spendKey: k.spendKey,
+      refundAddress: k.refundAddress || '',
+      sweepAccount: k.sweepAccount || '',
+    };
+  }
+
+  return { keys, leftOut };
+}
+
 export type RestoreDeps = {
+  /**
+   * The SP address a pair of private keys adds up to. Needed to verify the
+   * `keys` a WEB backup carries, where there is no phrase to re-derive from —
+   * and it is the same test from the other side: do these belong to the
+   * wallet the file says they do.
+   */
+  spAddressFromKeys?(scanSecret: string, spendKey: string, network: string): string;
   deriveSilentPayment(
     mnemonic: string,
     passphrase: string,
@@ -273,8 +360,30 @@ export async function restoreWallets(
     // case on the phone that made the backup, and deriving its keys only to
     // throw them away would also report a phrase/address disagreement for a
     // wallet that works perfectly well.
-    if (existing?.id && (await alreadyUsable(deps, existing.id))) {
+    //
+    // What "usable" means depends on what the FILE can offer: a web backup
+    // carries keys and no phrase, so a device holding those keys has had
+    // everything that file could ever give it.
+    if (existing?.id && (await alreadyUsable(deps, existing.id, !!w.mnemonic))) {
       report.skipped++;
+      continue;
+    }
+
+    // ── A WEB BACKUP: KEYS, NO PHRASE ────────────────────────────────────
+    //
+    // Reported 2026-11-08: "saved backup in web app and restored in mobile
+    // and still asks for recovery key… after restore it was saying that the
+    // recovery phrase is not there — there is no recovery phrase, just the
+    // passphrase!!"
+    //
+    // The browser generates a phrase at wallet creation, shows it once and
+    // never keeps it, so a web file could not carry one — and this treated
+    // that as nothing to restore, when the browser was holding exactly what
+    // the phone needed. Keys make the wallet scan and spend; only "show my
+    // recovery phrase" is missing, and the browser never had it either.
+    if (!w.mnemonic && w.keys?.scanSecret && w.keys?.spendKey) {
+      const stored = await adoptOrCreate(deps, w, existing, w.keys, null, report);
+      if (stored === 'mismatch') report.mismatched.push({ title });
       continue;
     }
 
@@ -307,72 +416,119 @@ export async function restoreWallets(
       continue;
     }
 
-    // ── ALREADY ON THE ACCOUNT ───────────────────────────────────────────
-    // Create nothing — that would duplicate the wallet — but give this device
-    // what it is missing. Asked per wallet rather than assumed, so a restore
-    // onto the phone that made the backup is a no-op instead of rewriting
-    // keystore entries that are already correct.
-    if (existing?.id) {
-      try {
-        const okKeys = await deps.storeWalletKeys(existing.id, {
-          scanSecret: keys.scanSecret,
-          spendKey: keys.spendKey,
-          refundAddress: keys.refundAddress,
-          sweepAccount: keys.sweepAccount,
-        });
-        if (okKeys === false) {
-          throw new Error('Its keys could not be stored on this device.');
-        }
-        const okSeed = await deps.saveSeed(existing.id, w.mnemonic);
-        if (okSeed === false) {
-          throw new Error('Its recovery phrase could not be stored.');
-        }
-        deps.onCreated?.(existing.id);
-        report.adopted.push({ id: existing.id, title });
-      } catch (e: any) {
-        report.failed.push({ title, message: e?.message || 'Could not store its keys.' });
-      }
-      continue;
-    }
-
-    try {
-      const data: { title: string; sp_address: string; last_height?: number } = {
-        title,
-        sp_address: keys.spAddress,
-      };
-      // Only when the file has one. A missing birth height is better left to
-      // the server's own default than guessed at here: a number invented on
-      // this side could sit ABOVE the wallet's first payment, and the resume
-      // point only ever moves forward, so nothing would go back for it.
-      if (typeof w.lastHeight === 'number' && w.lastHeight >= 0) {
-        data.last_height = w.lastHeight;
-      }
-      const res = await deps.createWallet(data);
-      const id = res?.wallet_id;
-      if (!id) throw new Error('The server did not return a wallet id.');
-      // Keys before the seed: the keys are what the device scans and spends
-      // with, and a wallet that exists without them shows a "Recover Keys"
-      // badge rather than working. Both are awaited, so a failure here is
-      // reported rather than leaving a half-made wallet quietly behind.
-      const storedKeys = await deps.storeWalletKeys(id, {
-        scanSecret: keys.scanSecret,
-        spendKey: keys.spendKey,
-        refundAddress: keys.refundAddress,
-        sweepAccount: keys.sweepAccount,
-      });
-      if (storedKeys === false) {
-        throw new Error('The wallet was created but its keys could not be stored on this device.');
-      }
-      const storedSeed = await deps.saveSeed(id, w.mnemonic);
-      if (storedSeed === false) {
-        throw new Error('The wallet was created but its recovery phrase could not be stored.');
-      }
-      deps.onCreated?.(id);
-      report.created.push({ id, title });
-    } catch (e: any) {
-      report.failed.push({ title, message: e?.message || 'Could not create the wallet.' });
-    }
+    const stored = await adoptOrCreate(deps, w, existing, keys, w.mnemonic, report);
+    if (stored === 'mismatch') report.mismatched.push({ title });
   }
 
   return report;
+}
+
+/**
+ * Put one wallet's key material on this device: adopt the row the account
+ * already has, or create the wallet and then store against it.
+ *
+ * ONE PLACE FOR BOTH ROUTES, because the only difference between a phone
+ * backup and a web one is where the keys came from and whether a phrase came
+ * with them. Everything after that — match by address, verify, never
+ * duplicate, treat `false` from the keystore as a failure — is the same, and
+ * was duplicated across two blocks until the web route needed it too.
+ *
+ * `phrase` is null for a web backup. The seed is then not written at all,
+ * rather than written empty: an empty seed is a wallet that claims to be able
+ * to show a recovery phrase and then shows nothing.
+ */
+async function adoptOrCreate(
+  deps: RestoreDeps,
+  w: BackupWalletRef,
+  existing: { id?: string; spAddress?: string } | undefined,
+  keys: Omit<SilentPaymentKeysLike, 'spAddress'>,
+  phrase: string | null,
+  report: WalletRestoreReport,
+): Promise<'done' | 'mismatch' | 'failed'> {
+  const title = w.title || 'Wallet';
+
+  // THE KEYS MUST ADD UP TO THE ADDRESS THE FILE CLAIMS. For a phrase this
+  // was already proved by the derivation; for a web file it is the only check
+  // available, and without it a hand-edited file would put working-looking
+  // keys on a wallet they do not open — a restore that reports success and
+  // leaves somebody waiting for a payment that can never arrive.
+  if (deps.spAddressFromKeys) {
+    try {
+      const derived = deps.spAddressFromKeys(
+        keys.scanSecret, keys.spendKey, w.network || 'mainnet');
+      if (!sameAddress(derived, w.spAddress)) return 'mismatch';
+    } catch {
+      return 'mismatch';
+    }
+  }
+
+  // ── ALREADY ON THE ACCOUNT ─────────────────────────────────────────────
+  // Create nothing — that would duplicate the wallet — but give this device
+  // what it is missing.
+  if (existing?.id) {
+    try {
+      await store(deps, existing.id, keys, phrase);
+      deps.onCreated?.(existing.id);
+      report.adopted.push({ id: existing.id, title });
+      return 'done';
+    } catch (e: any) {
+      report.failed.push({ title, message: e?.message || 'Could not store its keys.' });
+      return 'failed';
+    }
+  }
+
+  try {
+    const data: { title: string; sp_address: string; last_height?: number } = {
+      title,
+      sp_address: w.spAddress,
+    };
+    // Only when the file has one. A missing birth height is better left to
+    // the server's own default than guessed at here: a number invented on
+    // this side could sit ABOVE the wallet's first payment, and the resume
+    // point only ever moves forward, so nothing would go back for it.
+    if (typeof w.lastHeight === 'number' && w.lastHeight >= 0) {
+      data.last_height = w.lastHeight;
+    }
+    const res = await deps.createWallet(data);
+    const id = res?.wallet_id;
+    if (!id) throw new Error('The server did not return a wallet id.');
+    await store(deps, id, keys, phrase);
+    deps.onCreated?.(id);
+    report.created.push({ id, title });
+    return 'done';
+  } catch (e: any) {
+    report.failed.push({ title, message: e?.message || 'Could not create the wallet.' });
+    return 'failed';
+  }
+}
+
+/**
+ * Keys before the seed, and `false` from either is a failure.
+ *
+ * The keys are what the device scans and spends with, and a wallet that
+ * exists without them shows a "Recover Keys" badge rather than working.
+ * Ignoring the booleans leaves exactly that, reported as a successful
+ * restore.
+ */
+async function store(
+  deps: RestoreDeps,
+  walletId: string,
+  keys: Omit<SilentPaymentKeysLike, 'spAddress'>,
+  phrase: string | null,
+): Promise<void> {
+  const okKeys = await deps.storeWalletKeys(walletId, {
+    scanSecret: keys.scanSecret,
+    spendKey: keys.spendKey,
+    refundAddress: keys.refundAddress,
+    sweepAccount: keys.sweepAccount,
+  });
+  if (okKeys === false) {
+    throw new Error('Its keys could not be stored on this device.');
+  }
+  if (phrase) {
+    const okSeed = await deps.saveSeed(walletId, phrase);
+    if (okSeed === false) {
+      throw new Error('Its recovery phrase could not be stored.');
+    }
+  }
 }

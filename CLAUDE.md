@@ -84,6 +84,7 @@ npm run check:slider        # the Send amount slider sets an amount, and only an
 npm run check:plain         # a fresh plain address stays inside the gap limit
 npm run check:qr            # every QR is dark-on-light, with a real quiet zone
 npm run check:scan          # a rescan reaches back at least as far as it says
+npm run check:catchup       # the catch-up banner cannot rescan what was just scanned
 npm run check:colors        # the two colours written in both theme.ts and colors.xml
 npm run check:terms         # one terms version, in two repos, behind one tick box
 npm run check:apksign       # which key signs a release, answered in one place
@@ -1346,6 +1347,61 @@ Separately, a block the scan could not read holds the resume point below it
 and is reported as `gap` on the progress record, so neither client claims the
 wallet is up to date while there is a hole in it. See
 `tests/test_scan_gap_is_reported.py` and `tests/test_resume_point.py`.
+
+### The catch-up banner scanned the same blocks twice
+
+Reported 2026-11-07, web only. The banner on Wallet said "N blocks behind";
+the user pressed **↓ Receive**, which goes to `ScanView` — whose heading is
+*"Receive Payments"*, and that is the whole reason the report calls it the
+Receive page — scanned there, came back to Wallet, pressed **Scan now** on the
+banner still sitting at the top, and it scanned the same range again.
+
+**Both halves were module-level state in a composable.** `loginScanPrompts`
+and `_evaluated` live in `composables/useLoginScan.js`, not in the component,
+so they outlive the route. Nothing dropped a prompt when the gap was closed
+somewhere else, and `_evaluated` then stopped `evaluateLoginScan` from ever
+recomputing it — so the banner kept rendering a gap that no longer existed,
+over a `fromHeight` captured before the scan that closed it. The only visible
+symptom was that the second scan took as long as the first.
+
+Two fixes, and the second is the one that makes it a property of the code:
+
+**A scan started anywhere resets that wallet's evaluation.** `scanWatchWallets`
+is the signal every scan already raises — `ScanView`, `App.vue`'s post-send
+change scan, and `_startBackgroundScan` all call `notifyScanStarted`. The
+watcher resets on ENTRY and on EXIT: entry kills the stale banner as the scan
+starts, exit forces a fresh evaluation once it finishes, so a scan that only
+partly closed the gap prompts again with the real number rather than going
+quiet.
+
+**`acceptLoginScan` never trusts the snapshot.** The watcher only fires for
+scans on this client; the gap can also close through the server-side
+background scanner, another browser or the phone, with no signal here at all.
+So it re-reads `last_scan_height` before scanning anything, takes
+`max(live, snapshot)` — `set_last_scan_height` only moves forward, so an
+earlier range cannot make the wallet more scanned and is pure cost against a
+shared oracle — and says "already up to date" rather than starting a no-op
+scan. It also refuses to stack on a running scan, which `evaluateLoginScan`
+had always done and the path a user actually presses never did.
+
+Both lookups are best-effort: if the wallet list or the tip cannot be read it
+falls back to the snapshot, which is exactly the old behaviour and no worse.
+
+**The phone does not have this bug**, and the difference is worth knowing.
+`hooks/useCatchUpScan.ts::accept` reads `wallet.last_scan_height` off the
+current prop rather than a value frozen at prompt time, and its `status` is
+component state, so it cannot survive a remount the way a module-level ref
+does. What it does share is that `evaluated` is not cleared when a scan starts
+elsewhere, so it will not re-prompt in the same session — milder, and
+arguably the documented intent ("runs at most once per wallet per session").
+
+`check:catchup` EXERCISES the composable rather than reading it, with the
+three modules it reaches outside itself stubbed in
+`scripts/_loginscan-stubs.mjs`; `stores/scanwatch` is deliberately real, since
+the signal it carries is half the fix. Against the unfixed composable it
+reports ten failures, including the reported symptom by name. Nothing in the
+build, `lint` or `check:vue` could see any of it — stale state in a module
+scope is not a syntax error, an undefined identifier, or visibly wrong.
 
 `lint` is two rules, not a style pass: `react-hooks/exhaustive-deps` and
 `rules-of-hooks`. It had no config at all until 2026-09-24 and so had never

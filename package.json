@@ -46,6 +46,7 @@
     "check:qr": "node scripts/check-qr.cjs",
     "check:colors": "node scripts/check-android-colors.cjs",
     "check:scan": "node scripts/check-scan-lookback.mjs",
+    "check:catchup": "node --import ./scripts/ts-resolve.mjs scripts/check-catchup.mjs",
     "check:vue": "node scripts/check-vue-imports.cjs",
     "check:admin": "node scripts/check-admin-payouts.cjs",
     "check:lock": "node scripts/check-app-lock.cjs",

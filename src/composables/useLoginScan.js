@@ -14,9 +14,9 @@
  * Runs at most once per wallet per session (so navigating back to Wallets does
  * not re-trigger). The prompt list is exposed for the view to render.
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { notifyScanStarted } from '@/stores/scanwatch'
+import { notifyScanStarted, scanWatchWallets } from '@/stores/scanwatch'
 import { pushToast } from '@/stores/toasts'
 import * as api from '@/api'
 
@@ -43,6 +43,32 @@ export function resetLoginScanFor(walletId) {
   _evaluated.delete(walletId)
   loginScanPrompts.value = loginScanPrompts.value.filter(p => p.id !== walletId)
 }
+
+// A SCAN STARTED ANYWHERE INVALIDATES THIS WALLET'S EVALUATION.
+//
+// THE BUG THIS FIXES (reported 2026-11-07): the prompt said "N blocks behind",
+// the user clicked "↓ Receive" to the scan page (ScanView — its heading is
+// "Receive Payments"), scanned there, came back to Wallet, pressed "Scan now"
+// on the banner that was still showing, and it scanned the SAME range again.
+//
+// Both halves of that were stale module state. `loginScanPrompts` and
+// `_evaluated` live here, not in the component, so they survive navigation;
+// nothing dropped a prompt when the gap was closed somewhere else, and
+// `_evaluated` then stopped evaluateLoginScan from ever recomputing it. The
+// banner kept rendering a gap that no longer existed, over a `fromHeight`
+// captured before the scan that closed it.
+//
+// scanWatchWallets is the signal every scan already raises — ScanView,
+// App.vue's post-send change scan, and _startBackgroundScan below all call
+// notifyScanStarted. Resetting on ENTRY and on EXIT is deliberate: entry kills
+// the stale banner as the scan starts, exit forces a fresh evaluation once it
+// finishes, so a scan that only partly closed the gap prompts again with the
+// real number instead of staying silent.
+let _watchedScans = new Set()
+watch(scanWatchWallets, (now) => {
+  for (const id of new Set([..._watchedScans, ...now])) resetLoginScanFor(id)
+  _watchedScans = new Set(now)
+})
 
 let _cfgCache = null
 async function _getConfig(inkey) {
@@ -150,7 +176,19 @@ function _startBackgroundScan(auth, w, keys, fromHeight = null) {
   } catch { /* non-fatal */ }
 }
 
-/** User accepted a large-gap prompt → start the scan, remove the prompt. */
+/**
+ * User accepted a large-gap prompt → start the scan, remove the prompt.
+ *
+ * THE SNAPSHOT IN THE PROMPT IS NEVER TRUSTED. The watcher above clears a
+ * prompt when a scan starts on this client, but the gap can close with no
+ * signal here at all — the server-side background scanner, another browser,
+ * the phone. So this re-reads the resume point before it scans anything, and
+ * that is what makes "it rescans what was just scanned" a property of the code
+ * rather than of one event firing.
+ *
+ * evaluateLoginScan already refuses to stack on a running scan; this is the
+ * same refusal on the path a user actually presses, which never had it.
+ */
 export async function acceptLoginScan(walletId) {
   const auth = useAuthStore()
   let keys = null
@@ -160,8 +198,49 @@ export async function acceptLoginScan(walletId) {
     dismissLoginScan(walletId)
     return
   }
+
+  // Already scanning — starting another only earns the backend's
+  // concurrent-scan refusal, reported to the user as a failure they caused.
+  try {
+    const prog = await api.getScanProgress(auth.inkey, walletId)
+    if (prog && prog.active) {
+      pushToast('A scan is already running for this wallet.', { type: 'info' })
+      dismissLoginScan(walletId)
+      return
+    }
+  } catch { /* progress unknown — fall through and let the backend decide */ }
+
   const prompt = loginScanPrompts.value.find(p => p.id === walletId)
-  const fromHeight = prompt ? prompt.fromHeight : null
+  let fromHeight = prompt ? prompt.fromHeight : null
+
+  // The live resume point, and the tip to measure it against. Best-effort:
+  // if either lookup fails we fall back to the snapshot, which is the old
+  // behaviour and no worse than it was.
+  try {
+    const list = await api.getSilntWallets(auth.inkey)
+    const w = (list || []).find(x => x && x.id === walletId)
+    if (w) {
+      // Same max() as evaluateLoginScan: last_scan_height is progress,
+      // last_height is the birth height, and a new wallet has only the latter.
+      const live = Math.max(Number(w.last_scan_height ?? 0), Number(w.last_height ?? 0))
+      if (live) {
+        // Never below the live resume point. Scanning an earlier range cannot
+        // make the wallet more scanned — set_last_scan_height only moves
+        // forward — so it is pure cost against a shared oracle.
+        fromHeight = Math.max(live, Number(fromHeight ?? 0)) || null
+        try {
+          const info = await api.getChainTip(auth.inkey)
+          const tip = Number(info && info.height)
+          if (tip && live >= tip) {
+            pushToast('That wallet is already up to date.', { type: 'info' })
+            dismissLoginScan(walletId)
+            return
+          }
+        } catch { /* no tip — scanning from the live point is still correct */ }
+      }
+    }
+  } catch { /* wallet list unavailable — the snapshot is all we have */ }
+
   _startBackgroundScan(auth, { id: walletId }, keys, fromHeight)
   pushToast('Catch-up scan started.', { type: 'success' })
   dismissLoginScan(walletId)

@@ -937,7 +937,12 @@ watch(swapCompletedAt, () => {
                  and pinned contacts cover every wallet, so whichever card's
                  menu opens it, one file is one backup. The menu is where
                  people look; the modal's copy is what says the scope. -->
-            <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup</button>
+            <!-- NAMED FOR BOTH HALVES (2026-11-08: "under Settings, it only
+                 says Backup, needs Restore"). Restore is the half somebody
+                 goes looking for under pressure, and a menu that only offers
+                 to SAVE one reads as though there is nowhere to put a file
+                 back. -->
+            <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup &amp; Restore</button>
             <div class="wallet-menu-rule"></div>
             <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
           </div>

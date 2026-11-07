@@ -86,6 +86,7 @@ async function doSave() {
   }
   busy.value = 'save'
   say('')
+  let saved = false
   try {
     const { encryptBackup, backupFilename } = await import('@/services/backup')
     const { collectBackup, describeBackup } = await import('@/stores/backupdata')
@@ -108,11 +109,19 @@ async function doSave() {
     a.click()
     // Revoked, or the blob is held for the life of the tab.
     URL.revokeObjectURL(url)
-    say(`Saved ${total} item${total === 1 ? '' : 's'}.`)
+    // THE MODAL CLOSES ON A SUCCESSFUL SAVE (2026-11-08, on the user's
+    // instruction: "after saving backup, pop up should disappear"). The
+    // browser's own download is the confirmation, and a message sitting in a
+    // dialog the user now has to dismiss is a step for no information. It
+    // stays open on failure, because that message IS the information.
+    saved = true
   } catch (e) {
     say(e?.message || 'Could not save the backup.', true)
   } finally {
+    // Cleared BEFORE the close, so a parent that ignores the event is not
+    // left holding a modal stuck on 'save'.
     busy.value = null
+    if (saved) emit('close')
   }
 }
 
@@ -146,26 +155,29 @@ async function onPickFile(ev) {
   say('Opening… 0%')
   try {
     const { decryptBackup } = await import('@/services/backup')
-    const { applyBackup, describeBackup } = await import('@/stores/backupdata')
+    const { applyBackup } = await import('@/stores/backupdata')
     const payload = await decryptBackup(await file.text(), password.value,
       (f) => say(`Opening… ${Math.round(f * 100)}%`))
-    const total = describeBackup(payload).reduce((n, p) => n + p.count, 0)
-    const { sections, skipped, remapped } = applyBackup(payload, await walletRefs())
+    const { sections, skipped } = applyBackup(payload, await walletRefs())
     const added = Object.values(sections).reduce((n, r) => n + r.added, 0)
-    const kept = Object.values(sections).reduce((n, r) => n + r.kept, 0)
 
-    // Reports what actually changed. "Restored" over a file whose every entry
-    // was already present reads as if something happened.
+    // SAYS WHETHER IT RESTORED, AND STOPS (2026-11-08, on the user's
+    // instruction: "restore text is too long and meaningless, just say
+    // whether restored or not"). It used to report added, kept, re-matched
+    // wallets and leftovers in one four-clause sentence — every number true,
+    // none of them the question being asked, which was "did it work".
+    //
+    // The two outcomes are still told apart, because they are different
+    // answers: a file whose every entry was already present changed nothing,
+    // and "Restored" over that reads as though something happened.
+    //
+    // The one thing kept past that is a section this client cannot store —
+    // the phone's, in a file this one opened. Short, and by name, because
+    // dropping it would have the screen claim a restore it did not do. It
+    // appears only for a cross-client file.
     say([
-      added
-        ? `Restored ${added} of ${total} item${total === 1 ? '' : 's'}.`
-        : `Nothing to add — all ${total} were already here.`,
-      kept ? `${kept} were already here and were left alone.` : '',
-      remapped
-        ? `${remapped} wallet${remapped === 1 ? '' : 's'} had been removed and added ` +
-          'back; their labels were re-matched.'
-        : '',
-      skipped.length ? `${skipped.join(', ')} were left in the file.` : '',
+      added ? 'Restored.' : 'Nothing new — it was all already here.',
+      skipped.length ? `${skipped.join(', ')} left in the file.` : '',
     ].filter(Boolean).join(' '))
   } catch (e) {
     say(e?.message || 'Could not read that backup.', true)
@@ -179,7 +191,11 @@ async function onPickFile(ev) {
   <div v-if="show" class="modal-overlay" @click.self="close">
     <div class="card modal">
       <div class="card-header">
-        <h2>Backup</h2>
+        <!-- Both halves named, here and on the menu item that opens it
+             (2026-11-08: "under Settings, it only says Backup, needs
+             Restore"). The modal does both, and somebody who came to get a
+             file back should see that word before opening anything. -->
+        <h2>Backup &amp; Restore</h2>
         <button class="btn btn-ghost btn-sm btn-icon" @click="close">✕</button>
       </div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">

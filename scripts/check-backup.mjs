@@ -591,6 +591,42 @@ console.log('the two backup screens say the same simple thing');
     !!lineInput && !/secureTextEntry/.test(lineInput) && !/secureTextEntry/.test(copy(P)),
     'a per-file password with no checksum has to be visible');
 
+  // THE MODAL CLOSES ON A SUCCESSFUL SAVE and stays open on a failure. The
+  // download is the confirmation; a message in a dialog the user then has to
+  // dismiss is a step for no information. A failure message IS information,
+  // so that path must not close — asserted both ways, because "close at the
+  // end of doSave" would satisfy a naive check while throwing the error away.
+  {
+    const body = copy(V.slice(V.indexOf('async function doSave')));
+    const end = body.indexOf('function startRestore');
+    const save = end < 0 ? body : body.slice(0, end);
+    ok('the web closes the modal once a backup is saved',
+      /saved = true/.test(save) && /if \(saved\) emit\('close'\)/.test(save));
+    ok('and leaves it open when the save failed',
+      !/catch[^}]*emit\('close'\)/.test(save),
+      'the error message is the only thing that says what went wrong');
+  }
+
+  // "JUST SAY WHETHER RESTORED OR NOT". The old line reported added, kept,
+  // re-matched wallets and leftovers in one sentence; no count belongs in it
+  // now. Both clients, because both carried the same sentence.
+  for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
+    ok(`${who} says only whether the restore changed anything`,
+      /added \? 'Restored\.' : 'Nothing new/.test(src),
+      'added, kept and re-matched counts are true and not the question asked');
+    ok(`${who} still names a section it could not store`,
+      /skipped\.length \?/.test(src),
+      'dropping it would have the screen claim a restore it did not do');
+  }
+
+  // BOTH HALVES NAMED where the feature is entered from. Restore is the one
+  // somebody goes looking for under pressure.
+  ok('the wallet card menu names Restore', /Backup &amp; Restore/.test(WALLETS));
+  ok('the web modal names Restore', /<h2>Backup &amp; Restore<\/h2>/.test(V));
+  ok('the phone Settings row names Restore',
+    /title="Backup & Restore"/.test(
+      readFileSync(new URL('../src/screens/SettingsScreen.tsx', import.meta.url), 'utf8')));
+
   ok('the web clears the password when the modal opens or closes',
     /watch\(\(\) => props\.show[\s\S]{0,200}password\.value = ''/.test(V),
     'a field that persists across save and restore prompts nobody');

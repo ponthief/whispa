@@ -120,8 +120,12 @@ export default function SettingsScreen() {
           title="Wallet"
           onPress={() => setPage('wallet')}
         />
+        {/* Both halves named (2026-11-08: "it only says Backup, needs
+            Restore"). Restore is the half somebody goes looking for under
+            pressure, and a row that only offers to SAVE one reads as though
+            there is nowhere to put a file back. */}
         <NavRow
-          title="Backup"
+          title="Backup & Restore"
           onPress={() => setPage('backup')}
         />
       </Group>

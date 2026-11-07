@@ -565,6 +565,28 @@ what is missing exactly as the modal's do. `check:backup` pins each on both,
 and scopes the mask assertion to that one component, because an app PIN
 elsewhere is still a thing to mask.
 
+**Saving closes the modal; restoring does not.** The browser's own download
+is the confirmation, so a message left in a dialog the user then has to
+dismiss is a step for no information — but a *failed* save leaves it open,
+because that message is the only thing that says what went wrong, and
+`check:backup` asserts both directions (a close at the end of `doSave` would
+satisfy a naive check while throwing the error away).
+
+**The restore says whether it restored, and stops.** *"restore text is too
+long and meaningless — just say whether restored or not"*. It reported added,
+kept, re-matched wallets and leftovers in one four-clause sentence: every
+number true, none of them the question being asked. The two outcomes are still
+told apart — `Restored.` against `Nothing new — it was all already here.` —
+because a file whose every entry was already present changed nothing, and
+"Restored" over that reads as though something happened. A section this client
+cannot store is still named, briefly, for the reason it always was.
+
+**Both halves are named wherever the feature is entered**: the wallet card's
+menu item, the modal's heading, the phone's Settings row and its page title all
+say **Backup & Restore**. Restore is the half somebody goes looking for under
+pressure, and an entry point that only offers to save one reads as though there
+is nowhere to put a file back.
+
 **If a restore refuses, check what sealed the file.** A backup written between
 2026-11-04 and 2026-11-08 needs the RECOVERY PHRASE in that box, not a
 password; `decryptBackup` branches on the header's `keySource` and the error

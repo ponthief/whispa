@@ -113,12 +113,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       const where = await native().save(backupFilename(), text);
       // null is the user backing out of the system picker, which is not a
       // failure and must not be reported as one.
-      say(
-        where
-          ? `Saved ${total} label${total === 1 ? '' : 's'}. Open it again with the ` +
-            'same password.'
-          : 'Cancelled.',
-      );
+      say(where ? 'Saved.' : 'Cancelled.');
     } catch (e: any) {
       say(e?.message || 'Could not write the backup.', true);
     } finally {
@@ -152,29 +147,24 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       say('Opening… 0%');
       const payload = await decryptBackup(text, password, (f) =>
         say(`Opening… ${Math.round(f * 100)}%`));
-      const total = countItems(payload as any);
       // The live wallets decide where a backed-up wallet's labels go: an id
       // from the file may belong to a wallet that has since been deleted and
       // added back, which gives it a new one.
       const live = await walletRefs().catch(() => []);
-      const { sections, skipped, remapped } = await applyBackup(payload as any, live);
+      const { sections, skipped } = await applyBackup(payload as any, live);
       const added = Object.values(sections).reduce((n, r) => n + r.added, 0);
-      const kept = Object.values(sections).reduce((n, r) => n + r.kept, 0);
-      // Reports what actually changed. "Restored" over a file whose every entry
-      // was already here reads as though something happened.
+      // SAYS WHETHER IT RESTORED, AND STOPS (2026-11-08, on the user's
+      // instruction: "restore text is too long and meaningless, just say
+      // whether restored or not"), and the web modal says the same two
+      // things. The old line reported added, kept, re-matched wallets and
+      // leftovers at once — every number true, none of them the question.
+      // The two outcomes stay apart because they are different answers, and
+      // a section this client cannot store is still named rather than
+      // counted as restored.
       say(
         [
-          added
-            ? `Restored ${added} of ${total} label${total === 1 ? '' : 's'}.`
-            : `Nothing to add — all ${total} were already here.`,
-          kept ? `${kept} were already here and were left alone.` : '',
-          remapped
-            ? `${remapped} wallet${remapped === 1 ? '' : 's'} had been removed and ` +
-              'added back; their labels were re-matched.'
-            : '',
-          // Said rather than counted as restored. A backup from the other
-          // client carries sections this one has nothing to put them in.
-          skipped.length ? `${skipped.join(', ')} were left in the file.` : '',
+          added ? 'Restored.' : 'Nothing new — it was all already here.',
+          skipped.length ? `${skipped.join(', ')} left in the file.` : '',
         ]
           .filter(Boolean)
           .join(' '),
@@ -187,7 +177,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
   }, [password, walletRefs]);
 
   return (
-    <Page title="Backup" onBack={onBack}>
+    <Page title="Backup & Restore" onBack={onBack}>
       <Group title="What this saves">
         {/* ONE LINE, and the same one the web modal uses (2026-11-08, on the
             user's instruction: "text must be really simple: backup labels,

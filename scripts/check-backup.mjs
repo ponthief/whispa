@@ -815,14 +815,29 @@ console.log('the web collector never reaches the key vault');
   ok('and nothing secret rides along with them',
     !JSON.stringify(taken.wallets).toLowerCase().includes('mnemonic'));
 
-  // Written AFTER the backup, and changed in place — the two cases a careless
-  // restore destroys.
+  // THE FILE WINS, AND NOTHING IS DELETED. Two cases in one: `tx1` was edited
+  // after the backup and must come back as the file has it; `tx2` was written
+  // after the backup, is not in the file at all, and must survive.
+  //
+  // The first of those is the opposite of what this asserted until 2026-11-08.
+  // The existing value won, on the reasoning that it was the more recent —
+  // which made a restore unable to undo an edit, reported as "Restore is not
+  // restoring, made changes to labels and restored w/o saving first, but
+  // latest values still on screen".
   store.set('thrilla_tx_labels_v1', JSON.stringify({ tx1: 'rent (edited)', tx2: 'newer' }));
   const report = applyBackup(taken).sections;
   const after = JSON.parse(store.get('thrilla_tx_labels_v1'));
-  ok('a restore keeps a label written since the backup', after.tx2 === 'newer');
-  ok('and does not overwrite one edited since', after.tx1 === 'rent (edited)');
-  ok('and reports that it added nothing', report.txLabels.added === 0 && report.txLabels.kept === 1);
+  ok('a restore puts back a label edited since the backup', after.tx1 === 'rent',
+    `got ${JSON.stringify(after.tx1)} — a restore that cannot undo an edit is not a restore`);
+  ok('and keeps one written since that the file does not have', after.tx2 === 'newer',
+    'merging rather than replacing is what stops a restore deleting work');
+  ok('and reports the one it changed', report.txLabels.added === 1 && report.txLabels.kept === 0);
+
+  // An entry already identical to the file's is not a change, and must not be
+  // counted as one.
+  const r0 = applyBackup(taken).sections;
+  ok('restoring the same file twice changes nothing the second time',
+    r0.txLabels.added === 0 && r0.txLabels.kept === 1);
 
   store.set('thrilla_tx_labels_v1', JSON.stringify({ tx2: 'newer' }));
   const r2 = applyBackup(taken).sections;
@@ -893,8 +908,14 @@ console.log('the phone collector reads labels and nothing else');
   ok('and nothing in it writes a phrase anywhere',
     !/saveSeed|readSeed|mnemonic/.test(RN),
     'the file holds no phrase, so a restore has none to write');
-  ok('a restore merges rather than replaces',
-    /hasOwnProperty\.call\(/.test(RN),
+  // THE FILE WINS, AND NOTHING IS DELETED — the same pair the web's half is
+  // exercised on above, pinned source-side here because this module reaches
+  // for the platform keychain and cannot be imported by a check.
+  ok('a restore writes the file\'s value over the existing one',
+    /existing\[txid\] === label/.test(RN) && /existing\[txid\] = label/.test(RN),
+    'a restore that cannot undo an edit is not a restore');
+  ok('and merges rather than replacing',
+    /await loadTxLabels\(\)/.test(RN) && !/persistTxLabels\(sections\./.test(RN),
     'replacing would delete labels written since the backup, with nothing saying so');
   ok('segwit labels merge per ADDRESS, not per wallet',
     /for \(const \[addr, label\] of Object\.entries/.test(RN),

@@ -696,11 +696,30 @@ the nested merge rather than reading for it, and a section the other client has
 nowhere to put — the web's `swapTxids` and `bitmailPins` — is **reported by
 name**, never dropped silently and never an error.
 
-**A restore MERGES.** Replacing would delete every label written since the
-backup was taken, silently and permanently; where both sides hold the same key
-the existing value wins, being the more recent. The screen reports what
-actually changed, because "Restored" over a file whose every entry was already
-present reads as though something happened.
+**A restore MERGES, and the FILE wins.** Replacing outright would delete every
+label written since the backup was taken, silently and permanently — so an
+entry that exists only on the device is left alone. But where both sides hold
+the same key, the file's value goes in.
+
+The existing value used to win, on the reasoning that it was the more recent of
+the two and the one the user could see. That was wrong, and reported on
+2026-11-08 as *"Restore is not restoring — made changes to labels and restored
+w/o saving first, but latest values still on screen"*: under that rule a
+restore could never undo an edit, which is the one thing somebody restores a
+backup to do. Nothing on screen said so either, because it reported "Restored"
+over a file none of which had been applied.
+
+What the old rule protected survives the change, because this still merges: a
+label written since the backup, for a key the file does not have, is untouched.
+What is lost is an edit made since to a key the file DOES have, which is the
+definition of restoring it. `added` counts entries actually written and `kept`
+the ones already identical — compared, not merely present, or restoring the
+same file twice would report changes the second time.
+
+Neither client wraps `<router-view>` in `<keep-alive>` and both label stores
+read `localStorage` on every call, so a view entered after a restore shows the
+restored values without a reload. That is worth knowing before anyone adds
+caching to either.
 
 **scrypt N=2^14, r=8, p=1** — the scrypt paper's own "interactive" parameters,
 16 MiB.

@@ -94,17 +94,27 @@ export function collectBackup(wallets = []) {
 /**
  * Put a decrypted payload back.
  *
- * MERGES, and does not replace. A restore onto a device that has been used
- * since the backup was taken must not delete the labels written in between —
- * that is somebody's work, and nothing would say it had gone. Where both sides
- * have a value for the same key the EXISTING one wins, because it is the more
- * recent of the two and the user can see it.
+ * THE FILE WINS, and nothing is deleted. Every entry in the backup is in force
+ * afterwards; an entry that exists only on this device is left alone.
+ *
+ * The existing value used to win on a conflict, on the reasoning that it was
+ * the more recent of the two. Reported 2026-11-08 as *"Restore is not
+ * restoring — made changes to labels and restored w/o saving first, but latest
+ * values still on screen"*, which is exactly right: under that rule a restore
+ * could never undo an edit, so the one thing somebody restores a backup TO DO
+ * was the one thing it would not do. A restore is a deliberate act with a file
+ * chosen by hand, and it has to mean what it says.
+ *
+ * What the old rule was protecting is still protected, because this MERGES
+ * rather than replaces: a label written since the backup, for a key the file
+ * does not have, is untouched. What is lost is an edit made since the backup
+ * to a key the file DOES have — which is the definition of restoring it.
  *
  * `live` is the account's wallets NOW, used to re-point SegWit labels at a
  * wallet that came back with a different id. See remapWalletIds.
  *
- * Returns what it did, per section, so the screen can report it rather than
- * saying "restored" over an empty file.
+ * Returns what it did, per section: `added` counts entries this actually wrote
+ * (new or changed) and `kept` the ones already identical.
  */
 export function applyBackup(payload, live = []) {
   const report = {}
@@ -128,7 +138,10 @@ export function applyBackup(payload, live = []) {
         const target = remap[walletId] || walletId
         const mine = existing[target] || (existing[target] = {})
         for (const [addr, label] of Object.entries(addrs)) {
-          if (Object.prototype.hasOwnProperty.call(mine, addr)) kept++
+          // Compared, not just tested for presence: an entry already equal to
+          // the file's is not a change, and counting it as one would report a
+          // restore that did nothing as though it had.
+          if (mine[addr] === label) kept++
           else {
             mine[addr] = label
             added++
@@ -137,7 +150,8 @@ export function applyBackup(payload, live = []) {
       }
     } else {
       for (const [k, v] of Object.entries(incoming)) {
-        if (Object.prototype.hasOwnProperty.call(existing, k)) kept++
+        const same = JSON.stringify(existing[k]) === JSON.stringify(v)
+        if (same) kept++
         else {
           existing[k] = v
           added++

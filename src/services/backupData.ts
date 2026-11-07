@@ -90,11 +90,20 @@ export type RestoreReport = { added: number; kept: number };
 /**
  * Put a decrypted payload back.
  *
- * MERGES, and does not replace. A restore onto a phone used since the backup
- * was taken must not delete the labels written in between — that is somebody's
- * work and nothing would say it had gone. Where both sides hold the same key
- * the EXISTING value wins, being the more recent of the two and the one the
- * user can actually see.
+ * THE FILE WINS, and nothing is deleted. Every entry in the backup is in
+ * force afterwards; an entry that exists only on this device is left alone.
+ *
+ * The existing value used to win on a conflict, on the reasoning that it was
+ * the more recent of the two. Reported on the web as "Restore is not
+ * restoring — made changes to labels and restored w/o saving first, but latest
+ * values still on screen", which is exactly right: under that rule a restore
+ * could never undo an edit, so the one thing somebody restores a backup TO DO
+ * was the one thing it would not do.
+ *
+ * What the old rule protected is still protected, because this MERGES rather
+ * than replaces: a label written since the backup, for a key the file does not
+ * have, is untouched. What is lost is an edit made since to a key the file
+ * DOES have, which is the definition of restoring it.
  *
  * `live` is the wallets on the account NOW. It is what lets a wallet that was
  * deleted and re-added — and therefore carries a different id — get its SegWit
@@ -122,7 +131,10 @@ export async function applyBackup(
     let added = 0;
     let kept = 0;
     for (const [txid, label] of Object.entries(sections.txLabels)) {
-      if (Object.prototype.hasOwnProperty.call(existing, txid)) kept++;
+      // Compared, not merely tested for presence: an entry already equal to
+      // the file's is not a change, and counting it as one would report a
+      // restore that did nothing as though it had done something.
+      if (existing[txid] === label) kept++;
       else {
         existing[txid] = label;
         added++;
@@ -144,7 +156,7 @@ export async function applyBackup(
       const target = remap[walletId] || walletId;
       const mine = existing[target] || (existing[target] = {});
       for (const [addr, label] of Object.entries(addrs || {})) {
-        if (Object.prototype.hasOwnProperty.call(mine, addr)) kept++;
+        if (mine[addr] === label) kept++;
         else {
           mine[addr] = label;
           added++;

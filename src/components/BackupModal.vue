@@ -322,10 +322,20 @@ async function openPending() {
         saveSeed: (id, phrase) => auth.saveSeed(id, phrase),
         hasSeed: async (id) => auth.hasSeed(id),
         hasKeys: async (id) => !!(await auth.getWalletKeys(id)),
+        // PER WALLET, and awaited so the message paints before the thread is
+        // taken again. Reported on the phone (2026-11-09, "nothing happens
+        // for some time and then suddenly it restores") and true here for the
+        // same reason: deriveSilentPayment is PBKDF2 plus an EC multiply,
+        // synchronous, once per wallet, and a reactive update in front of
+        // synchronous work does not reach the screen.
+        onProgress: async (done, total, title) => {
+          say(total > 1 ? `Restoring ${title} (${done} of ${total})…` : `Restoring ${title}…`, 'info')
+          await new Promise(r => setTimeout(r, 0))
+        },
       }, password.value, fileWallets, live)
       if (walletReport.created.length) live = await walletRefs().catch(() => live)
     }
-    const { skipped } = applyBackup(payload, live)
+    applyBackup(payload, live)
 
     // The server-side half, over the network and therefore after the local
     // one: a failure here must not cost the labels that were already written.
@@ -366,27 +376,30 @@ async function openPending() {
       ...(walletReport?.failed || []).map(w => `${w.title} (${w.message})`),
     ]
     say([
-      'Restored.',
-      madeWallets
-        ? `${madeWallets} wallet${madeWallets === 1 ? '' : 's'} restored — scan to find their coins.`
-        : '',
-      gotKeys
-        ? `${gotKeys} wallet${gotKeys === 1 ? '' : 's'} got their keys back — scan to find their coins.`
-        : '',
+      'Restored successfully.',
+      // ONE CLAUSE, and only when a wallet came back (2026-11-09: "drop the
+      // text about restoring — just say Restored successfully, no bitmail
+      // pinned etc"). It survives the cut because a restored wallet has NO
+      // COINS until a scan runs, and a zero balance with nothing on screen
+      // reads as money gone. The counts went with the rest.
+      madeWallets || gotKeys ? 'Scan to find your coins.' : '',
       walletTrouble.length ? `Not restored: ${walletTrouble.join(', ')}.` : '',
       noKeys
         ? `${noKeys} wallet${noKeys === 1 ? '' : 's'} in this file could not be ` +
           'restored: it carries no keys for them. Save a new backup and use that.'
         : '',
-      // The one thing worth a second sentence: a label whose coin is not
-      // here yet. The coins come back from the chain, so this is the normal
-      // state between adding a wallet back and finishing a rescan, and
-      // "restore again after" is the useful thing to say.
+      // A label whose coin is not here yet — the one thing the user has to
+      // come BACK and do, which is why it outlived the cut. The coins come
+      // from the chain, so this is the normal state between adding a wallet
+      // back and finishing a rescan.
       pendingLabels
         ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
           'coins scanned first — scan, then restore again.'
         : '',
-      skipped.length ? `${skipped.join(', ')} left in the file.` : '',
+      // GONE: the wallet counts, and `skipped` — which is what named
+      // bitmailPins, and is the "no bitmail pinned etc" in the report. A
+      // section this client cannot store is a fact about the FILE, not about
+      // whether the restore worked, and it was being read as the latter.
     ].filter(Boolean).join(' '))
     // Done with: the Open button goes, and a second press cannot re-apply a
     // file the user has finished with. A FAILURE keeps it, so a wrong
@@ -420,28 +433,20 @@ async function openPending() {
         <button class="btn btn-ghost btn-sm btn-icon" @click="close">✕</button>
       </div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-        <!-- LABELS. It said "labels and contacts" until 2026-11-08, and the
-             file has never held a contact: a Tango connection is a row in
-             silnt.payjoin_contacts naming BOTH user ids, it lives on the
-             server, and it cannot be re-created from one side — the other has
-             to accept. So a backup could not bring back a connection somebody
-             removed even if it tried, and saying "contacts" promised exactly
-             that. What the word was reaching for was the BitMail pins, which
-             are tamper evidence rather than an address book. -->
-        <!-- WALLETS, by the only route a browser has: keyvault.js holds
-             { scanSecret, spendKey, refundAddress, sweepAccount } and has
-             never held the words, so the file carries the derived KEYS. They
-             are what makes a wallet scan and spend on a new phone — the one
-             thing they cannot do afterwards is show a seed phrase, and
-             the browser never had one to give.
+        <!-- NO CONTENTS LINE. "Backs up your wallets and labels." went on
+             2026-11-09 ("text Backs up your wallets needs to go"), with the
+             sentence under the field that explained which wallets could have
+             their passphrase checked.
 
-             It said "labels" here for one build, and a web backup carried no
-             wallet at all: "saved backup in web app and restored in mobile
-             and still asks for recovery key… there is no recovery phrase,
-             just the passphrase!!" -->
-        <p class="text-dim text-sm" style="margin:0">
-          Backs up your wallets and labels.
-        </p>
+             KNOW WHAT THAT COSTS, because the line was load-bearing twice
+             over. It is the last thing on either screen saying what is IN the
+             file, so the red warning below is now the whole of it — which is
+             why that one sentence must keep naming the wallet passphrase as
+             the key. And "labels" replaced "labels and contacts" on
+             2026-11-08 for being a promise the file could not keep; nothing
+             says "contacts" now because nothing says anything, so the only
+             way that claim comes back is somebody writing a new line here.
+             Do not. -->
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm
              password field, one field is sufficient"). It was the checksum a
@@ -459,20 +464,6 @@ async function openPending() {
                  :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
                  autocomplete="off" autocapitalize="off" spellcheck="false"
                  @keyup.enter="pending ? openPending() : doSave()" />
-          <!-- IT CAN CHECK IT NOW, for any wallet whose words this browser
-               holds: deriving an SP address from (phrase, passphrase) is the
-               phone's own test, and the browser has a phrase to run it on
-               since it started keeping them. For an older wallet it has none
-               and the check is the keys adding up, which says nothing about
-               the passphrase — so the line says which, rather than claiming a
-               guarantee it only sometimes has. Under the field, not in the
-               red box: a note about this screen's limits, not a warning about
-               the file. -->
-          <span v-if="!pending" class="text-dim text-xs">
-            A wallet whose seed phrase is stored here is checked against your
-            passphrase and left out if it does not match. One from before the
-            words were kept cannot be checked.
-          </span>
         </div>
 
         <!-- Only while saving is the password the thing that can be lost. Once

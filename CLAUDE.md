@@ -912,6 +912,26 @@ the throttled percentage and then the stage, which is the same argument
 progress is indistinguishable from a hang, and the KDF is the slowest thing
 either client does.
 
+**And the stretch AFTER the KDF was still silent**, reported 2026-11-09:
+*"in phone, when opening a backup file, nothing happens for some time, there
+is no progress and then suddenly it restores."* The percentage reached 100 and
+stopped there for the whole restore — one `deriveSilentPayment` per wallet
+(PBKDF2 over 2048 rounds plus an EC multiply, **synchronous**), the wallet
+creations, the keystore writes and the labels over the network, all behind the
+KDF's last message.
+
+`restoreWallets` takes an `onProgress(done, total, title)` now, called before
+each wallet. **It is awaited, and that is the half that matters**: a
+`setState` in front of synchronous work never paints, so a message set and
+then followed by a derivation arrives after the thing it was meant to explain.
+Awaiting lets both clients yield one macrotask — `paint()` on the phone,
+`setTimeout(r, 0)` in the modal — before the thread is taken again. Driven
+with a deliberately blocking derivation, the lines land at 1ms, 122ms and
+243ms of a 363ms restore; with the yield removed, **none of them reaches the
+screen at all** until it is over, which is the report exactly. A callback that
+throws is swallowed — the progress line belongs to the screen and the restore
+belongs to the user.
+
 **What it was before**: added 2026-11-03, cut back on 2026-11-04 after the user
 put the objection that made it necessary — *"if user deletes app or wallet, the
 utxos and tnxs are removed from the backend. restoring them in the app won't
@@ -1151,6 +1171,25 @@ pressing Restore straight afterwards opened the file having asked nothing. A
 field that persists across two different operations is a field nobody is
 prompted by. It is cleared on open and on close.
 
+**NEITHER SCREEN DESCRIBES THE FILE'S CONTENTS ANY MORE** (2026-11-09, on the
+user's instruction: *"text Backs up your wallets needs to go"*), and the web's
+*"A wallet whose seed phrase is stored here is checked against your
+passphrase…"* help went with it.
+
+That line has been rewritten four times — *labels and contacts*, *labels*,
+*wallets and labels* — and each rewrite was somebody restoring what the last
+one cut, so `check:backup` now asserts it **absent** rather than simply not
+asserting it. Two things it was carrying have to be held elsewhere. It was the
+last line saying what is IN the file, so **the red sentence is now the only
+one about the file on either screen** and must keep naming the wallet
+passphrase as the key. And nothing promises *contacts* now because nothing
+promises anything — the only way that claim returns is somebody writing a new
+line here. The passphrase check it described is unchanged and pinned where it
+belongs: `collectWalletKeys` refuses a phrase the typed passphrase does not
+open, and the save names the wallet.
+
+What that line said before, for the record:
+
 **One line, the same line, on both: *"Backs up your labels and contacts."***
 (*"text must be really simple: backup labels, contacts"*.) Each screen used to
 name its own device — "what only this phone knows", "what only this browser
@@ -1226,7 +1265,24 @@ because that message is the only thing that says what went wrong, and
 `check:backup` asserts both directions (a close at the end of `doSave` would
 satisfy a naive check while throwing the error away).
 
-**The restore says `Restored.` and nothing else.** *"restore text is too long
+**The restore says `Restored successfully.` and nothing else** (2026-11-09:
+*"drop the text about restoring — just say Restored successfully, no bitmail
+pinned etc"*). That cut the wallet counts, the "already set up on this device"
+no-op, the "this file holds no wallets" note, and `skipped` — which is the
+line that named `bitmailPins` and is the one the report points at. A section
+the other client owns is a fact about the FILE, not about whether the restore
+worked, and it was being read as the latter.
+
+Three things outlived it, each because it is not a description of a success.
+A wallet that **failed** is still named. A **label whose coin is not scanned
+yet** still says so, because it is the one thing the user has to come back and
+do. And a restored wallet still gets *"Scan to find your coins."* — a wallet
+that came back has no coins until a scan runs, and a zero balance with nothing
+on screen reads as money gone. `check:backup` counts what is interpolated into
+that message rather than matching its phrases, because it has now been cut
+twice and grown back both times, a true clause at a time.
+
+What it used to say, and why: *"restore text is too long
 and meaningless — just say whether restored or not"*, then *"do not say
 Nothing new, Restored is fine"*. It reported added, kept, re-matched wallets
 and leftovers in one four-clause sentence: every number true, none of them the

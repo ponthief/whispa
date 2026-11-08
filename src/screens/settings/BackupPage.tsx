@@ -58,6 +58,16 @@ export function backupFileAvailable(): boolean {
   return Platform.OS === 'android' && !!NativeModules.BackupFile;
 }
 
+/**
+ * Let React render what was just set before the thread is taken again.
+ *
+ * A `setState` followed by synchronous work never reaches the screen: the
+ * update is queued and the JS thread goes straight into the next derivation,
+ * so the message that was meant to explain the wait arrives after it. One
+ * macrotask is enough, and it costs a frame.
+ */
+const paint = () => new Promise<void>((r) => setTimeout(r, 0));
+
 function native(): Native {
   const m = NativeModules.BackupFile as Native | undefined;
   if (!m) throw new Error('backup-file-unavailable');
@@ -278,6 +288,16 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             hasKeys: hasWalletKeys,
             hasSeed,
             onCreated: resetCatchUp,
+            // THE SILENT STRETCH, reported 2026-11-09 as "nothing happens for
+            // some time… and then suddenly it restores". Everything past the
+            // KDF is a network call or a synchronous derivation, so the
+            // screen stayed on the KDF's last message for the whole restore.
+            onProgress: async (done, total, title) => {
+              say(total > 1
+                ? `Restoring ${title} (${done} of ${total})…`
+                : `Restoring ${title}…`);
+              await paint();
+            },
           },
           password,
           fileWallets,
@@ -288,7 +308,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         }
       }
 
-      const { skipped } = await applyBackup(payload as any, live);
+      say('Restoring labels…');
+      await paint();
+      await applyBackup(payload as any, live);
       // The server-side half, over the network and therefore after the local
       // one: a failure here must not cost the labels already written.
       const srv = inkey
@@ -328,25 +350,16 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // user has no way to tell which file they are holding. Now the screen
       // says which case it is and what to do about it.
       const noPhrase = walletReport?.noPhrase || 0;
-      const unchanged = walletReport?.skipped || 0;
       say(
         [
-          'Restored.',
-          // Named before the labels, because a wallet coming back is the
-          // headline and a label is not. The scan is said in the same breath:
-          // a restored wallet has no coins until one runs, and somebody
-          // looking at a zero balance needs to know that now rather than
-          // concluding their money is gone.
-          madeWallets
-            ? `${madeWallets} wallet${madeWallets === 1 ? '' : 's'} restored — ` +
-              'scan to find their coins.'
-            : '',
-          // The reinstall case, and the common one: the wallets were still on
-          // the account and only their keys were missing here.
-          gotKeys
-            ? `${gotKeys} wallet${gotKeys === 1 ? '' : 's'} got their keys back — ` +
-              'scan to find their coins.'
-            : '',
+          'Restored successfully.',
+          // ONE CLAUSE, and only when a wallet came back (2026-11-09: "drop
+          // the text about restoring — just say Restored successfully, no
+          // bitmail pinned etc"). It survives the cut because a restored
+          // wallet has NO COINS until a scan runs, and somebody looking at a
+          // zero balance with nothing on screen concludes their money is
+          // gone. The counts went; this is what to do next.
+          madeWallets || gotKeys ? 'Scan to find your coins.' : '',
           walletTrouble.length
             ? `Not restored: ${walletTrouble.join(', ')}.`
             : '',
@@ -364,26 +377,21 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               'could not be restored: it carries no keys for them. It was ' +
               'saved by an older version — save a new backup and use that.'
             : '',
-          // And the no-op, said rather than left to look like a failure: the
-          // wallets were already here and already working.
-          !madeWallets && !gotKeys && !noPhrase && !walletTrouble.length && unchanged
-            ? `${unchanged} wallet${unchanged === 1 ? ' was' : 's were'} already ` +
-              'set up on this device, so nothing needed restoring.'
-            : '',
-          // A file with no wallet records at all — every backup written
-          // before 2026-11-08, and every one the web app writes.
-          !fileWallets.length
-            ? 'This file holds no wallets, only labels. Save a new backup ' +
-              'from the app or the web app to include them.'
-            : '',
           // A label whose coin is not here yet. The coins come back from the
           // chain, so this is the normal state between adding a wallet back
-          // and finishing a rescan.
+          // and finishing a rescan — and it is the one thing the user has to
+          // come BACK and do, which is why it outlived the cut.
           pendingLabels
             ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
               'coins scanned first — scan, then restore again.'
             : '',
-          skipped.length ? `${skipped.join(', ')} left in the file.` : '',
+          // GONE, all of it: the wallets-made and keys-back counts, the
+          // "already set up on this device" no-op, the file-holds-no-wallets
+          // note, and `skipped` — which is what named bitmailPins and is the
+          // "no bitmail pinned etc" in the report. Every one was true and none
+          // was the question, which is how this grew to four clauses twice.
+          // What is left is the outcome, what to do next, and what did NOT
+          // restore.
         ]
           .filter(Boolean)
           .join(' '),
@@ -419,9 +427,18 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             promised exactly that. What it was reaching for was the web's
             BitMail pins, which are tamper evidence rather than an address
             book, and which this client does not store at all. */}
-        <Block first>
-          <Help>Backs up your wallets and labels.</Help>
-        </Block>
+        {/* NO CONTENTS LINE. Dropped on the web on 2026-11-09 ("text Backs
+            up your wallets needs to go") and here with it, because two
+            screens offering one feature and describing it differently is the
+            thing this file keeps having to undo.
+
+            It was load-bearing and what it carried has to go somewhere: it
+            was the last line saying what is IN the file, so the red sentence
+            below is now the whole of it and must keep naming the wallet
+            passphrase as the key. "labels" also replaced "labels and
+            contacts" on 2026-11-08 for being a promise the file could not
+            keep — nothing claims contacts now because nothing claims
+            anything, and the only way that comes back is a new line here. */}
         {/* The "your coins are not in this file, they live on the Bitcoin
             network and come back from your seed phrase" paragraph was
             here until 2026-11-08. It went from the web on the user's
@@ -445,9 +462,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             does with the file: the key is the WALLET passphrase, not a
             password this screen invented, and the file is worth storing
             safely. What it drops is the spelled-out consequence. The line
-            above it ("Backs up your wallets and labels.") is what still says
-            a wallet is in there, which is why that one must not be shortened
-            as well. */}
+            above it said what was in the file until 2026-11-09; with that
+            gone this sentence is the only thing left on the screen about
+            either, so it must keep naming the wallet passphrase. */}
         <Block>
           <Note kind="error">
             Encrypted with wallet passphrase. Store safely.

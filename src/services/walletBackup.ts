@@ -378,6 +378,22 @@ export type RestoreDeps = {
   saveSeed(walletId: string, mnemonic: string): Promise<boolean | void>;
   /** Called with each new wallet id, so a catch-up prompt re-evaluates it. */
   onCreated?(walletId: string): void;
+  /**
+   * Before each wallet, so the screen can say what is happening — and it is
+   * AWAITED, which is the half that makes it work.
+   *
+   * Reported 2026-11-09: *"in phone, when opening a backup file, nothing
+   * happens for some time, there is no progress and then suddenly it
+   * restores."* The KDF reports all the way to 100% and then this runs, and
+   * everything in here is either a network call or `deriveSilentPayment` —
+   * which is PBKDF2 over 2048 rounds plus an EC multiply, synchronous, per
+   * wallet. A `setState` in front of synchronous work never paints, so the
+   * screen sat on the KDF's last message until the whole restore was done.
+   *
+   * Awaiting lets the caller yield (a `setTimeout(0)` is enough) so its
+   * message is on screen before the thread is taken again.
+   */
+  onProgress?(done: number, total: number, title: string): void | Promise<void>;
 };
 
 export type WalletRestoreReport = {
@@ -445,9 +461,20 @@ export async function restoreWallets(
     failed: [],
   };
 
-  for (const w of fileWallets || []) {
+  const all = fileWallets || [];
+  let seen = 0;
+  for (const w of all) {
     if (!w || !w.spAddress) continue;
     const title = w.title || 'Wallet';
+    // Said BEFORE the work, and awaited so it can be painted first.
+    seen++;
+    if (deps.onProgress) {
+      try {
+        await deps.onProgress(seen, all.length, title);
+      } catch {
+        // A screen that cannot render its own progress must not fail a restore.
+      }
+    }
 
     // The wallet as the ACCOUNT holds it now, if it is there at all. A
     // reinstall keeps every server-side row, so this is the normal case and

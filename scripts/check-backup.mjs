@@ -644,15 +644,20 @@ console.log('the two backup screens say the same simple thing');
   // than chosen: the phone's file can carry a wallet and the web's cannot,
   // because keyvault.js holds derived keys and has never held the words. A
   // single line claiming the same scope on both would be false on one of them.
-  ok('the phone says it saves wallets as well as labels',
-    /Backs up your wallets and labels\./.test(copy(P)));
+  // THE CONTENTS LINE IS GONE FROM BOTH (2026-11-09: "text Backs up your
+  // wallets needs to go"). Asserted ABSENT rather than simply not asserted,
+  // because this line has been rewritten four times — "labels and contacts",
+  // "labels", "wallets and labels" — and each rewrite was somebody adding
+  // back what the last one cut.
+  ok('neither screen describes the file\'s contents',
+    !/Backs up your/.test(copy(P)) && !/Backs up your/.test(copy(V)),
+    'the red sentence is the only line about the file now');
   // BOTH SCREENS SAY WALLETS NOW, because both files carry one — the phone's
   // by its phrase, the web's by the derived keys its vault holds. The web
   // said "labels" for one build and carried no wallet at all, which is what
   // "saved backup in web app and restored in mobile and still asks for
   // recovery key" was.
-  ok('and the web says so too',
-    /Backs up your wallets and labels\./.test(copy(V)));
+
   // THE RED LINE IS ONE SENTENCE AND THE SAME ON BOTH (2026-11-08, on the
   // user's instruction: "text in red is too long: Encrypted with wallet
   // passphrase. Store safely"). It had grown to three or four clauses on each
@@ -726,10 +731,14 @@ console.log('the two backup screens say the same simple thing');
   // asserted on both screens above and must not be shortened in its turn —
   // between it and the red sentence, "this file plus that passphrase is the
   // wallet" is still on screen, and with neither it would not be.
-  ok('the first line is still what says a wallet is in there',
-    /Backs up your wallets and labels\./.test(copy(P)) &&
-    /Backs up your wallets and labels\./.test(copy(V)),
-    'the red line names the key; this one names the contents');
+  // WITH THE CONTENTS LINE GONE, the red sentence is the only thing on
+  // either screen that says anything about the file — so it has to keep
+  // naming the key. Shortening it further leaves a screen that asks for a
+  // secret and says nothing about what it is for.
+  ok('the red sentence still names the wallet passphrase',
+    /Encrypted with wallet passphrase/.test(copy(P)) &&
+    /Encrypted with wallet passphrase/.test(copy(V)),
+    'it is the last line about the file on either screen');
   // THE WEB CAN CHECK THE PASSPHRASE NOW, for any wallet whose words this
   // browser holds — deriving an address from (phrase, passphrase) is the
   // phone's own test and the browser has a phrase to run it on since it
@@ -738,9 +747,11 @@ console.log('the two backup screens say the same simple thing');
   // to say WHICH, because "checked" and "cannot be checked" are both true
   // here depending on the wallet, and claiming either alone is a lie about
   // half of them.
-  ok('the web says which wallets it can check the passphrase for',
-    /checked against your[\s\S]{0,40}passphrase and left out if it does not match/.test(copy(V)) &&
-    /cannot be checked/.test(copy(V)));
+  // The "a wallet whose seed phrase is stored here is checked against your
+  // passphrase" help went with it on 2026-11-09. The BEHAVIOUR is unchanged
+  // and pinned where it belongs — collectWalletKeys refuses a phrase the
+  // typed passphrase does not open, and the save says which wallet — so what
+  // was lost is a sentence, not a control.
 
   // WHERE IT LIVES ON THE WEB. Moved out of Settings into the wallet card's
   // gear menu; two screens offering one thing, with nothing to say which you
@@ -808,7 +819,7 @@ console.log('the two backup screens say the same simple thing');
     // sealed a new backup with it and closed, having asked nothing. One field
     // serving two operations has to be emptied between them, at BOTH ends.
     ok(`${who} clears the field once a restore finishes`,
-      /'Restored\.'[\s\S]{0,1400}(setPassword\(''\)|password\.value = '')/.test(src),
+      /'Restored successfully\.'[\s\S]{0,1400}(setPassword\(''\)|password\.value = '')/.test(src),
       'otherwise Save seals a backup with the password typed to open one');
   }
 
@@ -859,12 +870,26 @@ console.log('the two backup screens say the same simple thing');
     // the added/nothing-new branch this check used to pin: a merge that added
     // nothing still means every label in that file is now here.
     ok(`${who} says it restored, and says nothing else`,
-      /'Restored\.'/.test(src) && !/Nothing new/.test(src) &&
-      !/Restored \$\{/.test(src) && !/Restored \$\{added/.test(src),
+      /'Restored successfully\.'/.test(src) && !/Nothing new/.test(src) &&
+      !/Restored \$\{/.test(src),
       'a count answers a question nobody asked');
-    ok(`${who} still names a section it could not store`,
-      /skipped\.length \?/.test(src),
-      'dropping it would have the screen claim a restore it did not do');
+    // AND NO COUNT OF ANYTHING SURVIVED (2026-11-09: "drop the text about
+    // restoring — just say Restored successfully, no bitmail pinned etc").
+    // Counted, not matched phrase by phrase: this message has now been cut
+    // twice and grown back both times, a true clause at a time.
+    ok(`${who} counts nothing it restored`,
+      !/\$\{madeWallets\}/.test(src) && !/\$\{gotKeys\}/.test(src) &&
+      !/\$\{unchanged\}/.test(src) && !/skipped\.join/.test(src),
+      'every one of those numbers was true and none was the question');
+    // AND `skipped` IS NOT NAMED ANY MORE. It listed the sections this client
+    // has nowhere to put — which on the phone is the web's bitmailPins, and
+    // is the "no bitmail pinned etc" in the 2026-11-09 report. The rule it
+    // used to enforce (do not claim a restore that did not happen) is kept by
+    // what DID survive: a wallet that failed, and a label whose coin is not
+    // scanned yet. A section the other client owns is a fact about the file.
+    ok(`${who} does not list the sections it had nowhere to put`,
+      !/skipped\.length \?/.test(src),
+      'that line is what the report named');
   }
 
   // BOTH HALVES NAMED where the feature is entered from. Restore is the one
@@ -959,9 +984,13 @@ console.log('the two backup screens say the same simple thing');
     // /noPhrase/, which the declaration satisfies — so deleting the branch
     // that reports it left the check green, which is the same failure the
     // confirm-field guard had.
+    // WHAT SURVIVED THE 2026-11-09 CUT, and the rule behind it: a FAILURE is
+    // still named, a success is not described. "This file holds no wallets"
+    // and "nothing needed restoring" were the no-op branches — both true,
+    // both read as a report rather than an outcome, and both gone with the
+    // counts. What a silent no-op would hide is still covered, because the
+    // two cases that are not no-ops speak for themselves.
     ['a wallet record with no keys in it', /could not be restored: it carries no keys for them/],
-    ['a file with no wallet records at all', /holds no wallets/],
-    ['wallets that needed nothing done', /nothing needed restoring/],
     ['wallets whose phrase does not match', /do not match it/],
   ]) {
     ok(`the phone says what happened to ${what}`, pattern.test(copy(P)),
@@ -971,9 +1000,13 @@ console.log('the two backup screens say the same simple thing');
     /save a new backup and use that/.test(copy(P)),
     'the fix is on the save side, from either client');
 
-  ok('and it reports the wallets that got their keys back',
-    /adopted/.test(copy(P)) && /got their keys back/.test(copy(P)),
-    'the reinstall case is the common one and has to say it happened');
+  // AND A RESTORED WALLET IS TOLD TO SCAN. The counts went; this did not,
+  // because a wallet that came back has NO COINS until a scan runs and a zero
+  // balance with nothing on screen reads as money gone.
+  ok('and a wallet that came back says to scan for its coins',
+    /madeWallets \|\| gotKeys \? 'Scan to find your coins\.'/.test(copy(P)) &&
+    /madeWallets \|\| gotKeys \? 'Scan to find your coins\.'/.test(copy(V)),
+    'the one thing the user has to do next');
 
   ok('the web clears the password when the modal opens or closes',
     /watch\(\(\) => props\.show[\s\S]{0,200}password\.value = ''/.test(V),
@@ -1031,6 +1064,77 @@ console.log('the two backup screens say the same simple thing');
     'a typed password that gets persisted is a new secret in the browser');
 }
 
+
+// ── the restore says what it is doing, all the way through ────────────────
+//
+// Reported 2026-11-09: *"in phone, when opening a backup file, nothing happens
+// for some time, there is no progress and then suddenly it restores."*
+//
+// The KDF had reported to 100% and stopped. Everything after it — one
+// `deriveSilentPayment` per wallet (PBKDF2 over 2048 rounds plus an EC
+// multiply, SYNCHRONOUS), the wallet creations, the keystore writes, the
+// labels over the network — ran with the screen still showing the KDF's last
+// message. On a phone that is seconds of nothing.
+//
+// Two halves, and either one alone leaves the bug: restoreWallets has to
+// report per wallet, and the caller has to be able to PAINT what it says. A
+// setState in front of synchronous work never reaches the screen, so the
+// callback is awaited and both clients yield inside it.
+console.log('the restore says what it is doing after the KDF');
+{
+  const { restoreWallets } = await import('../src/services/walletBackup.ts');
+  const seen = [];
+  const deps = {
+    deriveSilentPayment: (m, p) => ({ spAddress: `sp1-${m}-${p}`, scanSecret: 's',
+      spendKey: 'k', refundAddress: 'r', sweepAccount: 'a' }),
+    createWallet: async (d) => ({ wallet_id: 'id-' + d.title }),
+    storeWalletKeys: async () => true,
+    saveSeed: async () => true,
+    hasKeys: async () => false,
+    hasSeed: async () => false,
+    onProgress: async (done, total, title) => { seen.push(`${done}/${total} ${title}`); },
+  };
+  const two = [
+    { id: 'a', title: 'One', network: 'signet', spAddress: 'sp1-w1-pp', mnemonic: 'w1' },
+    { id: 'b', title: 'Two', network: 'signet', spAddress: 'sp1-w2-pp', mnemonic: 'w2' },
+  ];
+  await restoreWallets(deps, 'pp', two, []);
+  ok('it reports once per wallet, before that wallet is worked on',
+    seen.length === 2 && seen[0] === '1/2 One' && seen[1] === '2/2 Two',
+    seen.join(' | '));
+
+  // A SCREEN THAT CANNOT RENDER MUST NOT FAIL A RESTORE. The callback belongs
+  // to the UI and the restore is somebody's wallet.
+  let got = null;
+  try {
+    got = await restoreWallets(
+      { ...deps, onProgress: () => { throw new Error('render failed'); } },
+      'pp', two, []);
+  } catch (e) {
+    got = null;
+  }
+  ok('and a callback that throws does not stop it',
+    !!got && got.created.length === 2,
+    'the progress line belongs to the screen; the restore belongs to the user');
+
+  // AND BOTH CLIENTS YIELD INSIDE IT. Without the yield the message is queued
+  // behind the very work it is meant to explain, which is the whole report.
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\/[^\n]*/g, '');
+  const PHONE = strip(readFileSync(
+    new URL('../src/screens/settings/BackupPage.tsx', import.meta.url), 'utf8'));
+  const WEB = strip(readFileSync(
+    new URL('../src/components/BackupModal.vue', import.meta.url), 'utf8'));
+  for (const [who, src] of [['the phone', PHONE], ['the web', WEB]]) {
+    ok(`${who} yields so its progress line can paint`,
+      /onProgress: async \(done, total, title\)/.test(src) &&
+      /(await paint\(\)|setTimeout\(r, 0\))/.test(src),
+      'a setState in front of synchronous work never reaches the screen');
+    ok(`${who} says it is restoring the labels too`,
+      /Restoring labels…/.test(src),
+      'the server round trip is the other silent stretch');
+  }
+}
 
 console.log('a wallet travels in the file, and a wrong passphrase leaves it out');
 {

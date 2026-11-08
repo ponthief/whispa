@@ -45,7 +45,10 @@ export default function AccountPage({ onBack }: { onBack: () => void }) {
   const onLogout = useCallback(() => {
     Alert.alert(
       'Sign out?',
-      'You will need your password to sign in again on this phone. Your wallet keys and seed phrase stay where they are.',
+      // One line: what signing out costs. The reassurance that followed it —
+      // that the keys and the seed phrase stay put — was answering a worry
+      // nobody in front of this dialog had (2026-11-09).
+      'You will need your password to sign in again on this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Sign out', style: 'destructive', onPress: () => logout() },

@@ -8,6 +8,27 @@ name: Build iOS
 # went un-built in the meantime. If iOS CI is ever genuinely unwanted, disable
 # the triggers below and say so here; do not remove the file.
 #
+# ── THE TRIGGERS ARE OFF (2026-11-08) ──────────────────────────────────────
+#
+# "We should stop building for ios in ci, as not available for iphone" — this
+# time the instruction is about the BUILD, not about a feature, so it is the
+# case the paragraph above anticipated: the push trigger is gone and the file
+# stays. There is no iPhone build to ship — no App Store listing and no signing
+# secrets in this repo, so every run produced an unsigned simulator .app that
+# nobody installed, on a runner billed at ten times the Linux rate.
+#
+# `workflow_dispatch` is deliberately KEPT, and it is what makes this a pause
+# rather than a deletion: the day iOS matters again, somebody presses Run
+# workflow and finds out whether the project still compiles. Turn it back on by
+# restoring the `push:` block below — its paths are still written out, commented
+# rather than removed, so there is nothing to reconstruct.
+#
+# What this costs, stated rather than discovered later: nothing now checks that
+# a change to `ios/` or to a native dependency still builds on iOS. The tree is
+# one `src/` serving both apps, so JS changes carry on being checked by tsc and
+# the web build; what goes unchecked is the native side — a Podfile, a native
+# module, an Xcode setting. Expect the first run after this to need fixing.
+#
 # Builds the iOS app on a macOS runner. Two modes, and which one you get
 # depends entirely on whether the Apple signing secrets exist:
 #
@@ -54,20 +75,24 @@ on:
         type: choice
         options: [development, ad-hoc, app-store]
         default: development
-  push:
-    # master only. The bring-up branch that used to be listed here existed
-    # because GitHub offers workflow_dispatch only for workflows already on the
-    # default branch, so a brand new workflow could not be triggered until it
-    # was merged. It is merged, so the workaround is gone.
-    branches: [master]
-    paths:
-      # Only when something that can break the iOS build changes. A JS-only
-      # commit cannot fail this, and macOS runner minutes are billed at ten
-      # times the Linux rate on private repositories.
-      - 'ios/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/build-ios.yml'
+  # DISABLED 2026-11-08 — see the note at the top of this file. Kept here,
+  # commented, so turning iOS CI back on is uncommenting a block rather than
+  # working out what it used to say.
+  #
+  # push:
+  #   # master only. The bring-up branch that used to be listed here existed
+  #   # because GitHub offers workflow_dispatch only for workflows already on
+  #   # the default branch, so a brand new workflow could not be triggered
+  #   # until it was merged. It is merged, so the workaround is gone.
+  #   branches: [master]
+  #   paths:
+  #     # Only when something that can break the iOS build changes. A JS-only
+  #     # commit cannot fail this, and macOS runner minutes are billed at ten
+  #     # times the Linux rate on private repositories.
+  #     - 'ios/**'
+  #     - 'package.json'
+  #     - 'package-lock.json'
+  #     - '.github/workflows/build-ios.yml'
 
 # NOTE ON THE NAMES BELOW. Thrilla.xcworkspace, `-scheme Thrilla`,
 # ios/Thrilla/, Thrilla.app and Thrilla.xcarchive are what the Xcode project is
@@ -78,7 +103,10 @@ on:
 
 concurrency:
   group: ios-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  # Never cancel in progress now that the only way in is pressing the button:
+  # the expression below was about a push superseding an earlier push, and a
+  # run somebody started by hand is one they are waiting on.
+  cancel-in-progress: false
 
 jobs:
   build:

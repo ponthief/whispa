@@ -49,7 +49,12 @@ branch.
 - **`.github/workflows/build-ios.yml` must not be deleted.** It was once, on a
   misreading of "no need for ios" (which meant "don't extend the new mainnet
   work to iOS"). If iOS CI is ever genuinely unwanted, disable the triggers and
-  say so in the file.
+  say so in the file. **That happened on 2026-11-08** (*"we should stop
+  building for ios in ci, as not available for iphone"*) — the `push:` trigger
+  is commented out, `workflow_dispatch` stays so the project can still be
+  compiled on demand, and the file explains both. Nothing now checks that a
+  change under `ios/` or to a native dependency still builds, so expect the
+  first run after this to need fixing.
 - **Never skip, disable or quarantine a test** to get CI green.
 - Private keys are never stored SERVER-SIDE: not the BIP-84 key, not the
   passphrase. The device keystore holds the phrase, and since 2026-11-08 so

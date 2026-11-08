@@ -75,7 +75,7 @@
           <li>
             Nobody running this service can restore them. There is no reset,
             no support channel that can help, and no backup held on your
-            behalf. <strong class="text-orange">If you lose your recovery
+            behalf. <strong class="text-orange">If you lose your seed
             phrase and lose your device, the bitcoin is gone permanently.</strong>
           </li>
         </ul>
@@ -114,7 +114,7 @@
           The server holds your username, the email address you registered
           with, a hash of your password, and the bookkeeping the wallet needs
           to work — which blocks have been scanned, which coins are known,
-          labels you have chosen to sync. It does not hold keys, recovery
+          labels you have chosen to sync. It does not hold keys, seed
           phrases or passphrases.
         </p>
         <p>

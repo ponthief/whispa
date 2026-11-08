@@ -241,7 +241,7 @@ export default function SeedRevealModal({
               // (App.tsx). Refusing is the right answer regardless — an
               // ungated reveal is not something to fall back to.
               <Text style={styles.error}>
-                Set up App Lock or an App PIN first — showing your recovery
+                Set up App Lock or an App PIN first — showing your seed
                 phrase needs something to check it against.
               </Text>
             )}

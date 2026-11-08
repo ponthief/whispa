@@ -19,7 +19,7 @@ const PRIMARY = colors.primary;
 
 /**
  * One-off prompt for wallets stored before the plain chain existed: their
- * keystore entry has no BIP-84 account key, so it gets derived from the recovery
+ * keystore entry has no BIP-84 account key, so it gets derived from the seed
  * phrase once and saved. After this the phrase is never asked for again.
  *
  * The phrase is checked by re-deriving the wallet's Silent Payment address from

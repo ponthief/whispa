@@ -636,7 +636,7 @@ export type BackupWalletRef = {
    * it therefore carried nothing: reported 2026-11-08 as "saved backup in web
    * app and restored in mobile and still asks for recovery key… in mobile,
    * after restore it was saying that the recovery phrase is not there — there
-   * is no seed phrase, just the passphrase!!"
+   * is no recovery phrase, just the passphrase!!"
    *
    * These keys are exactly what `storeWalletKeys` takes, so they make the
    * wallet scan and spend on the new device. What they cannot do is show the

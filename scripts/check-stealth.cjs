@@ -8,7 +8,7 @@
 //
 //   * ZERO enabled aliases. The app has no icon on any launcher and no way to
 //     start it. For a wallet that is somebody's money behind a door with no
-//     handle — recoverable only by reinstalling and restoring the recovery
+//     handle — recoverable only by reinstalling and restoring the seed
 //     phrase, which plenty of people do not have to hand.
 //   * The REAL launcher staying enabled behind the decoy, so the feature
 //     appears to work, the chip is selected, and the wallet is still sitting

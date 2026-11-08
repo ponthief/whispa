@@ -223,6 +223,38 @@ console.log('the browser keeps a phrase wherever it has one');
     'an item that always shows is a dialog that often cannot answer');
 }
 
+// ── the word, in both clients ───────────────────────────────────────────────
+// It is "seed phrase" everywhere a user can read it (2026-11-08: "yes, rename
+// recovery phrase to seed phrase everywhere"). The sweep that did it matched
+// the two words on one line and missed every place they WRAPPED — three of
+// those were user-facing, two of them on the terms page, and nothing noticed
+// because no check knew the word had changed.
+//
+// COMMENTS ARE STRIPPED FIRST, which is what makes this rule possible at all:
+// every surviving "recovery phrase" in the tree is a quoted bug report, and
+// those must stay as they were written. What is left after stripping is copy.
+console.log('the clients say seed phrase, not recovery phrase');
+{
+  const { readdirSync, statSync } = await import('node:fs');
+  const walk = (dir, out = []) => {
+    for (const name of readdirSync(dir)) {
+      const full = dir + '/' + name;
+      if (statSync(full).isDirectory()) walk(full, out);
+      else if (/\.(ts|tsx|vue|js)$/.test(name)) out.push(full);
+    }
+    return out;
+  };
+  const offenders = [];
+  for (const file of walk('src')) {
+    const body = strip(readFileSync(file, 'utf8'));
+    // Wrapped across a line as readily as on one — that is the whole point.
+    if (/recovery[\s*>]*\n?[\s*>]*phrases?/i.test(body)) offenders.push(file.replace('src/', ''));
+  }
+  ok('no user-facing string says "recovery phrase"',
+    offenders.length === 0,
+    offenders.join(', '));
+}
+
 console.log(
   failed
     ? `\n${failed} check(s) failed`

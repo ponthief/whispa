@@ -37,7 +37,7 @@ const fileInput = ref(null)
 // ask for a password"). A chosen, encrypted file waits here while its password
 // is typed. Until the picker has run there is nothing to ask about — and a
 // screen that has not seen the file cannot say which secret that file wants,
-// which matters for one made before 2026-11-08 and sealed with the recovery
+// which matters for one made before 2026-11-08 and sealed with the seed
 // phrase.
 const pending = ref(null)   // { text, info } once a file has been chosen
 

@@ -233,7 +233,7 @@ export const useAuthStore = defineStore('auth', () => {
   //
   // `sweepAccount` is the BIP-84 ACCOUNT extended private key (m/84'/coin'/0')
   // for the plain address chain — what lets the wallet hand out a fresh plain
-  // address per payment and sign from it without re-entering the recovery
+  // address per payment and sign from it without re-entering the seed
   // phrase. A smaller secret than the spendKey stored beside it: it reaches one
   // branch holding coins in transit, where the spend key reaches the whole
   // wallet. The name matches the mobile keystore field, which is a key in blobs

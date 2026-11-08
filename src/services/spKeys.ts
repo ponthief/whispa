@@ -105,7 +105,7 @@ export function isValidMnemonic(m: string): boolean {
 // WhiSPa wallets.
 //
 // (The encrypted backup used to depend on this: for one day it was sealed with
-// the wallet's passphrase. Since 2026-11-04 it is sealed with the recovery
+// the wallet's passphrase. Since 2026-11-04 it is sealed with the seed
 // phrase and holds no key material, so it no longer rests on this rule either
 // way. The rule stands on its own — import is for WhiSPa wallets, and every
 // WhiSPa wallet has a passphrase.)
@@ -201,7 +201,7 @@ function refundAddressFromRoot(root: HDKey, network: string, index: number): str
 //
 // The device keeps the ACCOUNT key (m/84'/coin'/0'), not the seed, in the same
 // keystore entry as the scan and spend keys. That is what lets it hand out a
-// fresh address for every payment and still sign without asking for the recovery
+// fresh address for every payment and still sign without asking for the seed
 // phrase. The account key is a strictly smaller secret than the spend key
 // already stored beside it: it reaches one branch holding coins in transit,
 // where the spend key reaches the whole wallet. The duress wipe clears the

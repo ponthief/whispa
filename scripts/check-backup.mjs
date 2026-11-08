@@ -786,7 +786,7 @@ console.log('the two backup screens say the same simple thing');
       /inspectBackupFile/.test(src) && /info\.readable/.test(src),
       'a file that was never going to open must not cost a typed password');
     // ASKS FOR WHAT THE FILE WANTS, not for "a password" regardless. A backup
-    // written between 2026-11-04 and 2026-11-08 is sealed with the recovery
+    // written between 2026-11-04 and 2026-11-08 is sealed with the seed
     // phrase, and naming it is the whole reason the file is read first.
     ok(`${who} asks for the secret the file names`,
       /asksFor/.test(src) && /encrypted/.test(src));
@@ -1185,7 +1185,7 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
     // ── A WEB BACKUP: KEYS, NO PHRASE ─────────────────────────────────
     //
     // "Saved backup in web app and restored in mobile and still asks for
-    // recovery key… after restore it was saying that the seed phrase is
+    // recovery key… after restore it was saying that the recovery phrase is
     // not there — there is no recovery phrase, just the passphrase!!"
     //
     // Correct, and the file had what the phone needed all along. The browser

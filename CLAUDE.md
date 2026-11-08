@@ -597,6 +597,19 @@ Three things it deliberately did NOT touch, each for its own reason:
 - **`CHANGELOG.md`** and the F-Droid MR reply, which are records of what
   shipped and what was said at the time.
 
+**And the sweep missed every place the two words WRAPPED A LINE**, found the
+next day while answering a question about something else. Three of those were
+user-facing — the phone's "showing your recovery phrase needs something to
+check it against", and two on the **terms page**, which `check:terms` had
+nothing to say about because it matches the phrase loosely. A rename done by
+matching a string on one line misses exactly the cases a formatter made, and
+nothing in the build, the lint or any check knew the word had changed.
+
+`check:seed` holds it now: comments are **stripped first**, and no
+`recovery phrase` may survive anywhere in `src/` — wrapped or not. That rule
+only works BECAUSE the quoted reports live in comments, which is where they
+have to stay; what is left after stripping is copy.
+
 "Recover Keys" is unrelated and unchanged — that button is about the scan and
 spend keys this device is missing, which is a different thing from the words.
 

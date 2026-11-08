@@ -22,6 +22,7 @@ import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import DeviceConfirmScreen from './screens/DeviceConfirmScreen';
+import ServerUnreachableScreen from './screens/ServerUnreachableScreen';
 import LockScreen from './screens/LockScreen';
 import LockSetupScreen from './screens/LockSetupScreen';
 import { useAuthStore } from '@stores/authStore';
@@ -349,8 +350,16 @@ const App = () => {
 
   // When device-trust is on, an authenticated-but-unconfirmed device must clear
   // the confirmation flow before reaching the wallet.
+  // ONLY WHEN THE SERVER SAID SO. `deviceStatus !== 'trusted'` sent a launch
+  // whose check had merely FAILED to the enrollment screen, which asks for a
+  // code the server emails — see ServerUnreachableScreen for the report.
   const needsDeviceConfirm =
-    DEVICE_TRUST_ENABLED && isAuthenticated && deviceStatus !== 'trusted';
+    DEVICE_TRUST_ENABLED && isAuthenticated && deviceStatus === 'untrusted';
+
+  // Not trusted either, so the wallet still does not render: this is the same
+  // gate wearing an honest label.
+  const serverUnreachable =
+    DEVICE_TRUST_ENABLED && isAuthenticated && deviceStatus === 'unreachable';
 
   const showLock = isAuthenticated && lockEnabled && locked;
 
@@ -392,6 +401,8 @@ const App = () => {
           <LockSetupScreen />
         ) : needsDeviceConfirm ? (
           <DeviceConfirmScreen />
+        ) : serverUnreachable ? (
+          <ServerUnreachableScreen />
         ) : (
           <Shell />
         )}

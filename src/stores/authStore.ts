@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as api from '@services/api';
 import * as deviceTrust from '@services/deviceTrust';
+import { verdictFromError } from '@services/deviceCheckOutcome';
 import * as session from '@services/session';
 import { DEVICE_TRUST_ENABLED } from '@/theme';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
@@ -12,7 +13,23 @@ import { useSeedBackup } from './seedBackup';
 // Device-trust gate state. 'trusted' when the feature is off (nothing to gate)
 // or the device is confirmed; 'untrusted' means the app must show the
 // device-confirmation flow before the wallet.
-type DeviceStatus = 'trusted' | 'untrusted';
+// THREE STATES, BECAUSE "THE SERVER SAID NO" AND "THE SERVER DID NOT ANSWER"
+// ARE DIFFERENT THINGS, and conflating them is what was reported on
+// 2026-11-08: *"lnbits instance is down — when opening mobile app it prompts
+// for confirmation code for the device check"*.
+//
+// It did, and the device was fine. A failed `device-check` was folded into
+// `untrusted`, which lands on DeviceConfirmScreen — a screen that asks for a
+// code the server has to email, from the server that is down. A dead end
+// dressed as a security prompt, on the launch path, saying something untrue
+// about the user's device.
+//
+// `unreachable` grants NOTHING: it is not trusted, the wallet does not render
+// behind it, and every siLNt endpoint is gated by require_trusted_device
+// server-side regardless. What it changes is what the screen says — the app
+// reports that it cannot reach the server and offers to try again, which is
+// the fact it actually has.
+type DeviceStatus = 'trusted' | 'untrusted' | 'unreachable';
 
 interface AuthState {
   token: string | null;
@@ -34,10 +51,11 @@ interface AuthState {
   // startup; the app lock, not a password, is what guards it.
   restore: () => Promise<void>;
   setTrusted: () => void;
+  recheckDevice: () => Promise<DeviceStatus>;
   logout: (reason?: string) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   token: null,
   inkey: null,
   adminkey: null,
@@ -86,9 +104,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         try {
           const chk = await api.deviceCheck(w.inkey);
           deviceStatus = chk.status === 'trusted' ? 'trusted' : 'untrusted';
-        } catch {
-          // Can't confirm trust (backend/network) — fail closed to enrollment.
-          deviceStatus = 'untrusted';
+        } catch (e: any) {
+          // Still fails closed — `unreachable` is not trusted — but it says
+          // which of the two happened. Enrollment cannot be the answer to a
+          // server that is down: the code it asks for comes by email, from
+          // there.
+          deviceStatus = verdictFromError(e);
         }
       }
 
@@ -174,11 +195,13 @@ export const useAuthStore = create<AuthState>((set) => ({
           });
           return;
         }
-        // Offline, or the backend is unreachable. Fail closed to enrollment,
-        // exactly as login does — the wallet screen would fail its own calls
-        // anyway, and this way a revoked device never slips through on a
-        // network error.
-        deviceStatus = 'untrusted';
+        // Offline, or the backend is unreachable. Still fails closed — the
+        // wallet screen would fail its own calls anyway, and a revoked device
+        // must not slip through on a network error — but it is reported as
+        // what it is rather than as a device nobody trusts. This is the path
+        // the 2026-11-08 report came in on: a stored session, a launch, and a
+        // demand for an emailed code while the mailer's server was down.
+        deviceStatus = verdictFromError(e);
       }
     }
 
@@ -198,6 +221,26 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   // Called by the device-confirmation flow once a code is verified.
   setTrusted: () => set({ deviceStatus: 'trusted' }),
+
+  // Ask again. This is what the "unreachable" screen's Try again does, and it
+  // is the whole reason that state is worth having: the condition it reports
+  // is temporary, so there has to be a way out of it that is not signing out
+  // and back in. Returns the status it landed on so the caller can show the
+  // failure without reading the store back.
+  recheckDevice: async () => {
+    const { inkey } = get();
+    if (!DEVICE_TRUST_ENABLED || !inkey) return 'trusted' as DeviceStatus;
+    try {
+      const chk = await api.deviceCheck(inkey);
+      const next: DeviceStatus = chk.status === 'trusted' ? 'trusted' : 'untrusted';
+      set({ deviceStatus: next });
+      return next;
+    } catch (e: any) {
+      const next: DeviceStatus = verdictFromError(e);
+      set({ deviceStatus: next });
+      return next;
+    }
+  },
 
   // `reason`, when given, is surfaced on the login screen.
   //

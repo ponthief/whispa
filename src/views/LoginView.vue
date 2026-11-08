@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
+import { checkWasImpossible } from '@/services/deviceCheckOutcome'
 
 const router = useRouter()
 const route  = useRoute()
@@ -150,6 +151,21 @@ async function handleLogin() {
       router.push({ name: 'pending-device' })
     }
   } catch (e) {
+    // A FAILED CHECK IS NOT AN UNTRUSTED DEVICE, and sending one to the
+    // pending screen is the bug reported on the phone on 2026-11-08: *"lnbits
+    // instance is down — when opening mobile app it prompts for confirmation
+    // code for the device check"*. That screen's only action is to have the
+    // server email a code, so when the server is what failed it is a dead end
+    // wearing a security prompt.
+    //
+    // No status at all is a network failure; 5xx is the server answering "I am
+    // broken" rather than giving a verdict on this browser. Either way the
+    // user stays here, where the message is true and Sign in is the retry.
+    // A 4xx still means what it says and goes to the pending screen.
+    if (checkWasImpossible(e)) {
+      auth.error = 'Can’t reach the server. Check your connection and try again.'
+      return
+    }
     router.push({ name: 'pending-device' })
   }
 }

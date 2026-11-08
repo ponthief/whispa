@@ -54,6 +54,7 @@
     "check:apksign": "node scripts/check-apk-signing.cjs",
     "check:fdroid": "node scripts/check-fdroid.cjs",
     "check:stealth": "node scripts/check-stealth.cjs",
+    "check:device": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-device.mjs",
     "check:seed": "node scripts/check-seed.mjs",
     "check:backup": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-backup.mjs"
   },

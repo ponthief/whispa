@@ -98,6 +98,7 @@ npm run check:terms         # one terms version, in two repos, behind one tick b
 npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
 npm run check:stealth       # one launcher icon always enabled, and a disguise says it stops alerts
+npm run check:device        # a server that cannot answer is not a device that was refused
 npm run check:seed          # the web keeps the words beside the keys, and shows them only to the account
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
@@ -1468,6 +1469,49 @@ Note what this does *not* do. Turnstile still bounds only the browser case —
 `enforce` defaults to `"browser"` and a script omits the `Origin` header — and
 that stays deliberate, because `RegisterScreen.tsx` renders no widget. The
 limiter is what bounds the rest.
+
+### A server that is down is not an untrusted device
+
+Reported 2026-11-08: *"lnbits instance is down — when opening mobile app it
+prompts for confirmation code for the device check"*.
+
+It did, and the device was fine. Both clients folded **every** `device-check`
+failure into `untrusted`, and untrusted lands on the enrollment flow — a
+screen whose only action is to have the server **email a six-digit code**. So
+when the server is what failed, the user is told their device is not trusted,
+which is false, and offered the one action that cannot possibly work, from the
+machine that is down. On the phone this is the LAUNCH path: a stored session,
+restore, and a code prompt.
+
+`services/deviceCheckOutcome.ts` is the one rule, imported by both clients
+rather than written twice. **No HTTP status at all** is a network failure —
+the request never reached anything that knows what this device is. **5xx** is
+the server answering "I am broken" rather than answering the question.
+Everything else is a verdict and is treated as one: a **403** from
+`require_trusted_device` means exactly what it says and must keep landing on
+enrollment, or the gate is gone rather than fixed.
+
+**`unreachable` grants nothing.** It is not `trusted`: the wallet does not
+render behind it, and every siLNt endpoint is gated server-side whatever a
+client believes. What changes is the screen — `ServerUnreachableScreen` says
+the server cannot be reached, says nothing is wrong with this device, and
+offers **Try again** (`recheckDevice`) rather than an email that cannot be
+sent. The condition is temporary, so there has to be a way out of it that is
+not signing out — and signing out needs the same server to sign back in, which
+the screen also says.
+
+The **401 path is untouched** and must stay that way: dead stored keys are not
+a device state, and `restore` clears the session rather than bringing the app
+up signed in with credentials every request will refuse.
+
+`check:device` EXERCISES the rule — it is a pure function with no RN or DOM in
+it — and pins the two gates that consume it source-side, because a correct
+rule wired to the wrong comparison is the bug straight back: `deviceStatus !==
+'trusted'` sends an unreachable server to enrollment exactly as the old catch
+did. It also pins the ORDER in both clients (both gates above `<Shell />`; the
+web's unreachable branch returning before the push to the pending screen) and
+that a real refusal still routes there. Three of its controls fail against the
+shipped code.
 
 ### Confirming a device sends one email
 

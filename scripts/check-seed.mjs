@@ -240,10 +240,45 @@ console.log('the browser keeps a phrase wherever it has one');
   ok('and asks even when it mounts already open',
     /\{ immediate: true \}/.test(M),
     'a watcher without it fires on change only, which is not every open');
-  ok('and says nothing was lost when there is not',
-    /does not hold the words for this wallet/.test(M) &&
-    /Nothing was lost/.test(M),
-    'that sentence is what somebody opened this to find');
+  // AND WITH NOTHING STORED IT OFFERS A FIELD, not an explanation.
+  //
+  // It explained for one day — where the words were not, and what would bring
+  // them back — and every sentence was true and no use: a wallet created here
+  // before phrases were kept has no copy anywhere in the system, so the only
+  // one in existence is on the paper the user wrote at creation, and the
+  // single useful thing this screen can do is take it. Reported, finally, as
+  // "I am still unable to restore from web into the phone and see the seed
+  // phrase… they just want to be able to see the seed phrase which must be
+  // stored locally in either browser or mobile".
+  const empty = strip(M);
+  ok('with no phrase stored, the modal takes one',
+    /v-model="entry"/.test(empty) && /saveEntry/.test(empty),
+    'four rounds of this were spent on copy; what was missing was an input');
+  ok('and checks it against the wallet before storing it',
+    /isValidMnemonic\(words\)/.test(empty) &&
+    /deriveSilentPayment\(words,[\s\S]{0,80}spAddress\.toLowerCase\(\) !== /.test(empty),
+    'storing a phrase that opens nothing is the failure this replaces');
+  ok('and stores it locally, posting nothing',
+    /auth\.saveSeed\(props\.wallet\.id, words\)/.test(empty) &&
+    !/apiLogin\([\s\S]{0,40}words/.test(empty),
+    '"stored locally in either browser or mobile, never on the server"');
+
+  // THE PHONE HAS THE SAME FIELD, for the same wallet in the same state —
+  // restored from a web file, keys present, no words. The row that used to
+  // stand there said so in two paragraphs.
+  const E = strip(read('src/components/SeedEntryModal.tsx'));
+  const S = strip(read('src/screens/settings/SecurityPage.tsx'));
+  ok('the phone offers the same field where it used to explain',
+    /Enter seed phrase/.test(S) && /SeedEntryModal/.test(S) &&
+    !/entered on\s*\n?\s*this phone, so there is nothing to show/.test(S),
+    'the reader has the words on paper and nowhere to put them');
+  ok('and it checks them against the wallet too',
+    /isValidMnemonic\(phrase\)/.test(E) &&
+    /deriveSilentPayment\(phrase, passphrase, wallet\.network\)/.test(E) &&
+    /sp_address \|\| ''\)\.toLowerCase\(\)/.test(E));
+  ok('and a keystore refusal is a failure, not a shrug',
+    /if \(!\(await saveSeed\(wallet\.id, phrase\)\)\)/.test(E),
+    'otherwise the screen claims the words are saved and the next read finds none');
 }
 
 // ── the word, in both clients ───────────────────────────────────────────────

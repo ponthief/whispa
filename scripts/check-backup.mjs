@@ -842,8 +842,8 @@ console.log('the two backup screens say the same simple thing');
     const end = body.indexOf('function startRestore');
     const save = end < 0 ? body : body.slice(0, end);
     ok('the web closes the modal once a backup is saved',
-      /saved = true/.test(save) && /if \(saved && !left\) emit\('close'\)/.test(save),
-      'a save that left a wallet out stays open and says which');
+      /saved = true/.test(save) && /if \(saved && !left && !noWords\) emit\('close'\)/.test(save),
+      'a save that left a wallet — or its words — out stays open and says which');
     ok('and leaves it open when the save failed',
       !/catch[^}]*emit\('close'\)/.test(save),
       'the error message is the only thing that says what went wrong');
@@ -1320,6 +1320,59 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
         [seedWallet], PASS);
       ok('a browser with no words still writes a restorable file',
         !!noWords.keys.web && !noWords.seeds.web);
+
+      // EVERY DROPPED PHRASE IS REPORTED, and this is the control that was
+      // missing while four rounds of "I restored and there is still no seed
+      // phrase" went by. Both drops above are silent at the point they happen:
+      // the file is written, the download succeeds, and nothing is wrong until
+      // somebody opens it on another device looking for twelve words. The two
+      // cases need different answers from the person — type the words in, or
+      // check the passphrase — so they are reported apart.
+      ok('a wallet whose words this browser lacks is named at save time',
+        noWords.noSeed?.length === 1 && noWords.noSeed[0].reason === 'none'
+          && noWords.noSeed[0].title === 'From the web');
+      ok('and so is one whose phrase the typed passphrase does not open',
+        wrongPass.noSeed?.length === 1 && wrongPass.noSeed[0].reason === 'passphrase');
+      ok('a wallet that travels with its words is not reported as missing them',
+        (held.noSeed || []).length === 0);
+
+      // ── THE WHOLE CHAIN, web to phone ────────────────────────────────────
+      // Save in the browser, seal the real file, open it with the phone's
+      // restore and ask whether the phone can now show the seed phrase. That
+      // is the sentence the user kept writing, and until this ran nothing
+      // asserted it end to end: every piece was tested on its own and the
+      // chain was reasoned about.
+      {
+        const payload = {
+          app: 'whispa', payloadVersion: 1, sections: {},
+          wallets: [{
+            ...seedWallet,
+            ...(held.keys.web ? { keys: held.keys.web } : {}),
+            ...(held.seeds.web ? { mnemonic: held.seeds.web } : {}),
+          }],
+        };
+        const sealed = await encryptBackup(payload, PASS);
+        const opened = await decryptBackup(sealed, PASS);
+
+        const phone = { keys: {}, seeds: {} };
+        const landed = await restoreWallets(
+          {
+            deriveSilentPayment: derive,
+            spAddressFromKeys: bothAgree,
+            createWallet: async (d) => ({ wallet_id: 'on-phone', ...d }),
+            storeWalletKeys: async (id, k) => { phone.keys[id] = k; return true; },
+            saveSeed: async (id, p) => { phone.seeds[id] = p; return true; },
+            hasKeys: async () => false,
+            hasSeed: async () => false,
+          },
+          PASS, opened.wallets || [], []);
+        ok('a file saved in the browser restores a wallet on the phone',
+          landed.created.length + landed.adopted.length === 1,
+          JSON.stringify(landed));
+        ok('and the phone can then show that wallet\'s seed phrase',
+          Object.values(phone.seeds)[0] === SEED_WEB,
+          'the report this whole feature exists to answer');
+      }
     }
 
     // A caller that cannot answer errs towards storing. Writing keys that are

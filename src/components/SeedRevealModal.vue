@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { login as apiLogin } from '@/api'
+import { deriveSilentPayment, isValidMnemonic } from '@/services/spKeys'
 
 // Show a wallet's seed phrase again, behind the account password.
 //
@@ -13,10 +14,14 @@ import { login as apiLogin } from '@/api'
 // THE PREMISE WAS WRONG AND THE REQUEST WAS RIGHT. The phrase was in neither
 // place: the browser derived keys from it at creation, showed the words once
 // and kept only the keys, so there was nothing here to reveal and nothing had
-// gone missing. The wallets this can answer for are the ones created,
-// imported, recovered or restored from this browser SINCE that changed —
-// stores/auth.js `saveSeed` is the other half — and for anything older the
-// card offers nothing rather than opening a dialog that ends in "sorry".
+// gone missing. A wallet created, imported, recovered or restored from this
+// browser since that changed has its words in the vault — stores/auth.js
+// `saveSeed` is the other half.
+//
+// AND ONE OLDER THAN THAT GETS A FIELD, not an apology: no copy of its phrase
+// exists anywhere in the system, so the only one there will ever be is on the
+// paper the user wrote at creation, and the single useful thing this screen
+// can do is take it. See `saveEntry` below.
 //
 // THE PASSWORD IS CHECKED AGAINST THE SERVER, because that is the only thing
 // that can check it: the vault's wrapping key comes from the API keys, not
@@ -48,6 +53,8 @@ const phrase = ref('')
 const busy = ref(false)
 const error = ref('')
 const copied = ref(false)
+const entry = ref('')
+const entryPass = ref('')
 
 function reset() {
   password.value = ''
@@ -55,6 +62,8 @@ function reset() {
   error.value = ''
   busy.value = false
   copied.value = false
+  entry.value = ''
+  entryPass.value = ''
 }
 
 // Cleared on OPEN as well as on close. A password left in a field across two
@@ -115,6 +124,52 @@ async function reveal() {
   }
 }
 
+// TAKE THE WORDS for a wallet this browser has none for.
+//
+// The case this answers has no other route: a wallet created here before the
+// browser kept phrases has no copy anywhere in the system — not in the vault,
+// not in any backup file either app could write — and the only one in
+// existence is the one shown once at creation and written down. Explaining
+// that is what this modal did for a day; what somebody holding that paper
+// needs is a field.
+//
+// CHECKED, not taken on trust: derive from (words, passphrase) and require
+// this wallet's own sp_address back. A wrong word or a wrong passphrase gives
+// a different wallet, so storing one that does not open this one is refused
+// rather than discovered later. All of it local — nothing is posted.
+async function saveEntry() {
+  if (!props.wallet?.id) return
+  const words = (entry.value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!words) {
+    error.value = 'Enter the 12 words.'
+    return
+  }
+  if (words.split(' ').length !== 12 || !isValidMnemonic(words)) {
+    error.value = 'Invalid seed phrase — the checksum (last word) is incorrect.'
+    return
+  }
+  error.value = ''
+  busy.value = true
+  try {
+    const keys = deriveSilentPayment(words, entryPass.value || '', props.wallet.network)
+    if (keys.spAddress.toLowerCase() !== (props.wallet.sp_address || '').toLowerCase()) {
+      error.value = "That doesn't match this wallet. Check the words and passphrase."
+      return
+    }
+    await auth.saveSeed(props.wallet.id, words)
+    // Straight to the words: they were just typed, so a password gate in front
+    // of them now would be asking to see what is already on the clipboard.
+    stored.value = true
+    phrase.value = words
+    entry.value = ''
+    entryPass.value = ''
+  } catch (e) {
+    error.value = e?.message || 'Could not check that phrase.'
+  } finally {
+    busy.value = false
+  }
+}
+
 async function copy() {
   try {
     await navigator.clipboard.writeText(phrase.value)
@@ -141,7 +196,7 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
         <button class="btn btn-ghost btn-sm btn-icon" @click="close">✕</button>
       </div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-        <p class="text-dim text-sm" style="margin:0">
+        <p v-if="stored" class="text-dim text-sm" style="margin:0">
           The twelve words for <strong>{{ wallet.title }}</strong>. They stay in
           this browser — showing them sends nothing anywhere.
         </p>
@@ -154,23 +209,35 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
              creation and the KEYS were stored — so nothing went missing, and
              that is the sentence somebody is looking for. -->
         <template v-if="!stored">
-          <div class="alert alert-warn" style="padding:10px;border-radius:6px">
-            <p class="text-sm" style="margin:0">
-              This browser does not hold the words for this wallet.
-            </p>
+          <p class="text-dim text-sm" style="margin:0">
+            Not stored in this browser yet. Type the words to keep them here —
+            they are checked against this wallet and sent nowhere.
+          </p>
+
+          <div class="field">
+            <label>Seed phrase (12 words)</label>
+            <textarea class="input mono" rows="3" v-model="entry"
+                      placeholder="word1 word2 word3 …"
+                      autocapitalize="none" autocorrect="off" spellcheck="false"></textarea>
           </div>
-          <p class="text-dim text-sm" style="margin:0">
-            Nothing was lost. A wallet created here before the words were kept
-            was shown them once, at creation, and this browser stored only the
-            keys that scan and spend — which is why it still works.
-          </p>
-          <p class="text-dim text-sm" style="margin:0">
-            Restoring a backup brings the words back when the file has them.
-            Both apps put them in now — a file saved before they did, or made
-            for a wallet whose words were never kept, has none to give.
-          </p>
+
+          <div class="field">
+            <label>Passphrase</label>
+            <input class="input" type="text" v-model="entryPass"
+                   placeholder="Leave empty if you did not set one"
+                   autocomplete="off" autocapitalize="none"
+                   @keyup.enter="saveEntry" />
+          </div>
+
+          <div v-if="error" class="alert alert-error" style="padding:10px;border-radius:6px">
+            <p class="text-sm" style="margin:0">{{ error }}</p>
+          </div>
+
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" @click="close">Close</button>
+            <button class="btn btn-primary btn-sm" :disabled="busy" @click="saveEntry">
+              {{ busy ? '…' : 'Save in this browser' }}
+            </button>
+            <button class="btn btn-ghost btn-sm" :disabled="busy" @click="close">Cancel</button>
           </div>
         </template>
 

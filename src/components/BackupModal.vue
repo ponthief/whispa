@@ -110,6 +110,7 @@ async function doSave() {
   say('')
   let saved = false
   let left = ''
+  let noWords = ''
   try {
     const { encryptBackup, backupFilename } = await import('@/services/backup')
     const { collectBackup, describeBackup } = await import('@/stores/backupdata')
@@ -129,7 +130,7 @@ async function doSave() {
     // any wallet the vault holds one for, which is what makes a file from
     // here identical in kind to one from the phone: restore it anywhere and
     // the wallet can show its seed phrase.
-    const { keys, seeds, leftOut } = await collectWalletKeys(
+    const { keys, seeds, leftOut, noSeed } = await collectWalletKeys(
       {
         getWalletKeys: (id) => auth.getWalletKeys(id),
         spAddressFromKeys,
@@ -184,6 +185,17 @@ async function doSave() {
     if (leftOut.length) {
       left = leftOut.map(w => w.title).join(', ')
     }
+    // IN THE FILE, BUT WITHOUT ITS WORDS — said here, where it can still be
+    // fixed, rather than discovered on another device that has nothing to
+    // show. The two cases need different answers, so they are reported apart.
+    else if (noSeed.length) {
+      const bad = noSeed.filter(w => w.reason === 'passphrase')
+      noWords = bad.length
+        ? `Saved. ${bad.map(w => w.title).join(', ')}: that passphrase does not ` +
+          'match, so its seed phrase was left out of the file.'
+        : `Saved, but ${noSeed.map(w => w.title).join(', ')} has no seed phrase ` +
+          'stored here to put in it. Add it under ⚙ → Seed phrase.'
+    }
   } catch (e) {
     say(e?.message || 'Could not save the backup.', 'error')
   } finally {
@@ -192,11 +204,13 @@ async function doSave() {
     busy.value = null
     // A clean save closes the modal; one that left a wallet out stays open
     // and says which, because that is the half the download cannot tell you.
-    if (saved && !left) emit('close')
-    else if (saved) {
+    if (saved && !left && !noWords) emit('close')
+    else if (saved && left) {
       say(`Saved, but ${left} could not be included — its keys are not here. ` +
         'Use Recover Keys on that wallet first, or save the backup from the ' +
         'app.', 'error')
+    } else if (saved) {
+      say(noWords, 'error')
     }
   }
 }

@@ -19,6 +19,7 @@ import Config from 'react-native-config';
 import DevicesModal from '../../components/DevicesModal';
 import PinSetupModal from '../../components/PinSetupModal';
 import SeedRevealModal from '../../components/SeedRevealModal';
+import SeedEntryModal from '../../components/SeedEntryModal';
 import { DEVICE_TRUST_ENABLED } from '@/theme';
 import {
   Block,
@@ -69,6 +70,7 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
   const [wallets, setWallets] = useState<api.SilntWallet[]>([]);
   const [seedStored, setSeedStored] = useState<Record<string, boolean>>({});
   const [seedOpen, setSeedOpen] = useState<string | null>(null);
+  const [seedEntry, setSeedEntry] = useState<api.SilntWallet | null>(null);
 
   useEffect(() => {
     appLock.biometryType().then(setBiometry);
@@ -372,24 +374,14 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
         </Group>
       ) : null}
 
-      {/* Only offered when the phrase is actually on this phone. A dead button
-          for older wallets would suggest a second copy exists somewhere, which
-          is the belief that loses coins. */}
-      {/* AND IT SAYS WHAT IS TRUE OF THIS DEVICE, nothing more (2026-11-08,
-          reported against a wallet restored from a web backup file: "shows
-          that seed phrase cannot be shown in Security. That is not right…
-          if store just spend/scan keys and not seed phrase, just say that
-          seed phrase was not entered on the phone").
+      {/* TWO ROWS, ONE PER STATE, and each one DOES something: show the words,
+          or take them. No row here explains where the words are not.
 
-          The old line explained WHERE the words went — shown once at creation,
-          not kept afterwards — and that story is simply false for this wallet.
-          A web backup carries the derived keys and never a phrase, because
-          keyvault.js has never held one; the restore worked exactly as it
-          should and there were no words anywhere in it. Telling somebody their
-          phrase "is not kept here" invites them to go looking for a copy that
-          was never made. What is true on every path is the one fact this
-          screen can actually see: the phrase was never typed in on this
-          device, and the keys that spend are. */}
+          It used to (2026-11-08, reported against a wallet restored from a web
+          backup file: "shows that seed phrase cannot be shown in Security…
+          just say that seed phrase was not entered on the phone"), and the
+          sentence was accurate — but somebody reading it is holding the words
+          on paper and looking for somewhere to put them. */}
       {/* ONE ROW PER WALLET, each saying its own state, and the wallet NAMED.
           With a single wallet that reads exactly as before; with two it stops
           answering about one while the reader is asking about the other. */}
@@ -405,26 +397,19 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
                 onPress={() => setSeedOpen(w.id)}
               />
             ) : (
-              <Block key={w.id} first={i === 0}>
-                <Note kind="info">
-                  {wallets.length > 1 ? `${w.title}: not` : 'Not'} entered on
-                  this phone, so there is nothing to show. This wallet's scan
-                  and spend keys are stored here, so it still scans and sends.
-                </Note>
-                {/* WHAT WOULD BRING THE WORDS, which the flat denial above
-                    left somebody to guess at — and guessing is what the report
-                    was: *"it says not stored on this phone, but it's restored
-                    from a file wallet!!"*. Both halves are true and neither is
-                    obvious: a file saved from the WEB app carries the derived
-                    keys and never the words, because the browser has never
-                    held them; a file saved from THIS app carries them. */}
-                <Help>
-                  Restoring a backup brings the words back when the file has
-                  them. Both apps put them in now; a file saved before they
-                  did, or made for a wallet whose words were never kept, has
-                  none to give.
-                </Help>
-              </Block>
+              /* NOT A MESSAGE — A FIELD. This row used to explain where the
+                 words were not, in two paragraphs, and every one of those
+                 sentences was true and useless: the reader has the words on
+                 paper and no way to put them in. Recover Keys holds the same
+                 form and renders only while the keys are missing, so a working
+                 wallet could not reach it. */
+              <NavRow
+                key={w.id}
+                first={i === 0}
+                title={`Enter seed phrase${wallets.length > 1 ? ` — ${w.title}` : ''}`}
+                help="Not on this phone yet. Type the 12 words to keep them here."
+                onPress={() => setSeedEntry(w)}
+              />
             ),
           )}
         </Group>
@@ -453,6 +438,13 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
       {DEVICE_TRUST_ENABLED ? (
         <DevicesModal visible={devicesOpen} onClose={() => setDevicesOpen(false)} />
       ) : null}
+
+      <SeedEntryModal
+        visible={!!seedEntry}
+        wallet={seedEntry}
+        onClose={() => setSeedEntry(null)}
+        onSaved={loadSeedState}
+      />
 
       {seedOpen ? (
         <SeedRevealModal

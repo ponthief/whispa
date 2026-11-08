@@ -598,11 +598,43 @@ Hiding it answers nobody. Somebody hunting for their words finds no trace of
 the feature and cannot tell which of three things is true — this build does
 not have it, this wallet is the wrong one, or something ate the phrase. The
 dead-control rule is about a control with **no explanation**; when there is
-nothing stored, explaining is this one's whole job and the question being
-asked. The empty state says the browser does not hold the words for this
-wallet, that **nothing was lost** (they were shown once at creation and only
-the keys were kept, which is why it still works), and that restoring a
-**phone** backup brings them while a web one carries keys only.
+nothing stored, that empty state is the whole job of opening it at all.
+
+**And with nothing stored it offers a FIELD, not an explanation** (2026-11-09).
+That empty state spent a day saying where the words were not — nothing was
+lost, they were shown once at creation, restoring a backup brings them when the
+file has them. Every sentence true, and the answer to none of it: *"I am still
+unable to restore from web into the phone and see the seed phrase!!! … nobody
+fucking cares … they just want to be able to see the seed phrase which must be
+stored locally in either browser or mobile!!! never on the server!!!"*
+
+The reason four rounds of fixes could not help is worth stating plainly,
+because it is not a bug anywhere: **a wallet made in the browser before it kept
+phrases has no copy of them anywhere in the system.** Not in the vault, not in
+any file either client could write. The backup was not at fault and neither was
+the restore; there was nothing to carry. The only copy in existence is the
+paper the user wrote at creation, so the single useful thing either client can
+do is **take it** — `SeedRevealModal.vue`'s empty state and the phone's
+`SeedEntryModal.tsx`, off the Security row that used to explain.
+
+Recover Keys has had this exact form all along and renders **only while the
+keys are missing**, so the wallets this applies to — working ones — could not
+reach it. That is the whole of the gap.
+
+It is **checked, not taken on trust**, by both: derive from (words,
+passphrase) and require that wallet's own `sp_address` back, which one wrong
+word or a wrong passphrase fails. Local throughout — the derivation is in the
+client and the write is to the vault or the keystore. `check:seed` pins the
+field, the check and the storage call on both.
+
+**And a save that cannot put the words in says so**, where it can still be
+fixed rather than on another device that has nothing to show.
+`collectWalletKeys` used to drop a phrase at two silent `continue`s — the
+vault holds none (`none`), or the one it holds does not derive the wallet under
+the passphrase just typed (`passphrase`) — and both wrote a perfectly good file
+whose restore produces a wallet with no words. It returns `noSeed` now, the two
+cases apart because they need different answers from the reader, and the web
+save screen stays open to name them.
 
 That state is decided **on open, per wallet**, by an `immediate` watcher — and
 the immediate matters: the modal can mount already open, and a watcher without
@@ -636,6 +668,12 @@ out and a right one cannot extend a session that was about to idle out. Be
 clear about what that gate is: it stops somebody who has the laptop open. It
 is not a second layer of encryption, because anything that can run in the page
 while signed in can already read the vault.
+
+**`check:backup` runs the whole chain now**, which nothing did while those four
+rounds went by: collect a web file for a wallet whose words the vault holds,
+seal it, open it, hand it to the phone's `restoreWallets` and assert the phone
+can then show that phrase. Every piece had its own control and the chain
+between them had none.
 
 `check:seed` EXERCISES the vault against an in-memory IndexedDB, because every
 failure here round-trips: a phrase written into the keys blob still reveals, a

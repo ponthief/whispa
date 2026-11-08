@@ -224,10 +224,25 @@ export async function collectWalletKeys(
   keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>>;
   seeds: Record<string, string>;
   leftOut: LeftOut[];
+  /**
+   * In the file, but WITHOUT its seed phrase — so it restores a working wallet
+   * that cannot show its words.
+   *
+   * This is reported because it was the invisible half of four rounds of "I
+   * restored and there is still no seed phrase". Both ways of getting here are
+   * silent at the point they happen: the vault may hold no phrase for this
+   * wallet (`none` — a wallet made here before phrases were kept), or it holds
+   * one that does not derive this wallet under the passphrase just typed
+   * (`passphrase`). Either way the file is written, the download succeeds, and
+   * nothing is wrong until somebody opens it on another device looking for
+   * twelve words. The screen says which wallet and which case.
+   */
+  noSeed: Array<{ id: string; title: string; reason: 'none' | 'passphrase' }>;
 }> {
   const keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>> = {};
   const seeds: Record<string, string> = {};
   const leftOut: LeftOut[] = [];
+  const noSeed: Array<{ id: string; title: string; reason: 'none' | 'passphrase' }> = [];
 
   for (const w of wallets || []) {
     if (!w?.id) continue;
@@ -271,7 +286,10 @@ export async function collectWalletKeys(
     } catch {
       phrase = null;
     }
-    if (!phrase) continue;
+    if (!phrase) {
+      noSeed.push({ id: w.id, title, reason: 'none' });
+      continue;
+    }
 
     // The phone's check, now that the browser can run it. A phrase that does
     // not derive this wallet under the typed passphrase is NOT written —
@@ -281,15 +299,19 @@ export async function collectWalletKeys(
     if (deps.deriveSilentPayment) {
       try {
         const fromSeed = deps.deriveSilentPayment(phrase, passphrase, w.network || 'mainnet');
-        if (!sameAddress(fromSeed.spAddress, w.spAddress)) continue;
+        if (!sameAddress(fromSeed.spAddress, w.spAddress)) {
+          noSeed.push({ id: w.id, title, reason: 'passphrase' });
+          continue;
+        }
       } catch {
+        noSeed.push({ id: w.id, title, reason: 'passphrase' });
         continue;
       }
     }
     seeds[w.id] = phrase;
   }
 
-  return { keys, seeds, leftOut };
+  return { keys, seeds, leftOut, noSeed };
 }
 
 /**

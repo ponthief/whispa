@@ -659,15 +659,50 @@ already take the coins; what they gain is a phrase that opens the wallet in
 somebody else's software. That is the same trade the phone made, and it is why
 the reveal sits behind something.
 
-**The account password is checked by the SERVER**, because nothing local can
-check it: the vault's wrapping key is derived from the API keys, not from the
-password, so a client-side comparison would be theatre of exactly the kind
-that reads like a control in review. One POST to the auth endpoint, and the
-token it answers with is **discarded** — a wrong password cannot sign anybody
-out and a right one cannot extend a session that was about to idle out. Be
-clear about what that gate is: it stops somebody who has the laptop open. It
-is not a second layer of encryption, because anything that can run in the page
-while signed in can already read the vault.
+**The gate is the WALLET PASSPHRASE** (2026-11-09, on the user's instruction:
+*"to reveal seed phrase user should enter passphrase, not account password"*).
+
+It was the account password for one day, checked by a POST to the auth
+endpoint on the reasoning that nothing local could check anything — the
+vault's wrapping key comes from the API keys, not from a password, so
+comparing it here would have been theatre. That reasoning stopped applying the
+moment the vault held the phrase. The passphrase **can** be checked locally,
+completely: BIP-39 feeds it into the seed, so `deriveSilentPayment(stored
+phrase, typed passphrase)` gives this wallet's own `sp_address` back or it
+does not, and one wrong character gives a different wallet.
+
+Three things that buys, in order of how much they matter. It asks for the
+secret that belongs to the **thing being revealed** rather than the account
+around it. It is a real check rather than a comparison against something a
+server will answer for. And it makes the reveal work with **no network at
+all** — the words were unreachable exactly when the instance was down, which
+is one of the moments somebody goes looking for them.
+
+Be clear about what the gate is NOT: encryption. The passphrase is stored
+nowhere and is not the vault's key, so this stops a person at the keyboard and
+nothing else — code running in the page can read the vault without asking
+anybody anything, which is equally true of the spend key sitting beside the
+phrase. See the note at the top of `keyvault.js`.
+
+**And the passphrase is stored NOWHERE, which had no control until now**
+(2026-11-09: *"wallet passphrase should never be stored anywhere!!"*). It is
+the one factor that is not on the device, which is what keeps a stolen vault
+or a stolen keystore short of a working recovery — and it is now typed in more
+places than it used to be (the backup's key, this gate, the seed-entry form),
+each one a chance to keep it "just for this session". `check:seed` scans `src/`
+for a write whose value is a passphrase-named binding, matched on the WRITE
+rather than on the word, because the word itself is all over the copy.
+
+It must not go over the wire either. `recoverWalletKeys` posts an encrypted
+mnemonic **and** the passphrase so the server can derive — the pre-on-device
+path — and both api modules still carry it for older callers; the check pins
+that nothing in either client calls it, and that the web's create payload is
+`{ title, network, sp_address }` with no secret in it.
+
+The phone's reveal is **unchanged** and still asks for the app PIN (or
+biometrics): that is a device gate, not an account password, and the duress
+PIN's refusal to reveal lives inside it. Changing it is a removal, so it is a
+question rather than a consequence.
 
 **`check:backup` runs the whole chain now**, which nothing did while those four
 rounds went by: collect a web file for a wallet whose words the vault holds,

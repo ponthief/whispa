@@ -162,26 +162,34 @@ console.log('forgetting the phrase keeps the wallet spendable');
     (await vault.vaultGet('w-1', KM)) === null);
 }
 
-console.log('the reveal asks the server, and tells it nothing');
+console.log('the reveal asks for the wallet passphrase, and asks nobody else');
 {
   const M = strip(read('src/components/SeedRevealModal.vue'));
 
-  // THE PASSWORD CANNOT BE CHECKED HERE. The vault's wrapping key comes from
-  // the API keys, not from the password, so there is nothing local to compare
-  // against — a client-side check would be theatre, and the kind that reads
-  // like a control in review.
-  ok('the password goes to the auth endpoint',
-    /apiLogin\(/.test(M) && /from '@\/api'/.test(M),
-    'nothing local can tell a right password from a wrong one here');
-  ok('and the token it answers with is not kept',
-    !/token\.value\s*=/.test(M) && !/auth\.login\(/.test(M),
-    'the session in hand must survive a wrong password and not be extended by a right one');
+  // THE GATE IS THE WALLET'S OWN PASSPHRASE (2026-11-09: "to reveal seed
+  // phrase user should enter passphrase, not account password"), and it is a
+  // real check rather than a comparison: the stored phrase and the typed
+  // passphrase derive an SP address, and only this wallet's own address means
+  // both are right. BIP-39 feeds the passphrase into the seed, so one wrong
+  // character gives a different wallet.
+  ok('the gate derives from the typed passphrase',
+    /deriveSilentPayment\(got, password\.value, props\.wallet\.network\)/.test(M),
+    'the secret that guards the wallet, not the one that guards the account');
+  ok('and requires this wallet\'s own address back',
+    /spAddress\.toLowerCase\(\) !== \(props\.wallet\.sp_address \|\| ''\)\.toLowerCase\(\)/.test(M),
+    'anything less is a field that accepts whatever it is given');
+
+  // AND IT ASKS THE SERVER NOTHING. The account-password version posted to the
+  // auth endpoint, so the words were unreachable exactly when the server was.
+  ok('no account password, and no call to check one',
+    !/apiLogin/.test(M) && !/account password/i.test(M),
+    'a wallet secret is checked where the wallet is');
 
   // THE WORDS NEVER LEAVE. Anything that posts, puts or uploads from this
   // component is a bug of the worst available kind.
   ok('the phrase is never sent anywhere',
     !/api\.[a-zA-Z]+\(/.test(M) && !/fetch\(/.test(M),
-    'the one call this screen makes is the password check');
+    'this screen makes no network call at all now');
   ok('it reads the phrase from the vault, not from a prop',
     /auth\.readSeed\(/.test(M),
     'a phrase passed in as a prop would sit in the page before anyone authenticated');
@@ -198,9 +206,21 @@ console.log('the reveal asks the server, and tells it nothing');
     /<template v-if="!stored">/.test(M) &&
     /<template v-else-if="!phrase">/.test(M) &&
     /<template v-else>/.test(M));
-  ok('it says the passphrase is not in there',
-    /passphrase, it is NOT shown here/i.test(M),
-    'words alone do not open a wallet that has a passphrase');
+  ok('it says the words alone are not the backup',
+    /These words alone will not recover your wallet/i.test(M),
+    'somebody writing down twelve words finds out at recovery otherwise');
+
+  // AND NOTHING ELSE IS ON IT (2026-11-09: "drop the stupid text in the seed
+  // phrase screen — just enter wallet passphrase is enough"). The heading says
+  // Seed phrase and the field says Wallet passphrase; a paragraph in front of
+  // those restates them. Counted, not matched, because prose grows back one
+  // true sentence at a time — this is the rule check:stealth keeps about the
+  // Home screen help line, for the same reason.
+  const body = M.slice(M.indexOf('<div class="card-body"'));
+  const front = body.slice(0, body.indexOf('<template v-if="!stored">'));
+  ok('and nothing is said in front of the field',
+    !/<p[\s>]/.test(front),
+    'the two labels are the whole of it');
 }
 
 console.log('the browser keeps a phrase wherever it has one');
@@ -281,6 +301,67 @@ console.log('the browser keeps a phrase wherever it has one');
     'otherwise the screen claims the words are saved and the next read finds none');
 }
 
+// ── the passphrase is kept NOWHERE, and that had no control until now ──────
+//
+// 2026-11-09, the user restating it: *"wallet passphrase should never be
+// stored anywhere!!"*. It is the one factor that is not on the device, which
+// is what makes a stolen vault or a stolen keystore short of a working
+// recovery — and it is now also the backup file's key and the reveal's gate,
+// so it is typed in more places than it used to be and every one of them is a
+// chance to persist it "just for this session".
+//
+// Three ways it could go, each cheap to check and invisible in review:
+// writing it to storage, putting it in a payload, or handing it to a keystore.
+console.log('the wallet passphrase is not stored, and does not leave');
+{
+  const { readdirSync, statSync } = await import('node:fs');
+  const walk = (dir, out = []) => {
+    for (const name of readdirSync(dir)) {
+      const full = dir + '/' + name;
+      if (statSync(full).isDirectory()) walk(full, out);
+      else if (/\.(ts|tsx|vue|js)$/.test(name)) out.push(full);
+    }
+    return out;
+  };
+  // A write whose VALUE is a passphrase-named binding. Narrow on purpose: the
+  // word appears all over the copy, so matching the word alone would cry wolf
+  // on every label and help line.
+  const WRITES =
+    /(localStorage\.setItem|sessionStorage\.setItem|AsyncStorage\.setItem|setGenericPassword|vaultStore[A-Za-z]*|_idbSet|saveSeed)\s*\([^)]{0,120}\b(passphrase|entryPass|filePass)\b/;
+  const persisted = [];
+  for (const file of walk('src')) {
+    if (WRITES.test(strip(readFileSync(file, 'utf8')))) persisted.push(file.replace('src/', ''));
+  }
+  ok('nothing writes a passphrase to storage',
+    persisted.length === 0,
+    persisted.join(', '));
+
+  // AND THE LEGACY SERVER PATHS ARE UNREACHABLE. `recoverWalletKeys` posts an
+  // encrypted mnemonic AND the passphrase so the server can derive — which is
+  // how it worked before both clients derived on-device. The functions are
+  // still in both api modules for older callers; what must stay true is that
+  // nothing in either client calls them, or the passphrase goes over the wire
+  // to be used and discarded by somebody else's process.
+  const callers = [];
+  for (const file of walk('src')) {
+    if (/api\/index\.js$|services\/api\.ts$/.test(file)) continue;
+    const body = strip(readFileSync(file, 'utf8'));
+    if (/recoverWalletKeys\s*\(/.test(body)) callers.push(file.replace('src/', ''));
+  }
+  ok('no client calls the server-side key derivation',
+    callers.length === 0,
+    callers.join(', ') + ' — derive on the device and the passphrase stays on it');
+
+  // The create payload is the other one. The web derives in the browser and
+  // sends only the ADDRESS; a payload carrying the passphrase would have the
+  // server deriving (and logging, and erroring with) the secret instead.
+  const create = strip(read('src/views/WalletsView.vue'));
+  ok('the web creates a wallet from an address, not a secret',
+    /const payload = \{ title: [^}]*sp_address: keys\.spAddress \}/.test(create) &&
+    !/payload[\s\S]{0,200}passphrase/.test(create),
+    'the server must not be handed anything it could derive keys from');
+}
+
 // ── the word, in both clients ───────────────────────────────────────────────
 // It is "seed phrase" everywhere a user can read it (2026-11-08: "yes, rename
 // recovery phrase to seed phrase everywhere"). The sweep that did it matched
@@ -316,6 +397,6 @@ console.log('the clients say seed phrase, not recovery phrase');
 console.log(
   failed
     ? `\n${failed} check(s) failed`
-    : '\nall checks passed — the words are kept where the keys are, and shown only to the account',
+    : '\nall checks passed — the words are kept where the keys are, the passphrase nowhere',
 );
 process.exit(failed ? 1 : 0);

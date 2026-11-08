@@ -268,8 +268,7 @@ onMounted(() => {
       <div class="card-header"><h2>Invite a friend</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
         <p class="text-dim text-sm" style="margin:0">
-          We email them a sign-up link. Their address is used for the invite and
-          not stored.
+          Send email invite to a friend to join WhiSPa.
         </p>
         <div class="flex gap-2" style="flex-wrap:wrap">
           <input

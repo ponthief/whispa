@@ -62,7 +62,7 @@ export default function AccountPage({ onBack }: { onBack: () => void }) {
 
       <Group
         title="Invite a friend"
-        footer="We email them a sign-up link. Their address is used for the invite and not stored.">
+        footer="Send email invite to a friend to join WhiSPa.">
         <Block first>
           <Field
             value={inviteEmail}

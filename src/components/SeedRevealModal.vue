@@ -1,10 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { login as apiLogin } from '@/api'
 import { deriveSilentPayment, isValidMnemonic } from '@/services/spKeys'
 
-// Show a wallet's seed phrase again, behind the account password.
+// Show a wallet's seed phrase again, behind that wallet's own passphrase.
 //
 // Added 2026-11-08, on the user's instruction: *"if the seed phrase is not on
 // the phone, then it should be in web app? there is no reveal seed phrase in
@@ -23,12 +22,10 @@ import { deriveSilentPayment, isValidMnemonic } from '@/services/spKeys'
 // paper the user wrote at creation, and the single useful thing this screen
 // can do is take it. See `saveEntry` below.
 //
-// THE PASSWORD IS CHECKED AGAINST THE SERVER, because that is the only thing
-// that can check it: the vault's wrapping key comes from the API keys, not
-// from the password, so a local comparison would be comparing nothing. One
-// POST to the auth endpoint, and the token it answers with is DISCARDED — the
-// session in hand is not touched, so a wrong password here cannot sign anybody
-// out and a right one cannot extend a session that was about to idle out.
+// THE GATE IS THE WALLET PASSPHRASE (2026-11-09, on the user's instruction).
+// It was the account password for a day, verified by a POST to the auth
+// endpoint, because at the time nothing local could check anything. With the
+// phrase in the vault something local can: see `reveal` below.
 //
 // What this gate is and is not: it stops somebody who has the laptop open,
 // which is the case worth covering. It is not a second encryption layer —
@@ -87,38 +84,48 @@ function close() {
   emit('close')
 }
 
+// THE GATE IS THE WALLET PASSPHRASE, and it is checked HERE, against this
+// wallet (2026-11-09, on the user's instruction: *"to reveal seed phrase user
+// should enter passphrase, not account password"*).
+//
+// It replaces a POST to the auth endpoint, and it is better in three ways that
+// matter. It asks for the secret that belongs to the thing being revealed
+// rather than to the account around it; it needs no network, so the words are
+// still reachable when the server is not; and it is a REAL check rather than a
+// comparison — the phrase and the typed passphrase derive an SP address, and
+// only this wallet's own address means both are right.
+//
+// WHAT IT IS NOT: encryption. The passphrase is not stored and is not the
+// vault's key (that comes from the API keys), so this stops a person at the
+// keyboard, not code running in the page — which could read the vault without
+// asking anybody anything. Nothing client-side can change that; see the note
+// at the top of keyvault.js.
 async function reveal() {
   if (!props.wallet?.id) return
   if (!password.value) {
-    error.value = 'Enter your account password.'
+    error.value = 'Enter your wallet passphrase.'
     return
   }
   error.value = ''
   busy.value = true
-  try {
-    // Verified by the server, and the answer thrown away: see the note above.
-    await apiLogin(auth.username, password.value)
-  } catch (e) {
-    busy.value = false
-    // One message for a wrong password and for an unreachable server would be
-    // the easy thing to write and the wrong one: "incorrect password" sent to
-    // somebody whose network is down has them changing a password that was
-    // never wrong.
-    error.value = /network|fetch|failed to/i.test(e?.message || '')
-      ? 'Could not reach the server. Try again.'
-      : 'That password is not right.'
-    return
-  }
   try {
     const got = await auth.readSeed(props.wallet.id)
     if (!got) {
       error.value = 'This browser does not hold the seed phrase for this wallet.'
       return
     }
+    const keys = deriveSilentPayment(got, password.value, props.wallet.network)
+    if (keys.spAddress.toLowerCase() !== (props.wallet.sp_address || '').toLowerCase()) {
+      error.value = 'That passphrase is not right.'
+      return
+    }
     phrase.value = got
-    // The password has done its job. Holding it while twelve words are on
-    // screen is holding two secrets to show one.
+    // The passphrase has done its job. Holding it while twelve words are on
+    // screen is holding two secrets to show one — and it is the one secret
+    // this app never keeps.
     password.value = ''
+  } catch (e) {
+    error.value = e?.message || 'Could not check that passphrase.'
   } finally {
     busy.value = false
   }
@@ -196,10 +203,11 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
         <button class="btn btn-ghost btn-sm btn-icon" @click="close">✕</button>
       </div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-        <p v-if="stored" class="text-dim text-sm" style="margin:0">
-          The twelve words for <strong>{{ wallet.title }}</strong>. They stay in
-          this browser — showing them sends nothing anywhere.
-        </p>
+        <!-- NO INTRO LINE. The field is labelled Wallet passphrase under a
+             heading that says Seed phrase; a paragraph in front of that says
+             nothing the two words do not (2026-11-09: *"drop the stupid text
+             in the seed phrase screen — just enter wallet passphrase is
+             enough"*). -->
 
         <!-- NOTHING TO SHOW, and saying so is the point of opening at all.
              This used to be prevented by hiding the menu item, which answered
@@ -210,8 +218,7 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
              that is the sentence somebody is looking for. -->
         <template v-if="!stored">
           <p class="text-dim text-sm" style="margin:0">
-            Not stored in this browser yet. Type the words to keep them here —
-            they are checked against this wallet and sent nowhere.
+            Not stored here yet. Enter it to keep it on this device.
           </p>
 
           <div class="field">
@@ -244,9 +251,9 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
         <!-- BEFORE: the password. AFTER: the words. Never both on screen. -->
         <template v-else-if="!phrase">
           <div class="field">
-            <label>Account password</label>
+            <label>Wallet passphrase</label>
             <input class="input" type="password" v-model="password"
-                   autocomplete="current-password"
+                   autocomplete="off"
                    @keyup.enter="reveal" />
           </div>
 
@@ -281,13 +288,14 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
             </li>
           </ol>
 
-          <!-- The gap that loses funds silently, and the browser's position is
-               worse than the phone's: the passphrase is not stored anywhere at
-               all here, so these words alone do not open a wallet that has
-               one. -->
+          <!-- STAYS, and it is the only line here that is not restating a
+               label. The passphrase is stored nowhere — which is why one was
+               just typed — so these words on their own do not open this
+               wallet, and somebody who writes down twelve words believing
+               they have a backup finds out at recovery. -->
           <p class="text-dim text-xs" style="margin:0">
-            If you set a passphrase, it is NOT shown here and is stored nowhere.
-            These words alone will not recover your wallet without it.
+            These words alone will not recover your wallet — you also need the
+            passphrase, which is stored nowhere.
           </p>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -299,10 +307,6 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
             </button>
             <button class="btn btn-primary btn-sm" @click="close">Done</button>
           </div>
-          <p class="text-dim text-xs" style="margin:0">
-            The clipboard is readable by anything else running on this machine.
-            Clear it when you are done, or write the words down instead.
-          </p>
 
           <p v-if="error" class="text-sm" style="margin:0;color:var(--red)">{{ error }}</p>
         </template>

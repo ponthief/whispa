@@ -92,7 +92,7 @@ npm run check:colors        # the two colours written in both theme.ts and color
 npm run check:terms         # one terms version, in two repos, behind one tick box
 npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
-npm run check:stealth       # one launcher icon always enabled, and the UI says what it hides
+npm run check:stealth       # one launcher icon always enabled, and a disguise says it stops alerts
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
@@ -390,11 +390,33 @@ The enabled state is what the launcher obeys and it outlives this app's data,
 so a cached copy can disagree with what is actually on the home screen — and
 the screen offering to change it has to show what is true.
 
-**What it does not hide, which the Settings copy states rather than letting
-anyone infer otherwise**: the app name in Settings → Apps and in the storage
+**What it does not hide**: the app name in Settings → Apps and in the storage
 and battery lists; the recent-apps card; and the header of every push
 notification. All of those read the *application* label, which an alias cannot
-touch. **So turning a disguise on turns alerts off** — a payment arriving under
+touch.
+
+The Settings copy **used to say all of that** and no longer does (2026-11-08,
+on the user's instruction: *"under home screen drop the complete text, just
+say: Show app icon as one of the above"*). It was a help line restating the
+chips and a four-sentence note listing the three places the name survives,
+sitting in front of a control whose three labelled chips are the whole
+decision. The section is one line now.
+
+Know the trade, because the paragraph was not written for nothing: somebody
+can now turn on a disguise believing it is more complete than it is. What
+makes that survivable is that the thing most worth knowing is not an
+explanation at all and **stays** — see the next paragraph. `check:stealth` no
+longer requires those sentences; it requires the help line to stay SHORT,
+because the failure to guard against now is it growing back one true clause at
+a time.
+
+**And it caught itself out on the way**: both copy rules went on passing after
+the copy was deleted, because the comment explaining the deletion quoted the
+sentences they matched. `SecurityPage.tsx` is comment-stripped before any
+assertion now — the trap this check already documents for `DONT_KILL_APP`,
+walked into a second time from the other direction.
+
+**So turning a disguise on turns alerts off** — a payment arriving under
 a calculator icon would otherwise still say WhiSPa on the lock screen, which is
 the one place it matters most. That is gated on `isDisguised()` rather than on
 one alias name, so a third decoy added later cannot ship with alerts on.
@@ -472,6 +494,37 @@ one for a file that could never carry one makes every later restore try again
 and report a missing phrase that was never missing from the file's point of
 view — which is how *"it says the recovery phrase is not there"* reached
 somebody who had only ever used the web app.
+
+**And Security calls it the SEED PHRASE, and says only what is true of this
+device** (2026-11-08, reported against a wallet whose keys had just been
+restored from a web file: *"shows that recovery phrase cannot be shown in
+Security. That is not right. Do not call it recovery — that is seed phrase and
+we have just restored it? No. If store just spend/scan keys and not seed
+phrase, just say that seed phrase was not entered on the phone"*).
+
+Two separate things wrong, and the second is the one that matters. The message
+read *"Not on this phone. It is shown once when a wallet is created, and is not
+kept here afterwards"* — which is a **story about where the words went**, and
+it is false for this wallet. A web backup carries derived keys and never a
+phrase, because `keyvault.js` has never held one; the restore did exactly what
+it should and there were no words anywhere in it. Telling somebody their phrase
+"is not kept here" sends them hunting for a copy that was never made, which is
+the belief that loses coins pointed the other way round.
+
+What the screen can actually see is one fact, true on every path into this
+state: the phrase was never typed in on this device, and the keys that scan and
+spend are. So it says that and stops — *"Not entered on this phone, so there is
+nothing to show. This wallet's scan and spend keys are stored here, so it still
+scans and sends."* `SeedRevealModal` says the same where it used to tell the
+same story.
+
+The rename is **scoped to that screen and the reveal**: the group, the row, the
+biometric prompt and the modal heading. Everywhere else — wallet creation, the
+send and scan screens, the delete confirmations, and the terms page, whose
+wording `check:terms` pins in two repos — still says *recovery phrase*. One
+surface renamed is a smaller inconsistency than a sweep nobody asked for, but
+it is an inconsistency; if the word should change everywhere, that is one
+deliberate pass, not a drip.
 
 `services/walletBackup.ts` is both halves, with every dependency injected —
 keystore, derivation and api — so it typechecks under both tsconfigs and a

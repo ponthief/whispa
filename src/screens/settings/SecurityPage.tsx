@@ -293,23 +293,21 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
               onSelect={onPickAlias}
             />
           </Block>
+          {/* ONE LINE (2026-11-08, on the user's instruction: "under home
+              screen drop the complete text, just say: Show app icon as one of
+              the above"). It was a Help line that restated the chips and a
+              four-sentence note on what a disguise does NOT hide — the app
+              name under Settings → Apps, the storage and battery lists, and
+              that a tap still opens the wallet. Every clause true, and all of
+              it in front of a control whose three labelled chips are already
+              the whole decision.
+
+              What is NOT dropped is the alerts note below, because that is not
+              an explanation: turning a disguise on turns notifications off,
+              and a feature that silently stops payment alerts has to say so
+              where it is switched on. */}
           <Block>
-            <Help>
-              {isDisguised(alias)
-                ? `Your home screen shows "${STEALTH_ALIASES.find((a) => a.key === alias)?.label}". Tapping it opens WhiSPa as usual.`
-                : 'Show a different icon and name on your home screen. Tapping it still opens WhiSPa.'}
-            </Help>
-          </Block>
-          {/* Said here rather than discovered later. A disguise that leaves
-              the name in four other places is still worth having; one the
-              user believes is complete is not. */}
-          <Block>
-            <Note kind="info">
-              This hides the icon and name on your home screen only. Your phone
-              still lists WhiSPa under Settings → Apps, and in its storage and
-              battery screens. Anyone who opens the icon gets the wallet, so
-              keep a PIN or biometric lock on as well.
-            </Note>
+            <Help>Show the app icon as one of the above.</Help>
           </Block>
           {isDisguised(alias) ? (
             <Block>
@@ -332,7 +330,7 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           <SwitchRow
             first
             title="Duress PIN"
-            help="A second PIN that, entered at the lock screen, wipes this phone's wallet keys, turns off server-side scanning, and signs you out. Nothing can be spent from here afterwards; your coins stay safe on-chain and come back from your recovery phrase. Use it if you are ever forced to unlock."
+            help="A second PIN that, entered at the lock screen, wipes this phone's wallet keys, turns off server-side scanning, and signs you out. Nothing can be spent from here afterwards; your coins stay safe on-chain and come back from your seed phrase. Use it if you are ever forced to unlock."
             value={hasDuress}
             onValueChange={onToggleDuress}
           />
@@ -342,13 +340,28 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
       {/* Only offered when the phrase is actually on this phone. A dead button
           for older wallets would suggest a second copy exists somewhere, which
           is the belief that loses coins. */}
+      {/* AND IT SAYS WHAT IS TRUE OF THIS DEVICE, nothing more (2026-11-08,
+          reported against a wallet restored from a web backup file: "shows
+          that recovery phrase cannot be shown in Security. That is not right…
+          if store just spend/scan keys and not seed phrase, just say that
+          seed phrase was not entered on the phone").
+
+          The old line explained WHERE the words went — shown once at creation,
+          not kept afterwards — and that story is simply false for this wallet.
+          A web backup carries the derived keys and never a phrase, because
+          keyvault.js has never held one; the restore worked exactly as it
+          should and there were no words anywhere in it. Telling somebody their
+          phrase "is not kept here" invites them to go looking for a copy that
+          was never made. What is true on every path is the one fact this
+          screen can actually see: the phrase was never typed in on this
+          device, and the keys that spend are. */}
       {wallet && !seedStored ? (
-        <Group title="Recovery phrase">
+        <Group title="Seed phrase">
           <Block first>
             <Note kind="info">
-              Not on this phone. It is shown once when a wallet is created, and
-              is not kept here afterwards — so there is nothing to reveal. If
-              you still have the words, they restore this wallet anywhere.
+              Not entered on this phone, so there is nothing to show. This
+              wallet's scan and spend keys are stored here, so it still scans
+              and sends.
             </Note>
           </Block>
         </Group>
@@ -360,10 +373,10 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           twelve words deciding whether that is their whole backup —
           SeedRevealModal says it there, beside the words. */}
       {seedStored && wallet ? (
-        <Group title="Recovery phrase">
+        <Group title="Seed phrase">
           <NavRow
             first
-            title="Show recovery phrase"
+            title="Show seed phrase"
             help="The twelve words that can restore this wallet anywhere."
             onPress={() => setSeedOpen(true)}
           />

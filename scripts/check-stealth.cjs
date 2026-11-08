@@ -46,7 +46,12 @@ const MODULE = stripKt(
   read('android/app/src/main/java/com/thrilla_btc/thrilla/stealth/StealthModule.kt'),
 );
 const SERVICE = read('src/services/stealth.ts');
-const PAGE = read('src/screens/settings/SecurityPage.tsx');
+// AND THE PAGE IS STRIPPED TOO, for the reason stated above about the Kotlin
+// and found here on 2026-11-08: the two copy rules below went on passing after
+// the user had the copy removed, because the comment explaining the removal
+// quoted the very sentences they asserted. A check that reads prose reports on
+// prose, and a comment is prose.
+const PAGE = stripKt(read('src/screens/settings/SecurityPage.tsx'));
 const APP = read('android/app/src/main/java/com/thrilla_btc/thrilla/MainApplication.kt');
 
 // ── the manifest ────────────────────────────────────────────────────────────
@@ -260,19 +265,31 @@ console.log('the manifest, the module and the service name the same aliases');
 }
 
 // ── the honesty rules ───────────────────────────────────────────────────────
-// A privacy feature that oversells itself is worse than none. Two things the
-// disguise cannot do, both of which the UI has to say rather than let the user
-// infer: the app name survives elsewhere, and a notification would print it.
-console.log('the UI says what the disguise does not hide');
+// A privacy feature that oversells itself is worse than none, and this section
+// used to hold two copy rules for that: the screen had to name Settings → Apps
+// as still showing the app, and had to say a tap still opens the wallet.
+//
+// BOTH WENT ON 2026-11-08, on the user's instruction ("under home screen drop
+// the complete text, just say: Show app icon as one of the above"). The two
+// sentences were true and sat in front of three labelled chips that are the
+// whole decision. What replaces them as a rule is that the help line stays
+// SHORT — the failure to guard against now is it growing back, not it being
+// absent — and that the one disclosure which is not an explanation stays:
+// turning a disguise on turns alerts off, which is a feature silently
+// stopping payment notifications and has to be said where it is switched on.
+console.log('the home-screen copy is one line, and alerts are still declared');
 {
   ok('SecurityPage is readable', !!PAGE);
   if (PAGE) {
-    ok('it names Settings → Apps as still showing the app',
-      /Settings\s*→\s*Apps/.test(PAGE),
-      'the application label is not something an alias can change');
-    ok('it says a tap still opens the wallet',
-      /opens WhiSPa/.test(PAGE),
-      'the disguise is against a glance, not against a search');
+    const help = (PAGE.match(/<Help>([^<]*)<\/Help>/g) || [])
+      .map((h) => h.replace(/<\/?Help>/g, '').replace(/\s+/g, ' ').trim());
+    ok('the home-screen help is the one short line',
+      help.includes('Show the app icon as one of the above.'),
+      'the chips are the control; a paragraph under them is not');
+    ok('and no paragraph grew back beside it',
+      !/This hides the icon and name/.test(PAGE) &&
+      !/storage and battery/.test(PAGE),
+      'each sentence that made it long was true and went in one at a time');
     // THE LOAD-BEARING ONE. A notification header carries the application
     // label, so alerts under a disguise announce the app by name on the lock
     // screen — the one place it most matters.
@@ -293,6 +310,6 @@ console.log('the UI says what the disguise does not hide');
 console.log(
   failures
     ? `\n${failures} check(s) failed`
-    : '\nall checks passed — one icon always enabled, and the UI says what it hides',
+    : '\nall checks passed — one icon always enabled, and a disguise says it stops alerts',
 );
 process.exit(failures ? 1 : 0);

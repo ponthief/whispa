@@ -27,7 +27,7 @@ interface Props {
   onForgotten?: () => void;
 }
 
-// Shows the recovery phrase again, behind the app lock.
+// Shows the seed phrase again, behind the app lock.
 //
 // The gate is re-asked here rather than trusted from the app being unlocked. It
 // is worth less than it looks against an attacker holding an unlocked phone —
@@ -74,8 +74,13 @@ export default function SeedRevealModal({
     if (!stored) {
       // Wallets created before the phrase was stored, and any whose owner chose
       // to forget it. Nothing to show and nothing to be done about it.
+      // SAYS WHAT IS TRUE HERE, not where the words went. A wallet restored
+      // from a web backup never had a phrase typed into this device — the
+      // file carries derived keys and the browser has never held words — so
+      // "it was shown once when the wallet was created" sends somebody
+      // hunting for a copy that was never made. See SecurityPage.
       setError(
-        "This wallet's recovery phrase isn't stored on this device. It was shown once when the wallet was created — only that copy exists.",
+        'That seed phrase was not entered on this phone, so there is nothing to show.',
       );
       return;
     }
@@ -88,7 +93,7 @@ export default function SeedRevealModal({
     setError(null);
     // Guarded for the same reason as the send gate: auto-lock "Immediately"
     // would lock the app behind this prompt and swallow the reveal.
-    const ok = await authenticateGuarded('Confirm to show your recovery phrase');
+    const ok = await authenticateGuarded('Confirm to show your seed phrase');
     setBusy(false);
     if (ok) await load();
     else setError("Couldn't verify it's you.");
@@ -146,7 +151,7 @@ export default function SeedRevealModal({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.heading}>Recovery phrase</Text>
+            <Text style={styles.heading}>Seed phrase</Text>
 
             {phrase ? (
               <>
@@ -218,7 +223,7 @@ export default function SeedRevealModal({
             ) : bioEnabled ? (
               <>
                 <Text style={styles.sub}>
-                  Confirm it's you to show your recovery phrase.
+                  Confirm it's you to show your seed phrase.
                 </Text>
                 <TouchableOpacity
                   style={[styles.primaryBtn, busy && styles.btnDisabled]}

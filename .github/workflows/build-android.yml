@@ -378,7 +378,7 @@ jobs:
           echo "task=assemble${CAP}${CAPTYPE}" >> "$GITHUB_OUTPUT"
 
       # THE WRAPPER'S DOWNLOAD IS A SINGLE POINT OF FAILURE, and it took every
-      # Android job down on 2026-11-08 — three runs in a row, each dying before
+      # Android job down on 2026-11-08 — five runs in a row, each dying before
       # it compiled anything:
       #
       #   Downloading https://services.gradle.org/distributions/gradle-8.3-all.zip
@@ -398,6 +398,15 @@ jobs:
       # Deliberately NOT a retry around the build itself — a compile that fails
       # is a compile that fails, and retrying it would turn a real failure into
       # three times the minutes and a confusing log.
+      #
+      # WHAT IT ACTUALLY WAS, established by reproducing it from a machine with
+      # nothing to do with Actions: GitHub's release CDN was serving some assets
+      # and not others. gradle-8.3-all.zip and gradle-8.3-bin.zip answered 504,
+      # while gradle-8.3-SRC.zip from the SAME release, gradle-8.5-all.zip, and
+      # an unrelated project's asset all answered 206. A 504 is a gateway
+      # timeout pulling from origin, so the shape of it is a cold asset behind
+      # a slow origin rather than an outage — and the one fetch that did
+      # succeed took 2m25s, which is the number that matters below.
       - name: Fetch the Gradle distribution
         working-directory: android
         run: |

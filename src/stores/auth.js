@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { login as apiLogin, getLnbitsWallets, getAccount } from '@/api'
 import {
   vaultStore, vaultGet, vaultDelete,
+  vaultStoreSeed, vaultGetSeed, vaultDeleteSeed, hasVaultSeed,
   refreshVaultIndex as vaultRefreshIndex,
   vaultIndexSnapshot as vaultIndexList,
   markVaultEntry as markVault,
@@ -187,6 +188,11 @@ export const useAuthStore = defineStore('auth', () => {
   // plain-address panel showing its "Set up" prompt after Recover Keys until the
   // page was reloaded: it reads sweepAccount once, on mount.
   const keysVersion = ref(0)
+  // The same signal for the seed records, so a card that has just stored or
+  // forgotten a phrase re-renders its menu. Separate from keysVersion because
+  // the two move independently: recovering keys does not always bring a
+  // phrase, and forgetting a phrase must not read as the keys going away.
+  const seedsVersion = ref(0)
 
   function _keyMaterial() {
     return (adminkey.value || '') + '|' + (inkey.value || '') + '|thrilla_v1'
@@ -304,6 +310,63 @@ export const useAuthStore = defineStore('auth', () => {
     keysVersion.value += 1
   }
 
+  // ── The seed phrase ─────────────────────────────────────────────────────
+  //
+  // The browser can show a wallet's words again (2026-11-08, asked for after
+  // the phone's Security screen started saying a phrase "was not entered on
+  // this phone": *"if the seed phrase is not on the phone, then it should be
+  // in web app? there is no reveal seed phrase in web app"*).
+  //
+  // It was in neither, and that is the thing to know before reading the rest:
+  // the browser derived the keys from a phrase at wallet creation, showed the
+  // words once, and kept only the keys. Nothing was lost — there was never a
+  // copy. From now on there is one, so a wallet CREATED, IMPORTED, RECOVERED
+  // or RESTORED from here can show its phrase; a wallet made before today
+  // cannot, and the screen says exactly that rather than implying the words
+  // went missing.
+  //
+  // Stored beside the keys, in the vault's own `seed:` namespace — see
+  // keyvault.js for why it is a separate record and not a field in the keys
+  // blob. The native bridge has no slot for it and the phone keeps its own in
+  // the platform keystore, so these are a no-op there rather than a silent
+  // half-write.
+  async function saveSeed(walletId, phrase) {
+    if (!walletId || !phrase) return false
+    if (typeof window.ThrillaBridge !== 'undefined') return false
+    try {
+      await vaultStoreSeed(walletId, phrase, _keyMaterial())
+      // Verified by reading it back, for the reason storeWalletKeys gives: a
+      // write nobody checked is how a wallet ends up offering a reveal that
+      // produces nothing.
+      const check = await vaultGetSeed(walletId, _keyMaterial())
+      if (check !== phrase) return false
+      seedsVersion.value += 1
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function readSeed(walletId) {
+    if (typeof window.ThrillaBridge !== 'undefined') return null
+    try { return await vaultGetSeed(walletId, _keyMaterial()) } catch { return null }
+  }
+
+  // Synchronous, and deliberately so: the wallet card asks this on every
+  // render to decide whether to offer the reveal at all, and answering it by
+  // decrypting would mean decrypting a secret to lay out a menu.
+  function hasSeed(walletId) {
+    if (typeof window.ThrillaBridge !== 'undefined') return false
+    void seedsVersion.value          // re-read after a save or a forget
+    return hasVaultSeed(walletId)
+  }
+
+  async function forgetSeed(walletId) {
+    if (typeof window.ThrillaBridge !== 'undefined') return
+    await vaultDeleteSeed(walletId)
+    seedsVersion.value += 1
+  }
+
   // Best-effort purge of pre-vault key material. The old scheme AES-encrypted
   // keys into localStorage with CryptoJS; that path — and the crypto-js
   // dependency — has been removed, so any such blobs are now undecryptable dead
@@ -326,5 +389,6 @@ export const useAuthStore = defineStore('auth', () => {
   return { token, adminkey, inkey, walletId, username, email, error, loading, lastFailureKind, isLoggedIn, hasCredentials, login, logout,
            touchActivity, isSessionExpired, logoutIfExpired, IDLE_TIMEOUT_MS,
            storeWalletKeys, getWalletKeys, getRefundAddress, removeWalletKeys,
-           hasWalletKeys, refreshKeyIndex, keysVersion }
+           hasWalletKeys, refreshKeyIndex, keysVersion,
+           saveSeed, readSeed, hasSeed, forgetSeed, seedsVersion }
 })

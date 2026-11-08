@@ -93,6 +93,7 @@ npm run check:terms         # one terms version, in two repos, behind one tick b
 npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
 npm run check:stealth       # one launcher icon always enabled, and a disguise says it stops alerts
+npm run check:seed          # the web keeps the words beside the keys, and shows them only to the account
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
@@ -517,6 +518,60 @@ spend are. So it says that and stops — *"Not entered on this phone, so there i
 nothing to show. This wallet's scan and spend keys are stored here, so it still
 scans and sends."* `SeedRevealModal` says the same where it used to tell the
 same story.
+
+**The web can show the words now, and until 2026-11-08 it could not** — asked
+for straight after the Security message above: *"if the seed phrase is not on
+the phone, then it should be in web app? there is no reveal seed phrase in web
+app — add it under the wallet settings — to reveal it, user must enter the
+account password"*.
+
+**The premise was wrong and the request was right.** It was in neither place.
+`WalletsView` generates a phrase, derives from it, shows it once and keeps the
+KEYS; `keyvault.js` has never held words. So nothing had gone missing from
+that wallet — there was never a second copy — and the browser could not answer
+the question for any wallet, not just a restored one.
+
+It can now, for a wallet **created, imported, recovered or restored from this
+browser since that day**. One made before it has no phrase stored and never
+will: the menu offers no reveal rather than opening a dialog that ends in
+"nothing here", which is the dead control the Restore button was already
+reported for. Such a wallet still scans, still spends and still backs up — the
+keys are what do that — and the one thing it cannot do is move to another
+wallet app. **A phone backup restored here brings its phrase with it**, which
+is the one way back for an older web wallet that also exists on a phone.
+
+**The phrase is a separate vault record** (`seed:<id>` beside `wkey:<id>`), and
+the three reasons are each a bug if it moves: a phrase inside the keys blob
+would ride into `wallets[n].keys` in a backup file, where `assertNoSecrets`
+refuses key material at any path but `wallets[n].mnemonic` — the file would
+stop saving, on a path nobody was changing; `hasVaultSeed` answers the wallet
+card with no decrypt, where asking the keys blob would decrypt a spend key to
+lay out a menu; and forgetting a phrase must not take the keys with it.
+Deleting the WALLET takes both.
+
+Know what storing it adds, which is portability rather than exposure: the
+vault already holds the spend key and the BIP-84 account xprv, which together
+spend everything those words reach. Anyone who can read the vault could
+already take the coins; what they gain is a phrase that opens the wallet in
+somebody else's software. That is the same trade the phone made, and it is why
+the reveal sits behind something.
+
+**The account password is checked by the SERVER**, because nothing local can
+check it: the vault's wrapping key is derived from the API keys, not from the
+password, so a client-side comparison would be theatre of exactly the kind
+that reads like a control in review. One POST to the auth endpoint, and the
+token it answers with is **discarded** — a wrong password cannot sign anybody
+out and a right one cannot extend a session that was about to idle out. Be
+clear about what that gate is: it stops somebody who has the laptop open. It
+is not a second layer of encryption, because anything that can run in the page
+while signed in can already read the vault.
+
+`check:seed` EXERCISES the vault against an in-memory IndexedDB, because every
+failure here round-trips: a phrase written into the keys blob still reveals, a
+seed record sharing the keys' prefix still reads back, and a forget that
+deletes the wrong record still returns without an error. It also checks the
+stored bytes do not contain the words — "it round-trips" is exactly the test
+that passes with a phrase stored in the clear.
 
 **And then it is SEED PHRASE everywhere** (2026-11-08, asked for directly:
 *"yes, rename recovery phrase to seed phrase everywhere"*). It started as that

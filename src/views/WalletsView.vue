@@ -13,6 +13,7 @@ import SeedInput from '@/components/SeedInput.vue'
 import PlainAddressPanel from '@/components/PlainAddressPanel.vue'
 import BackupModal from '@/components/BackupModal.vue'
 import DustThresholdModal from '@/components/DustThresholdModal.vue'
+import SeedRevealModal from '@/components/SeedRevealModal.vue'
 
 // What each wallet's SegWit chain holds, reported by its own panel below.
 // ONE BALANCE, TWO POCKETS: "how much have I got" has a single answer, and
@@ -412,6 +413,18 @@ async function createWallet() {
     // had them).
     if (result && result.wallet_id) {
       await auth.storeWalletKeys(result.wallet_id, keys.scanSecret, keys.spendKey, keys.refundAddress, keys.sweepAccount)
+      // AND KEEP THE PHRASE, so the card can show it again (2026-11-08). The
+      // browser had it in hand at exactly this moment and threw it away, on
+      // both paths: generated here, or typed in on import. Not a new exposure
+      // — the keys going into the same vault on the line above already spend
+      // everything these words reach — and it is the only moment the words
+      // exist, because nothing asks for them again.
+      //
+      // Best-effort: a wallet is not worth failing to create over a phrase
+      // that could not be stored. `hasSeed` then reads false and the card
+      // offers no reveal, which is exactly what it does for every wallet made
+      // before this existed.
+      await auth.saveSeed(result.wallet_id, seedPhrase)
     }
 
     // Only reveal the seed on a fresh generate so the user can back it up. On
@@ -543,6 +556,18 @@ const deleteAddrTarget = ref(null)  // { wallet, addr }
 const deletingAddr     = ref(false)
 
 // Recover keys flow — for wallets whose keys aren't in local storage
+// THE SEED PHRASE, revealed behind the account password (2026-11-08, on the
+// user's instruction: "add it under the wallet settings — to reveal it, user
+// must enter the account password"). `auth.hasSeed` is what decides whether
+// the menu offers it at all; see the component for why the browser could not
+// answer this question until today.
+const showSeed        = ref(false)
+const seedTarget      = ref(null)
+function openSeed(wallet) {
+  seedTarget.value = wallet
+  showSeed.value   = true
+}
+
 const showRecover     = ref(false)
 const recoverTarget   = ref(null)
 const recoverMnemonic   = ref('')
@@ -592,6 +617,12 @@ async function submitRecoverKeys() {
       throw new Error("That phrase doesn't match this wallet's address. Check the words and passphrase.")
     }
     await auth.storeWalletKeys(recoverTarget.value.id, keys.scanSecret, keys.spendKey, keys.refundAddress, keys.sweepAccount)
+    // The phrase was just checked against this wallet's own SP address and
+    // the keys it derived are in the vault, so keeping it adds nothing an
+    // attacker with that vault does not already have — and it is what makes
+    // the reveal work for a wallet recovered on a new machine. Same call the
+    // phone's RecoverKeysModal makes, for the same reason.
+    await auth.saveSeed(recoverTarget.value.id, phrase)
     showRecover.value = false
   } catch (e) { recoverError.value = e.message }
   finally { recoverLoading.value = false }
@@ -963,6 +994,18 @@ watch(swapCompletedAt, () => {
                  back. -->
             <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup &amp; Restore</button>
             <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openDust)">🛡 Dust protection</button>
+            <!-- ONLY WHEN THIS BROWSER HOLDS THE WORDS. A wallet made here
+                 before 2026-11-08 has no phrase stored — the browser derived
+                 keys from it, showed it once and kept only the keys — so an
+                 item that opened a dialog ending in "sorry, nothing here"
+                 would be the dead control the Restore button already got
+                 reported for. The reveal is offered where there is something
+                 to reveal, and nowhere else. -->
+            <button
+              v-if="auth.hasSeed(w.id)"
+              class="wallet-menu-item" role="menuitem"
+              @click="fromMenu(openSeed, w)"
+            >🔑 Seed phrase</button>
             <div class="wallet-menu-rule"></div>
             <button class="wallet-menu-item is-danger" role="menuitem" @click="fromMenu(askDeleteWallet, w)">✕ Delete wallet</button>
           </div>
@@ -1265,6 +1308,7 @@ watch(swapCompletedAt, () => {
     <!-- QR modal -->
     <BackupModal :show="showBackup" @close="showBackup = false" />
     <DustThresholdModal :show="showDust" @close="showDust = false" />
+    <SeedRevealModal :show="showSeed" :wallet="seedTarget" @close="showSeed = false" />
 
     <QrModal :show="showQr" :address="qrAddress" :title="qrTitle" :hr-address="qrHrAddress" @close="showQr = false" />
 

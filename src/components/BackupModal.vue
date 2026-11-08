@@ -275,14 +275,21 @@ async function openPending() {
         // The store takes these POSITIONALLY; walletBackup hands an object.
         storeWalletKeys: (id, k) =>
           auth.storeWalletKeys(id, k.scanSecret, k.spendKey, k.refundAddress, k.sweepAccount),
-        // THE BROWSER DELIBERATELY NEVER STORES THE WORDS (keyvault.js holds
-        // derived keys only), so there is nothing to write and nothing to go
-        // looking for. `hasSeed` says true to mean "this client needs no
-        // seed" — without it a phone backup, which carries a phrase, would be
-        // re-adopted on every restore for ever, hunting for something this
-        // client is never going to have.
-        saveSeed: async () => true,
-        hasSeed: async () => true,
+        // THE BROWSER KEEPS THE WORDS NOW (2026-11-08), so a phone backup
+        // restored here can show its phrase afterwards — which is the whole
+        // of the reveal added to the wallet card's menu on the same day. It
+        // held derived keys only until then, and these two were stubs saying
+        // "this client needs no seed" so that a phone file, which carries a
+        // phrase, would not be re-adopted on every restore for ever hunting
+        // for something the browser was never going to have.
+        //
+        // `hasSeed` is the real question now, and it has to be: a wallet whose
+        // keys are here but whose phrase is not is exactly the wallet this
+        // file can complete. It is adopted, the keys it already had are
+        // rewritten with the same values, and the phrase lands — one wasted
+        // write against the feature working.
+        saveSeed: (id, phrase) => auth.saveSeed(id, phrase),
+        hasSeed: async (id) => auth.hasSeed(id),
         hasKeys: async (id) => !!(await auth.getWalletKeys(id)),
       }, password.value, fileWallets, live)
       if (walletReport.created.length) live = await walletRefs().catch(() => live)

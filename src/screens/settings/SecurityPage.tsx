@@ -13,7 +13,9 @@ import {
 } from '@services/stealth';
 import { useNotifyStore } from '@stores/notifyStore';
 import { hasSeed } from '@services/seedVault';
-import { useSilntWallet } from '../../hooks/useSilntWallet';
+import * as api from '@services/api';
+import { useAuthStore } from '@stores/authStore';
+import Config from 'react-native-config';
 import DevicesModal from '../../components/DevicesModal';
 import PinSetupModal from '../../components/PinSetupModal';
 import SeedRevealModal from '../../components/SeedRevealModal';
@@ -52,9 +54,21 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
   const [pinModal, setPinModal] = useState<null | 'normal' | 'duress'>(null);
   const [devicesOpen, setDevicesOpen] = useState(false);
 
-  const { wallet } = useSilntWallet();
-  const [seedStored, setSeedStored] = useState(false);
-  const [seedOpen, setSeedOpen] = useState(false);
+  // EVERY WALLET ON THIS NETWORK, not just the one `useSilntWallet` picks.
+  //
+  // Reported 2026-11-08: *"I am still unable to see the Seed phrase reveal in
+  // either web or mobile — in mobile it says: not stored on this phone, but
+  // it's restored from a file wallet!!"*
+  //
+  // `pickSilntWallet` returns the FIRST wallet matching this build's network,
+  // so with more than one the section answered about a wallet the reader was
+  // not asking about, under a heading that named none of them. The rest of the
+  // phone app is single-wallet by design; this screen is per-wallet
+  // bookkeeping, so it lists them and each row says its own state.
+  const inkey = useAuthStore((st) => st.inkey);
+  const [wallets, setWallets] = useState<api.SilntWallet[]>([]);
+  const [seedStored, setSeedStored] = useState<Record<string, boolean>>({});
+  const [seedOpen, setSeedOpen] = useState<string | null>(null);
 
   useEffect(() => {
     appLock.biometryType().then(setBiometry);
@@ -64,10 +78,31 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
     appPin.hasDuressPin().then(setHasDuress);
   }, [pinSet]);
 
+  // Re-read on every mount, because a restore that happened since lands here
+  // as a changed answer and nothing else would notice.
+  const loadSeedState = useCallback(async () => {
+    if (!inkey) return;
+    let list: api.SilntWallet[] = [];
+    try {
+      list = (await api.getSilntWallets(inkey)) || [];
+    } catch {
+      return; // leave the section out rather than claim a wallet has no words
+    }
+    const net = Config.NETWORK_LOCK;
+    const mine = net ? list.filter((w) => w.network === net) : list;
+    setWallets(mine);
+    const marks: Record<string, boolean> = {};
+    await Promise.all(
+      mine.map(async (w) => {
+        marks[w.id] = await hasSeed(w.id).catch(() => false);
+      }),
+    );
+    setSeedStored(marks);
+  }, [inkey]);
+
   useEffect(() => {
-    if (!wallet) return;
-    hasSeed(wallet.id).then(setSeedStored);
-  }, [wallet]);
+    loadSeedState();
+  }, [loadSeedState]);
 
   const onToggleLock = useCallback(
     async (val: boolean) => {
@@ -355,31 +390,42 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           was never made. What is true on every path is the one fact this
           screen can actually see: the phrase was never typed in on this
           device, and the keys that spend are. */}
-      {wallet && !seedStored ? (
+      {/* ONE ROW PER WALLET, each saying its own state, and the wallet NAMED.
+          With a single wallet that reads exactly as before; with two it stops
+          answering about one while the reader is asking about the other. */}
+      {wallets.length ? (
         <Group title="Seed phrase">
-          <Block first>
-            <Note kind="info">
-              Not entered on this phone, so there is nothing to show. This
-              wallet's scan and spend keys are stored here, so it still scans
-              and sends.
-            </Note>
-          </Block>
-        </Group>
-      ) : null}
-
-      {/* The footer here said it asks for your PIN first and that a passphrase
-          is not included. The first half the reveal demonstrates by doing it;
-          the second half belongs ON the reveal, where somebody is looking at
-          twelve words deciding whether that is their whole backup —
-          SeedRevealModal says it there, beside the words. */}
-      {seedStored && wallet ? (
-        <Group title="Seed phrase">
-          <NavRow
-            first
-            title="Show seed phrase"
-            help="The twelve words that can restore this wallet anywhere."
-            onPress={() => setSeedOpen(true)}
-          />
+          {wallets.map((w, i) =>
+            seedStored[w.id] ? (
+              <NavRow
+                key={w.id}
+                first={i === 0}
+                title={`Show seed phrase${wallets.length > 1 ? ` — ${w.title}` : ''}`}
+                help="The twelve words that can restore this wallet anywhere."
+                onPress={() => setSeedOpen(w.id)}
+              />
+            ) : (
+              <Block key={w.id} first={i === 0}>
+                <Note kind="info">
+                  {wallets.length > 1 ? `${w.title}: not` : 'Not'} entered on
+                  this phone, so there is nothing to show. This wallet's scan
+                  and spend keys are stored here, so it still scans and sends.
+                </Note>
+                {/* WHAT WOULD BRING THE WORDS, which the flat denial above
+                    left somebody to guess at — and guessing is what the report
+                    was: *"it says not stored on this phone, but it's restored
+                    from a file wallet!!"*. Both halves are true and neither is
+                    obvious: a file saved from the WEB app carries the derived
+                    keys and never the words, because the browser has never
+                    held them; a file saved from THIS app carries them. */}
+                <Help>
+                  A backup saved from this app carries the words; one saved from
+                  the web app carries keys only, because the browser has never
+                  held the words. Restoring the first kind puts them back here.
+                </Help>
+              </Block>
+            ),
+          )}
         </Group>
       ) : null}
 
@@ -407,12 +453,15 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
         <DevicesModal visible={devicesOpen} onClose={() => setDevicesOpen(false)} />
       ) : null}
 
-      {wallet ? (
+      {seedOpen ? (
         <SeedRevealModal
-          visible={seedOpen}
-          walletId={wallet.id}
-          onClose={() => setSeedOpen(false)}
-          onForgotten={() => setSeedStored(false)}
+          visible
+          walletId={seedOpen}
+          onClose={() => setSeedOpen(null)}
+          onForgotten={() => {
+            setSeedStored((prev) => ({ ...prev, [seedOpen]: false }));
+            setSeedOpen(null);
+          }}
         />
       ) : null}
 

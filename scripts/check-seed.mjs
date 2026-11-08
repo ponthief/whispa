@@ -191,8 +191,13 @@ console.log('the reveal asks the server, and tells it nothing');
     'a password left across two openings is a field nobody is prompted by');
   ok('and dropped once the words are on screen',
     /password\.value = ''/.test(M));
+  // THREE STATES NOW, and still exactly one on screen: nothing stored, the
+  // password, the words. The empty state came first on 2026-11-08 when the
+  // menu stopped gating on hasSeed.
   ok('the password and the words are never on screen together',
-    /v-if="!phrase"/.test(M) && /<template v-else>/.test(M));
+    /<template v-if="!stored">/.test(M) &&
+    /<template v-else-if="!phrase">/.test(M) &&
+    /<template v-else>/.test(M));
   ok('it says the passphrase is not in there',
     /passphrase, it is NOT shown here/i.test(M),
     'words alone do not open a wallet that has a passphrase');
@@ -202,6 +207,7 @@ console.log('the browser keeps a phrase wherever it has one');
 {
   const V = strip(read('src/views/WalletsView.vue'));
   const B = strip(read('src/components/BackupModal.vue'));
+  const M = strip(read('src/components/SeedRevealModal.vue'));
 
   ok('a wallet created or imported here keeps its phrase',
     /auth\.saveSeed\(result\.wallet_id, seedPhrase\)/.test(V),
@@ -215,12 +221,29 @@ console.log('the browser keeps a phrase wherever it has one');
     /hasSeed: async \(id\) => auth\.hasSeed\(id\)/.test(B),
     'a stub saying yes skips the wallet this file could complete');
 
-  // THE MENU ITEM IS GATED. Every wallet made before today has no phrase
-  // stored, and an item that opens a dialog ending in "nothing here" is the
-  // dead control the Restore button was reported for.
-  ok('the menu offers the reveal only where there is one',
-    /v-if="auth\.hasSeed\(w\.id\)"[\s\S]{0,200}Seed phrase/.test(V),
-    'an item that always shows is a dialog that often cannot answer');
+  // THE MENU ITEM IS NOT GATED, which is a reversal of the same day and the
+  // reason the modal has an empty state at all. Hiding it was reported as
+  // "I am still unable to see the Seed phrase reveal in either web or
+  // mobile": somebody looking for their words found no trace of the feature
+  // and could not tell whether the build had it, whether the wallet was
+  // wrong, or whether something had eaten the phrase.
+  ok('the menu offers the reveal on every wallet',
+    /class="wallet-menu-item"[\s\S]{0,160}Seed phrase/.test(V) &&
+    !/v-if="auth\.hasSeed\(w\.id\)"/.test(V),
+    'hiding it answers nobody; the dialog is what knows whether there is one');
+  ok('and the modal asks per wallet whether there is one',
+    /stored\.value = props\.wallet\?\.id \? auth\.hasSeed\(/.test(M),
+    'asked on open, for the wallet actually in front of it');
+  // IMMEDIATE, or it answers only on a CHANGE to `show` — and the modal can
+  // mount already open. Driving it caught that: the empty state never
+  // rendered and the password form showed for a wallet with no words.
+  ok('and asks even when it mounts already open',
+    /\{ immediate: true \}/.test(M),
+    'a watcher without it fires on change only, which is not every open');
+  ok('and says nothing was lost when there is not',
+    /does not hold the words for this wallet/.test(M) &&
+    /Nothing was lost/.test(M),
+    'that sentence is what somebody opened this to find');
 }
 
 // ── the word, in both clients ───────────────────────────────────────────────

@@ -558,9 +558,9 @@ const deletingAddr     = ref(false)
 // Recover keys flow — for wallets whose keys aren't in local storage
 // THE SEED PHRASE, revealed behind the account password (2026-11-08, on the
 // user's instruction: "add it under the wallet settings — to reveal it, user
-// must enter the account password"). `auth.hasSeed` is what decides whether
-// the menu offers it at all; see the component for why the browser could not
-// answer this question until today.
+// must enter the account password"). The menu offers it for every wallet; the
+// modal is what knows whether this browser holds the words, because when it
+// does not that is the answer somebody came for.
 const showSeed        = ref(false)
 const seedTarget      = ref(null)
 function openSeed(wallet) {
@@ -994,15 +994,21 @@ watch(swapCompletedAt, () => {
                  back. -->
             <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openBackup)">💾 Backup &amp; Restore</button>
             <button class="wallet-menu-item" role="menuitem" @click="fromMenu(openDust)">🛡 Dust protection</button>
-            <!-- ONLY WHEN THIS BROWSER HOLDS THE WORDS. A wallet made here
-                 before 2026-11-08 has no phrase stored — the browser derived
-                 keys from it, showed it once and kept only the keys — so an
-                 item that opened a dialog ending in "sorry, nothing here"
-                 would be the dead control the Restore button already got
-                 reported for. The reveal is offered where there is something
-                 to reveal, and nowhere else. -->
+            <!-- ALWAYS OFFERED, and that is a reversal of the same day.
+                 It was gated on `auth.hasSeed(w.id)` so that a wallet made
+                 before 2026-11-08 — no phrase stored, because the browser
+                 derived keys from it, showed it once and kept only the keys —
+                 could not open a dialog ending in "sorry, nothing here".
+                 Reported straight back: *"I am still unable to see the Seed
+                 phrase reveal in either web or mobile"*.
+                 Hiding it answers nobody. Somebody looking for their words
+                 finds no trace of the feature and cannot tell whether this
+                 build has it, whether their wallet is wrong, or whether
+                 something ate the phrase. The dead-control rule is about a
+                 control with NO EXPLANATION; this one's whole job when there
+                 is nothing stored is to explain, which is the question being
+                 asked. -->
             <button
-              v-if="auth.hasSeed(w.id)"
               class="wallet-menu-item" role="menuitem"
               @click="fromMenu(openSeed, w)"
             >🔑 Seed phrase</button>

@@ -39,6 +39,10 @@ const emit = defineEmits(['close'])
 
 const auth = useAuthStore()
 
+// Asked on every open rather than passed in: the card's menu no longer gates
+// on it, so this screen is what answers "is there anything here", and it must
+// answer for the wallet actually in front of it.
+const stored = ref(true)
 const password = ref('')
 const phrase = ref('')
 const busy = ref(false)
@@ -57,7 +61,17 @@ function reset() {
 // openings is a field nobody is prompted by — the same bug the backup modal
 // was reported for ("I was able to restore from file w/o being prompted for
 // password"), and the words are a worse thing to hand out on a stale input.
-watch(() => props.show, (v) => { if (v) reset() })
+// IMMEDIATE, because `show` can be true the moment this mounts and a watcher
+// without it fires only on a CHANGE. Driving the real modal caught it: the
+// empty state never rendered and the password form showed instead, for a
+// wallet with no words — the exact state this was added to explain. It sits
+// below everything it touches, which is the rule check:vue enforces about
+// immediate watchers and the temporal dead zone.
+watch(() => props.show, (v) => {
+  if (!v) return
+  reset()
+  stored.value = props.wallet?.id ? auth.hasSeed(props.wallet.id) : false
+}, { immediate: true })
 
 function close() {
   reset()
@@ -132,8 +146,36 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
           this browser — showing them sends nothing anywhere.
         </p>
 
+        <!-- NOTHING TO SHOW, and saying so is the point of opening at all.
+             This used to be prevented by hiding the menu item, which answered
+             nobody: *"I am still unable to see the Seed phrase reveal in
+             either web or mobile"*. A wallet made in this browser before
+             2026-11-08 never had its words kept — they were shown once at
+             creation and the KEYS were stored — so nothing went missing, and
+             that is the sentence somebody is looking for. -->
+        <template v-if="!stored">
+          <div class="alert alert-warn" style="padding:10px;border-radius:6px">
+            <p class="text-sm" style="margin:0">
+              This browser does not hold the words for this wallet.
+            </p>
+          </div>
+          <p class="text-dim text-sm" style="margin:0">
+            Nothing was lost. A wallet created here before the words were kept
+            was shown them once, at creation, and this browser stored only the
+            keys that scan and spend — which is why it still works.
+          </p>
+          <p class="text-dim text-sm" style="margin:0">
+            Restoring a backup saved from the <strong>phone app</strong> brings
+            the words with it. A backup saved from this browser carries keys
+            only, so restoring one will not.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" @click="close">Close</button>
+          </div>
+        </template>
+
         <!-- BEFORE: the password. AFTER: the words. Never both on screen. -->
-        <template v-if="!phrase">
+        <template v-else-if="!phrase">
           <div class="field">
             <label>Account password</label>
             <input class="input" type="password" v-model="password"

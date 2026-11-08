@@ -525,6 +525,23 @@ nothing to show. This wallet's scan and spend keys are stored here, so it still
 scans and sends."* `SeedRevealModal` says the same where it used to tell the
 same story.
 
+**And then it says what would BRING the words**, because the flat denial left
+the next question unanswered: *"in mobile it says: not stored on this phone,
+but it's restored from a file wallet!!"*. Both halves are true at once and
+neither is obvious — a backup saved from **this app** carries the words; one
+saved from the **web app** carries keys only, because the browser has never
+held them. Restoring the second kind is exactly what produces a wallet that
+works and cannot show a phrase, which is the state that report is written
+from.
+
+**The section lists EVERY wallet on this network**, each row naming its own
+state, rather than the one `pickSilntWallet` happens to return. The rest of
+the phone app is single-wallet by design, so with one wallet this reads
+exactly as before; with two it stopped answering about one while the reader
+was asking about the other, under a heading that named neither. The wallet's
+title appears on the row only when there is more than one — naming it always
+would be noise on the common case.
+
 **The web can show the words now, and until 2026-11-08 it could not** — asked
 for straight after the Security message above: *"if the seed phrase is not on
 the phone, then it should be in web app? there is no reveal seed phrase in web
@@ -539,12 +556,33 @@ the question for any wallet, not just a restored one.
 
 It can now, for a wallet **created, imported, recovered or restored from this
 browser since that day**. One made before it has no phrase stored and never
-will: the menu offers no reveal rather than opening a dialog that ends in
-"nothing here", which is the dead control the Restore button was already
-reported for. Such a wallet still scans, still spends and still backs up — the
-keys are what do that — and the one thing it cannot do is move to another
-wallet app. **A phone backup restored here brings its phrase with it**, which
-is the one way back for an older web wallet that also exists on a phone.
+will. Such a wallet still scans, still spends and still backs up — the keys
+are what do that — and the one thing it cannot do is move to another wallet
+app. **A phone backup restored here brings its phrase with it**, which is the
+one way back for an older web wallet that also exists on a phone.
+
+**The menu item is NOT gated on there being one**, and that is a reversal of
+the same day. It was hidden unless `hasSeed` — on the reasoning that an item
+opening a dialog which ends in "nothing here" is the dead control the Restore
+button was reported for. Reported straight back: *"I am still unable to see
+the Seed phrase reveal in either web or mobile"*.
+
+Hiding it answers nobody. Somebody hunting for their words finds no trace of
+the feature and cannot tell which of three things is true — this build does
+not have it, this wallet is the wrong one, or something ate the phrase. The
+dead-control rule is about a control with **no explanation**; when there is
+nothing stored, explaining is this one's whole job and the question being
+asked. The empty state says the browser does not hold the words for this
+wallet, that **nothing was lost** (they were shown once at creation and only
+the keys were kept, which is why it still works), and that restoring a
+**phone** backup brings them while a web one carries keys only.
+
+That state is decided **on open, per wallet**, by an `immediate` watcher — and
+the immediate matters: the modal can mount already open, and a watcher without
+it fires only on a CHANGE, so the empty state never rendered and the password
+form showed instead for a wallet with no words. Driving the real modal in
+Chromium is what caught it; `check:vue`, `tsc` and every behavioural control
+were green over it.
 
 **The phrase is a separate vault record** (`seed:<id>` beside `wkey:<id>`), and
 the three reasons are each a bug if it moves: a phrase inside the keys blob

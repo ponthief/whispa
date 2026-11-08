@@ -293,12 +293,12 @@ console.log('\nthe copy says what to do, not why');
   }
 
   // BIP-84, not 85. These hang off m/84'/coin'/0' from the wallet's own seed,
-  // so any wallet taking a recovery phrase reaches them. BIP-85 derives child
+  // so any wallet taking a seed phrase reaches them. BIP-85 derives child
   // SEEDS from a master one — a different thing, and somebody hunting for a
   // BIP-85 option would not find these coins.
   const text = strip(CARD);
-  ok('the card names the recovery phrase for restoring elsewhere',
-     /recovery phrase to restore these coins/.test(text), text);
+  ok('the card names the seed phrase for restoring elsewhere',
+     /seed phrase to restore these coins/.test(text), text);
   ok('and names BIP-84', /BIP-84 path/.test(text), text);
   ok('never BIP-85', !/BIP-?85/.test(text), text);
   const PATHS = fs.readFileSync(

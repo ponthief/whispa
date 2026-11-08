@@ -95,7 +95,7 @@ export const useAppLockStore = create<AppLockState>((set) => ({
  * Android emits when something covers the activity — including the OS's own
  * biometric prompt. `unlocking` is what tells App.tsx to sit that one out, and
  * until now only the lock screen set it: a prompt raised to confirm a send or
- * to reveal the recovery phrase locked the app behind itself, so authenticating
+ * to reveal the seed phrase locked the app behind itself, so authenticating
  * dropped the user on the lock screen instead of where they were going.
  *
  * Every re-authentication gate goes through here so none can forget again.

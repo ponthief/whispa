@@ -62,7 +62,7 @@
       <section>
         <h2>3. Your keys, and the one thing that cannot be undone</h2>
         <p>
-          Your wallet is derived from a recovery phrase generated on your
+          Your wallet is derived from a seed phrase generated on your
           device. It is never transmitted to the server, and the server has no
           mechanism to request it. Transactions are built and signed on the
           device too. The practical consequence runs in both directions:
@@ -96,7 +96,7 @@
         </p>
         <p>
           Losing access to your account, or having it closed, does not cost you
-          your coins: your recovery phrase restores the wallet in any wallet
+          your coins: your seed phrase restores the wallet in any wallet
           that supports Silent Payments and BIP-84, here or elsewhere. Equally,
           keeping your account does not protect coins whose phrase you have
           lost.
@@ -224,7 +224,7 @@
         </p>
         <p>
           This is survivable precisely because the wallet is self-custodial: if
-          this instance disappears tomorrow, your recovery phrase still opens
+          this instance disappears tomorrow, your seed phrase still opens
           your wallet somewhere else. That is the whole reason the design
           refuses to hold your keys.
         </p>
@@ -254,7 +254,7 @@
           the server-side records tied to it will be removed. Because the
           server never had your keys, removing the account does not touch your
           coins — move them first if you want them somewhere else, and keep
-          your recovery phrase regardless.
+          your seed phrase regardless.
         </p>
         <p>
           Some records may survive in backups or logs for a period afterwards,

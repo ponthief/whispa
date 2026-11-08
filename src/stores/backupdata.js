@@ -13,7 +13,7 @@ import { remapWalletIds } from '@/services/backup'
 //   thrilla_vault        the IndexedDB key vault — the wallet's actual keys
 //   thrilla_kdf_salt_v1  the salt those keys are wrapped with
 //
-// NO KEY MATERIAL AT ALL, including the recovery phrase (2026-11-04). The file
+// NO KEY MATERIAL AT ALL, including the seed phrase (2026-11-04). The file
 // is sealed WITH the phrase, so a copy inside would be redundant — whoever
 // opens it typed the phrase to do so — and is the one thing that would make
 // the file worth stealing by itself. The browser never had a phrase to put in
@@ -73,7 +73,7 @@ export const SERVER_SECTIONS = ['coinLabels', 'addressLabels']
 //
 // An entry ending in `_` is a PREFIX, since those keys are per-wallet.
 export const BACKUP_EXCLUDED = {
-  thrilla_vault: 'the key vault — restoring a wallet is what the recovery phrase is for',
+  thrilla_vault: 'the key vault — restoring a wallet is what the seed phrase is for',
   thrilla_kdf_salt_v1: 'wraps the key vault',
   thrilla_wallet_keys_v1: 'LEGACY key storage (single CryptoJS blob) — key material',
   thrilla_wkey_: 'LEGACY key storage, per wallet (CryptoJS) — key material',

@@ -342,7 +342,7 @@ async function createWallet() {
         creating.value = false; return
       }
       if (!isValidMnemonic(m)) {
-        createError.value = 'Invalid recovery phrase — the checksum (last word) is incorrect.'
+        createError.value = 'Invalid seed phrase — the checksum (last word) is incorrect.'
         creating.value = false; return
       }
       // Birth height must be at/above the indexer's start — it has no tweak data
@@ -583,7 +583,7 @@ async function submitRecoverKeys() {
   recoverLoading.value = true; recoverError.value = null
   try {
     if (phrase.split(/\s+/).length !== 12 || !isValidMnemonic(phrase)) {
-      throw new Error('Invalid recovery phrase — the checksum (last word) is incorrect.')
+      throw new Error('Invalid seed phrase — the checksum (last word) is incorrect.')
     }
     // Derive entirely in the browser, then confirm it reproduces THIS wallet's
     // address before trusting it. Nothing is sent to the server.
@@ -1020,7 +1020,7 @@ watch(swapCompletedAt, () => {
               <label>12-word Mnemonic</label>
               <SeedInput v-model="createForm.mnemonic" :rows="3" placeholder="word1 word2 word3 …" />
               <span class="text-dim text-xs">
-                Type your 12-word recovery phrase, separated by spaces. Import only a Silent Payments wallet's phrase — WhiSPa derives keys at the BIP-352 path (m/352′), so a regular Bitcoin wallet phrase won't recover those coins here (it starts a new, empty SP wallet).
+                Type your 12-word seed phrase, separated by spaces. Import only a Silent Payments wallet's phrase — WhiSPa derives keys at the BIP-352 path (m/352′), so a regular Bitcoin wallet phrase won't recover those coins here (it starts a new, empty SP wallet).
               </span>
             </div>
 
@@ -1037,7 +1037,7 @@ watch(swapCompletedAt, () => {
               <span class="text-dim text-xs" v-if="createForm.mode === 'generate'">
                 BIP-39 passphrase (the “25th word”), mixed into your seed. It's required every time you restore this wallet and
                 <strong>cannot be recovered if forgotten — a lost passphrase means lost funds.</strong>
-                You'll back it up with your recovery phrase on the next screen.
+                You'll back it up with your seed phrase on the next screen.
                 Use standard keyboard characters (letters, numbers, and symbols like ! ? # $); avoid accented or non-English letters.
               </span>
               <span class="text-dim text-xs" v-else>
@@ -1095,7 +1095,7 @@ watch(swapCompletedAt, () => {
         <div class="card-body" style="text-align:center">
           <div style="font-size:28px;margin-bottom:12px">⚠</div>
           <h2 style="margin-bottom:8px">Delete "{{ deleteTarget.title }}"?</h2>
-          <p class="text-dim text-sm">This removes the wallet from this account and its keys from this device. Your coins stay safe on chain — your recovery phrase (and passphrase, if set) restores them.</p>
+          <p class="text-dim text-sm">This removes the wallet from this account and its keys from this device. Your coins stay safe on chain — your seed phrase (and passphrase, if set) restores them.</p>
 
           <!-- BIP-353 notice — shown if wallet has a BitMail address. Removal is
                mandatory (not optional): deleting the wallet always removes it. -->
@@ -1220,7 +1220,7 @@ watch(swapCompletedAt, () => {
         <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
           <p class="text-dim text-sm">
             Restore the scan and spend keys for <strong>{{ recoverTarget.title }}</strong>
-            from a backup file, or re-enter your recovery phrase. Keys are
+            from a backup file, or re-enter your seed phrase. Keys are
             stored on this device only — never sent to or stored on the server.
           </p>
 

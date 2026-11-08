@@ -55,12 +55,12 @@ export default function PlainSetupModal({
     try {
       const words = mnemonic.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (words.length !== 12) {
-        throw new Error('Recovery phrase must be exactly 12 words.');
+        throw new Error('Seed phrase must be exactly 12 words.');
       }
       const phrase = words.join(' ');
       if (!isValidMnemonic(phrase)) {
         throw new Error(
-          'Invalid recovery phrase — the checksum (last word) is incorrect.',
+          'Invalid seed phrase — the checksum (last word) is incorrect.',
         );
       }
       const derived = deriveSilentPayment(phrase, passphrase, wallet.network);
@@ -95,11 +95,11 @@ export default function PlainSetupModal({
             <Text style={styles.heading}>Set up SegWit addresses</Text>
             <Text style={styles.sub}>
               This wallet predates SegWit addresses, so its key for them needs
-              deriving once. Enter your recovery phrase and this device handles
+              deriving once. Enter your seed phrase and this device handles
               them from then on — you won't be asked again.
             </Text>
 
-            <Text style={styles.label}>Recovery phrase (12 words)</Text>
+            <Text style={styles.label}>Seed phrase (12 words)</Text>
             <SeedInput
               value={mnemonic}
               onChangeText={setMnemonic}

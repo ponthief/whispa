@@ -96,8 +96,8 @@ if (TERMS_VUE) {
       'the one in force here');
   ok('the warranty disclaimer survives',
     /as is/i.test(TERMS_VUE) && /warrant/i.test(TERMS_VUE));
-  ok('the recovery phrase is named as the only way back',
-    /recovery phrase/i.test(TERMS_VUE),
+  ok('the seed phrase is named as the only way back',
+    /seed phrase/i.test(TERMS_VUE),
     'the single unrecoverable failure in this product');
   ok('and the page says plainly that nobody here can restore it',
     /(cannot|can\s*not|no one|nobody)[^.]{0,120}(restore|recover)/i.test(TERMS_VUE) ||

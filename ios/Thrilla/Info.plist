@@ -47,7 +47,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Thrilla uses the camera only to scan payment QR codes. Nothing is recorded or sent anywhere.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Thrilla uses Face ID to unlock the app and to confirm before revealing your recovery phrase.</string>
+	<string>Thrilla uses Face ID to unlock the app and to confirm before revealing your seed phrase.</string>
 
 	<!-- Bundled fonts have to be declared by FILENAME here and added to the
 	     target's Copy Bundle Resources, or iOS ignores them and every Geist

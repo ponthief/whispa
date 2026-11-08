@@ -26,11 +26,11 @@ import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 // stolen or reinstalled. Those three take the device-only data with them —
 // labels and pinned contacts — and nothing can rebuild it. The coins are not
 // at risk in any of them: they are on the chain and come back from the
-// recovery phrase.
+// seed phrase.
 //
 // THE FILE IS SEALED WITH A PASSWORD THE USER CHOOSES and carries no key
 // material at all (2026-11-08, on the user's instruction). It asked for the
-// recovery phrase until then, which was out of proportion: a backup of labels
+// seed phrase until then, which was out of proportion: a backup of labels
 // does not justify typing the one secret that cannot be reissued, and every
 // extra screen those twelve words appear on is another place they can be seen
 // or phished. The BIP-39 passphrase is not mentioned here either — it belongs
@@ -42,7 +42,7 @@ import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 // a restore. The confirm field is what replaces that check — not politeness.
 //
 // Restore asks once and does not apply the length rule: an older file may be
-// sealed with a recovery phrase or a wallet passphrase, decryptBackup reads
+// sealed with a seed phrase or a wallet passphrase, decryptBackup reads
 // the header and treats each correctly, and refusing one for failing today's
 // policy would strand it.
 
@@ -162,7 +162,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             .map((w) =>
               `${w.title} (${w.reason === 'passphrase'
                 ? 'different passphrase'
-                : 'no recovery phrase saved here'})`)
+                : 'no seed phrase saved here'})`)
             .join(', ') + '.'
         : '';
       // null is the user backing out of the system picker, which is not a
@@ -210,7 +210,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // password that seals a new backup is not evidence about an old file.
       //
       // What to ask for comes from the FILE's own header, so a backup written
-      // between 2026-11-04 and 2026-11-08 asks for the recovery phrase by
+      // between 2026-11-04 and 2026-11-08 asks for the seed phrase by
       // name rather than failing to open and leaving the user guessing.
       setPassword('');
       say(
@@ -231,7 +231,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     if (!pending) return;
     // No length rule on this path: that is enforced on write, and refusing an
     // older file for failing today's policy would strand it. An older file may
-    // be sealed with a recovery phrase or a wallet passphrase, which
+    // be sealed with a seed phrase or a wallet passphrase, which
     // decryptBackup reads from the header and treats correctly.
     if (!password && pending.info.encrypted) {
       say(`Enter the ${pending.info.asksFor} for this file.`, true);
@@ -318,7 +318,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // This is the third report of "restore didn't work, it still says
       // wallet keys need recovery", and the first two were real bugs in what
       // the restore DID. This one is about what it SAYS: `noPhrase` — a file
-      // that carries wallet records with no recovery phrase in them — was
+      // that carries wallet records with no seed phrase in them — was
       // counted and then never mentioned, so a backup saved by the web app,
       // or by a build from before phrases were carried, or one whose wallet
       // was left out at save time because its passphrase did not match,
@@ -354,7 +354,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           // and carries no phrase for it, so there is nothing here to restore
           // one from — and the fix is on the SAVE side, on a phone that holds
           // the phrase.
-          // NOT "no recovery phrase" ANY MORE, which is what a web backup got
+          // NOT "no seed phrase" ANY MORE, which is what a web backup got
           // told until 2026-11-08: "there is no recovery phrase, just the
           // passphrase!!" — correct, and the file had keys in it the whole
           // time. A file reaching this now carries neither, so it is an old
@@ -423,17 +423,17 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
           <Help>Backs up your wallets and labels.</Help>
         </Block>
         {/* The "your coins are not in this file, they live on the Bitcoin
-            network and come back from your recovery phrase" paragraph was
+            network and come back from your seed phrase" paragraph was
             here until 2026-11-08. It went from the web on the user's
             instruction, and from here as a consequence rather than by
-            request: it is the only line left that names the recovery phrase,
+            request: it is the only line left that names the seed phrase,
             and leaving it would undo the point of no longer asking for one.
             What it was defending against — somebody reading this as a wallet
             backup — the first line already handles by saying what IS saved. */}
         {/* The red one, and it is about the PASSWORD now. The file holds
             labels and is sealed with a password that exists nowhere else, so
             that password is the single point of failure for this file — and
-            unlike the recovery phrase it protects nothing that spends. */}
+            unlike the seed phrase it protects nothing that spends. */}
         {/* THE RED ONE IS ONE LINE (2026-11-08, on the user's instruction:
             "text in red is too long: Encrypted with wallet passphrase. Store
             safely"). It ran to three sentences — what the file holds, that

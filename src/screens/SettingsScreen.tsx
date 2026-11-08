@@ -14,7 +14,7 @@ import { Group, NavRow, Page } from './settings/ui';
 
 // Settings, as a menu of six pages rather than one scroll of eight sections.
 //
-// It was one page, and the length was the problem: the recovery phrase was
+// It was one page, and the length was the problem: the seed phrase was
 // buried under "Scanning", the dust threshold came second because it happened to
 // be written second, and finding anything meant reading everything. Each page
 // here is short enough to take in without scrolling, and the menu says what is

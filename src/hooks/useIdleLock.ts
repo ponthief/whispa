@@ -60,7 +60,7 @@ export function useIdleLock(): void {
     // survives a lock (stores/seedBackup), but being thrown out mid-word is
     // still wrong, so the delay is floored while a backup is pending.
     //
-    // Floored, not suspended: a phone left on a desk with a recovery phrase on
+    // Floored, not suspended: a phone left on a desk with a seed phrase on
     // screen should still lock eventually, and the user's own choice is honoured
     // whenever it is already longer than the floor.
     const effective = () =>

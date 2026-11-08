@@ -370,7 +370,7 @@ export function Field({
  * A multi-line input on its own line.
  *
  * `Field` puts its input in a row beside a button, which is right for one
- * short value and wrong for a twelve-word recovery phrase: the words wrap into
+ * short value and wrong for a twelve-word seed phrase: the words wrap into
  * a column two or three characters wide. This is the same input styling with
  * the row and the button taken away, so the caller renders its own buttons
  * below.

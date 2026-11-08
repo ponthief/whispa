@@ -329,7 +329,7 @@ would sit on the home screen whatever the user chose.
 **The failure to design against is ZERO enabled aliases.** That is an app with
 no icon on any launcher and no way to start it — for a wallet, somebody's money
 behind a door with no handle, recoverable only by reinstalling and restoring
-the recovery phrase, which plenty of people do not have to hand. So `setAlias`
+the seed phrase, which plenty of people do not have to hand. So `setAlias`
 **enables the target before disabling the others**: between the two calls there
 are briefly two icons, which is cosmetic and self-correcting, where the other
 order leaves a window with none and a process killed inside it never reaches
@@ -441,7 +441,7 @@ use case for backup/restore is: user loses, replaces the phone, reinstalls the
 app. When he logs in to new phone, reinstalled app he can just restore from the
 backup instead of importing wallet or entering wallet recovery keys."*
 
-So a **phone** backup carries each wallet's recovery phrase, and a restore
+So a **phone** backup carries each wallet's seed phrase, and a restore
 recreates the wallets from it. Everything below about labels still holds; this
 is the thing on top of it.
 
@@ -477,7 +477,7 @@ So a web backup cannot carry a phrase, and for one build it therefore carried
 - A **phone** file carries `wallets[n].mnemonic`.
 - A **web** file carries `wallets[n].keys` — the derived keys. They make the
   wallet scan and spend on the new device. The one thing they cannot do
-  afterwards is show a recovery phrase, and the browser never had one to give.
+  afterwards is show a seed phrase, and the browser never had one to give.
 
 `spAddressFromKeys` (in `spKeys.ts`) is what makes the web half honest: the
 same bech32m encoding `deriveSilentPayment` ends with, from the other
@@ -518,13 +518,32 @@ nothing to show. This wallet's scan and spend keys are stored here, so it still
 scans and sends."* `SeedRevealModal` says the same where it used to tell the
 same story.
 
-The rename is **scoped to that screen and the reveal**: the group, the row, the
-biometric prompt and the modal heading. Everywhere else — wallet creation, the
-send and scan screens, the delete confirmations, and the terms page, whose
-wording `check:terms` pins in two repos — still says *recovery phrase*. One
-surface renamed is a smaller inconsistency than a sweep nobody asked for, but
-it is an inconsistency; if the word should change everywhere, that is one
-deliberate pass, not a drip.
+**And then it is SEED PHRASE everywhere** (2026-11-08, asked for directly:
+*"yes, rename recovery phrase to seed phrase everywhere"*). It started as that
+one screen; one surface renamed is an inconsistency, and the sweep is the
+deliberate pass that answers it. Both clients, every string: wallet creation
+and import, the send and scan screens, the delete and sign-out confirmations,
+the SegWit card, the backup screens, the terms page in both repos, the Face ID
+usage string in `Info.plist`, the F-Droid and Zapstore descriptions, and the
+checks that pin any of that wording.
+
+Three things it deliberately did NOT touch, each for its own reason:
+
+- **`keySource: 'recovery-phrase'`** in a backup header. That is a value in a
+  file somebody already holds, not a label — renaming it makes every backup
+  written between 2026-11-04 and 2026-11-08 unreadable, which is the one
+  outcome this feature may never produce. The LABEL derived from it says *seed
+  phrase*; the wire value stays.
+- **Quoted reports**, here and in the source comments. *"there is no recovery
+  phrase, just the passphrase!!"* and *"12 words recovery phrase is not what
+  you should be asking for"* are what was written; editing somebody's words to
+  match today's vocabulary makes the record useless for working out what they
+  were looking at.
+- **`CHANGELOG.md`** and the F-Droid MR reply, which are records of what
+  shipped and what was said at the time.
+
+"Recover Keys" is unrelated and unchanged — that button is about the scan and
+spend keys this device is missing, which is a different thing from the words.
 
 `services/walletBackup.ts` is both halves, with every dependency injected —
 keystore, derivation and api — so it typechecks under both tsconfigs and a
@@ -569,7 +588,7 @@ to nothing.
 *"still asks for wallet keys recovery"*. The first two were bugs in what the
 restore DID; this one was what it SAID. Two halves:
 
-- `noPhrase` — a file carrying wallet records with **no recovery phrase in
+- `noPhrase` — a file carrying wallet records with **no seed phrase in
   them** — was counted and then never mentioned, so a backup from the web app,
   or from a build before phrases were carried, or one whose wallet was left out
   at save time, restored nothing and reported `Restored.`
@@ -581,7 +600,7 @@ restore DID; this one was what it SAID. Two halves:
 
 A silent no-op is indistinguishable from a broken feature, and nothing on the
 screen let the user tell which file they were holding. It now names the case
-and where the fix is: *"…has no recovery phrase in it, so it could not be
+and where the fix is: *"…has no seed phrase in it, so it could not be
 restored… Save a new backup from this app."* A file with no `wallets` section
 at all says so too.
 
@@ -829,7 +848,7 @@ the user's instruction: *"user must enter passphrase, which encrypts the file,
 so no separate password, just the passphrase with which wallet was created"*).
 
 That is the **fourth** key this file has had — a separate password, the
-passphrase, the recovery phrase, a password again, and now the passphrase —
+passphrase, the seed phrase, a password again, and now the passphrase —
 and the churn is worth reading as one argument rather than four. Each key was
 chosen for what the file held at the time, and the file changed. While it held
 labels, a password of its own was right and the phrase was out of proportion
@@ -851,7 +870,7 @@ it does not open is left out and named. The web cannot do that and says so.
 `validateBackupPassword` still runs in the handler ahead of `encryptBackup` and
 judges length alone.
 
-**Neither screen asks for the recovery phrase**, and that still holds: the
+**Neither screen asks for the seed phrase**, and that still holds: the
 phrase is read from the keystore, never typed. Every extra place those twelve
 words are typed is another place they can be seen, logged or phished — which is
 an argument about the KEYBOARD, not about the file, and it survives the file
@@ -963,7 +982,7 @@ save, by name, which is where it means something.
 **Neither screen says where the coins live.** *"Your coins are not in this
 file… they live on the Bitcoin network"* went from the web on the user's
 instruction and from the phone as a consequence: it was the last line naming
-the recovery phrase, and leaving it would undo the point of no longer asking
+the seed phrase, and leaving it would undo the point of no longer asking
 for one.
 
 **Neither button is ever disabled for missing input**, and that is a fix
@@ -1013,7 +1032,7 @@ pressure, and an entry point that only offers to save one reads as though there
 is nowhere to put a file back.
 
 **If a restore refuses, check what sealed the file.** A backup written between
-2026-11-04 and 2026-11-08 needs the RECOVERY PHRASE in that box, not a
+2026-11-04 and 2026-11-08 needs the SEED PHRASE in that box, not a
 password; `decryptBackup` branches on the header's `keySource` and the error
 names the case rather than saying the file is broken.
 
@@ -1023,7 +1042,7 @@ and if the file is encrypted it should ask for a password"*). Pressing Restore
 opens the picker and demands nothing: until a file has been chosen there is
 nothing to ask about, and a screen that has not seen the file **cannot say
 which secret that file wants** — which is the whole of it, because a backup
-written between 2026-11-04 and 2026-11-08 wants the recovery phrase.
+written between 2026-11-04 and 2026-11-08 wants the seed phrase.
 
 `inspectBackupFile` is what makes that possible: a read of the authenticated
 header fields with no secret in hand, reporting whether the file is readable,
@@ -1293,7 +1312,7 @@ That holds only while the two files agree, and they are in different repos in
 different languages. `check:terms` pins them, and also pins what the page may
 not quietly lose in a rewrite: the **MIT licence** (the software's actual
 distribution terms, whose warranty disclaimer is the one in force), the
-**recovery phrase** named as the only way back *together with* the sentence
+**seed phrase** named as the only way back *together with* the sentence
 saying nobody here can restore it — a phrase mentioned without that consequence
 is a backup instruction, not a warning — and Signet coins called worthless.
 
@@ -1436,7 +1455,7 @@ unrelated work.
 **The signing certificate is the app's identity.** The official f-droid.org
 repo signs with ITS key, which makes the result a different app to Android:
 nobody on an existing install can update to it, and for a wallet a reinstall
-means restoring from the recovery phrase. That is why the chosen route
+means restoring from the seed phrase. That is why the chosen route
 (2026-10-24) is a **self-hosted F-Droid repo**, which keeps our key, so an
 install from GitHub, Zapstore or F-Droid all update each other. Same reasoning
 as the applicationId note in `zapstore.yaml`.

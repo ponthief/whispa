@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-// A freshly generated recovery phrase that the user has not finished writing
+// A freshly generated seed phrase that the user has not finished writing
 // down yet.
 //
 // WHY THIS EXISTS: the phrase is minted once and shown once. Nothing stores it

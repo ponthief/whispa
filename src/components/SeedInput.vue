@@ -5,7 +5,7 @@ import { BIP39_WORDS } from '@/data/bip39-english.js'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   rows:       { type: Number, default: 3 },
-  placeholder:{ type: String, default: 'twelve or twenty-four word recovery phrase' },
+  placeholder:{ type: String, default: 'twelve or twenty-four word seed phrase' },
 })
 const emit = defineEmits(['update:modelValue'])
 

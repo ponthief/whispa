@@ -80,7 +80,7 @@ const SPEND_STALE_MS = 15 * 60 * 1000
 let lastWalkAt = 0
 
 // Setup for wallets stored before the plain chain existed: their vault entry has
-// no account key, so it is derived from the recovery phrase once and saved.
+// no account key, so it is derived from the seed phrase once and saved.
 const setupOpen  = ref(false)
 const mnemonic   = ref('')
 const passphrase = ref('')
@@ -254,10 +254,10 @@ async function runSetup() {
   setupBusy.value = true
   try {
     const words = mnemonic.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (words.length !== 12) throw new Error('Recovery phrase must be exactly 12 words.')
+    if (words.length !== 12) throw new Error('Seed phrase must be exactly 12 words.')
     const phrase = words.join(' ')
     if (!isValidMnemonic(phrase)) {
-      throw new Error('Invalid recovery phrase — the checksum (last word) is incorrect.')
+      throw new Error('Invalid seed phrase — the checksum (last word) is incorrect.')
     }
     const derived = deriveSilentPayment(phrase, passphrase.value, props.wallet.network)
     if (derived.spAddress.toLowerCase() !== (props.wallet.sp_address || '').toLowerCase()) {
@@ -314,7 +314,7 @@ async function runSetup() {
       <template v-if="!accountXprv">
         <p class="text-dim text-xs" style="margin:0 0 10px;line-height:1.6">
           This wallet predates SegWit addresses, so its key for them needs deriving
-          once. Enter your recovery phrase and this browser handles them from then
+          once. Enter your seed phrase and this browser handles them from then
           on — you won't be asked again.
         </p>
         <button v-if="!setupOpen" class="btn btn-primary btn-sm" @click="setupOpen = true">
@@ -322,7 +322,7 @@ async function runSetup() {
         </button>
         <form v-else @submit.prevent="runSetup" style="display:flex;flex-direction:column;gap:10px">
           <div class="field">
-            <label>Recovery phrase (12 words)</label>
+            <label>Seed phrase (12 words)</label>
             <SeedInput v-model="mnemonic" />
           </div>
           <div class="field">

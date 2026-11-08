@@ -1,6 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 
-// The recovery phrase, kept on this device so it can be shown again.
+// The seed phrase, kept on this device so it can be shown again.
 //
 // WHY THIS IS NOT A NEW EXPOSURE: the keystore already holds this wallet's
 // spendKey — "the spend key can move funds", per services/secureKeys — and its

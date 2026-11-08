@@ -1588,7 +1588,7 @@ export default function SendScreen() {
           ) : isSegwit && !segwitXprv ? (
             <Text style={styles.info}>
               This wallet predates SegWit addresses. Set them up from the
-              Receive tab with your recovery phrase.
+              Receive tab with your seed phrase.
             </Text>
           ) : (isSegwit ? segwitTotals.length : utxos.length) === 0 ? (
             <Text style={styles.info}>No spendable coins in this wallet yet.</Text>

@@ -20,7 +20,7 @@ import { loadTxLabels, persistTxLabels } from './txLabels';
 // cannot see a seed stored under an innocent name, which is why nothing here
 // enumerates storage.
 //
-// NO KEY MATERIAL, and since 2026-11-04 not even the recovery phrase. The file
+// NO KEY MATERIAL, and since 2026-11-04 not even the seed phrase. The file
 // is sealed WITH the phrase, so a copy inside it would be redundant — whoever
 // opens the file has already typed it — and it is the single thing that would
 // make the file worth stealing on its own. Restoring a wallet is what Import

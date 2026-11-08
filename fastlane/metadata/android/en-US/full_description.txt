@@ -3,11 +3,11 @@ WhiSPa is a self-custodial, Bitcoin-only wallet built on Silent Payments
 fresh, unrelated output on chain — so the people who pay you cannot see each
 other's payments, and nobody watching the chain can tie them together.
 
-Your keys are generated on the device from a standard recovery phrase and never
+Your keys are generated on the device from a standard seed phrase and never
 leave it. Transactions are built and signed on the phone, so no key is ever
 sent to a server. The practical consequence runs both ways: nobody operating
 the service can spend your bitcoin, and nobody can restore it for you either.
-If you lose your recovery phrase and your device, the coins are gone.
+If you lose your seed phrase and your device, the coins are gone.
 
 Features
 

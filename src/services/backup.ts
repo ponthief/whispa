@@ -12,7 +12,7 @@ import { secureRandomUnavailable } from './spKeys';
 // stolen, or the app is reinstalled. In all three the device-only data goes
 // and nothing can rebuild it — transaction labels, SegWit address labels,
 // pinned contacts. The COINS do not need this file: they are on the chain and
-// a rescan finds them again from the recovery phrase. What the chain does not
+// a rescan finds them again from the seed phrase. What the chain does not
 // hold is which payment was which.
 //
 // WHAT IS IN IT: those labels, plus a short list of the wallets they belong to
@@ -23,7 +23,7 @@ import { secureRandomUnavailable } from './spKeys';
 // references. The sp_address is the stable name, because the same seed and
 // passphrase always derive it.
 //
-// WHAT IS NOT IN IT: key material of any kind. No recovery phrase, no
+// WHAT IS NOT IN IT: key material of any kind. No seed phrase, no
 // passphrase, no xprv, no spend or scan key. `assertNoSecrets` walks the
 // payload on the way out AND on the way back in, because the failure is
 // silent: a backup carrying a phrase encrypts, writes and restores perfectly
@@ -32,7 +32,7 @@ import { secureRandomUnavailable } from './spKeys';
 // THE FILE IS ENCRYPTED WITH A PASSWORD THE USER CHOOSES (2026-11-08, on the
 // user's instruction, and the THIRD key this file has had). The first was a
 // separate password, the second the wallet's BIP-39 passphrase, the third the
-// recovery phrase. This returns to the first, knowingly, and the reason is
+// seed phrase. This returns to the first, knowingly, and the reason is
 // proportion: the file holds labels, and the previous two keys made somebody
 // type the one secret that can never be reissued in order to save their notes
 // about their own payments.
@@ -49,7 +49,7 @@ import { secureRandomUnavailable } from './spKeys';
 //     somewhere; this is a new secret that exists only for this file.
 //
 // WHAT IT BUYS, and why it is the right trade here: the backup screen no
-// longer asks for the recovery phrase at all. A screen that is not about the
+// longer asks for the seed phrase at all. A screen that is not about the
 // wallet should not be a place where those twelve words get typed, and every
 // extra place they are typed is another place they can be seen, logged or
 // phished. The file is labels — assertNoSecrets guarantees that — so the
@@ -115,7 +115,7 @@ const PHRASE_KEY_SOURCE = 'recovery-phrase';
 const PASSWORD_KEY_SOURCE = 'password';
 
 /**
- * The exact string a recovery phrase becomes before the KDF sees it.
+ * The exact string a seed phrase becomes before the KDF sees it.
  *
  * Only for reading a `recovery-phrase` file now. A PASSWORD IS NEVER PUT
  * THROUGH THIS: every character of one is significant, and lower-casing would
@@ -169,7 +169,7 @@ export function validateBackupPassword(password: string): string | null {
 // IT WAS 2^14, AND WHAT CHANGED IS WHAT THE FILE HOLDS (2026-11-08). 16 MiB
 // was chosen against a file of labels, where the honest statement of the risk
 // was that cracking it "yields somebody's notes about their own payments".
-// This file can carry a recovery phrase, so an offline attacker holding one is
+// This file can carry a seed phrase, so an offline attacker holding one is
 // guessing at coins, and the work per guess should cost more than it did.
 //
 // DOUBLED, not raised as far as it could go, and the reason is recorded in the
@@ -462,7 +462,7 @@ export type BackupFileInfo = {
   /** What the header says sealed it, verbatim. */
   keySource: string;
   /** What to ask the user for, in the words the screen should use. */
-  asksFor: 'wallet passphrase' | 'recovery phrase' | 'password';
+  asksFor: 'wallet passphrase' | 'seed phrase' | 'password';
   /** Why it cannot be read, when it cannot. */
   problem: string | null;
 };
@@ -485,7 +485,7 @@ export function inspectBackupFile(text: string): BackupFileInfo {
     // the comment on PHRASE_KEY_SOURCE for the dates.
     info.asksFor =
       info.keySource === PHRASE_KEY_SOURCE
-        ? 'recovery phrase'
+        ? 'seed phrase'
         : info.keySource === PASSWORD_KEY_SOURCE
           ? 'password'
           : 'wallet passphrase';
@@ -578,7 +578,7 @@ export async function decryptBackup(
       legacy
         ? 'That backup was written by an earlier version of WhiSPa, which did ' +
           'not seal files with a password. Enter the secret you used when you ' +
-          'saved it — for most files that is your recovery phrase — or save a ' +
+          'saved it — for most files that is your seed phrase — or save a ' +
           'fresh backup from this version.'
         : 'Wrong password, or the file has been altered.',
     );
@@ -623,7 +623,7 @@ export type BackupWalletRef = {
    */
   lastHeight?: number;
   /**
-   * The recovery phrase, on a backup written by the PHONE, which is the only
+   * The seed phrase, on a backup written by the PHONE, which is the only
    * client that holds one.
    */
   mnemonic?: string;
@@ -636,11 +636,11 @@ export type BackupWalletRef = {
    * it therefore carried nothing: reported 2026-11-08 as "saved backup in web
    * app and restored in mobile and still asks for recovery key… in mobile,
    * after restore it was saying that the recovery phrase is not there — there
-   * is no recovery phrase, just the passphrase!!"
+   * is no seed phrase, just the passphrase!!"
    *
    * These keys are exactly what `storeWalletKeys` takes, so they make the
    * wallet scan and spend on the new device. What they cannot do is show the
-   * recovery phrase afterwards — but the browser never had it to give.
+   * seed phrase afterwards — but the browser never had it to give.
    */
   keys?: {
     scanSecret: string;

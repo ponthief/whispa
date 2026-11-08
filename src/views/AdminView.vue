@@ -675,7 +675,7 @@ onBeforeUnmount(() => {
               </button>
               <span class="text-dim text-xs" style="display:block;margin-top:4px">
                 Fills both fields above from a fresh wallet and shows you its
-                recovery phrase once. Nothing is saved until you press Save
+                seed phrase once. Nothing is saved until you press Save
                 Configuration.
               </span>
               <div v-if="genError" class="alert alert-error" style="margin-top:8px">

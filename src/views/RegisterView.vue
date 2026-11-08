@@ -146,7 +146,7 @@
                 I've read and accept the
                 <router-link to="/terms" class="text-orange" target="_blank">Terms of Use</router-link>,
                 and I understand that
-                <strong>my recovery phrase is the only way back into my wallet</strong>
+                <strong>my seed phrase is the only way back into my wallet</strong>
                 — nobody here can restore it for me.
               </span>
             </label>

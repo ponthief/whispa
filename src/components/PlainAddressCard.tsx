@@ -108,7 +108,7 @@ export default function PlainAddressCard({ wallet }: Props) {
   const refresh = useCallback(async () => {
     if (!inkey) return;
     // Wallets stored before the plain chain existed have no account key; those
-    // need the recovery phrase once, via PlainSetupModal.
+    // need the seed phrase once, via PlainSetupModal.
     const keys = await getWalletKeys(wallet.id);
     const xprv = keys?.sweepAccount || null;
     setAccountXprv(xprv);
@@ -189,7 +189,7 @@ export default function PlainAddressCard({ wallet }: Props) {
       {!accountXprv ? (
         <>
           <Text style={styles.caption}>
-            This wallet predates SegWit addresses. Enter your recovery phrase once
+            This wallet predates SegWit addresses. Enter your seed phrase once
             to set them up — after that it's handled on this device.
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setSetupOpen(true)}>
@@ -359,11 +359,11 @@ export default function PlainAddressCard({ wallet }: Props) {
               {/* BIP-84, not BIP-85. These addresses hang off
                   m/84'/coin'/0' from this wallet's own seed — see
                   services/derivationPaths.ts — so any wallet that takes a
-                  recovery phrase reaches them. BIP-85 is a different thing
+                  seed phrase reaches them. BIP-85 is a different thing
                   (deriving child SEEDS from a master one), and somebody
                   hunting for a BIP-85 option would not find these coins. */}
               <Text style={styles.hint}>
-                You'll need your recovery phrase to restore these coins in
+                You'll need your seed phrase to restore these coins in
                 another wallet, on the standard BIP-84 path.
               </Text>
             </>

@@ -5,7 +5,7 @@
  *     node scripts/check-plain-chain.cjs
  *
  * Addresses come from the BIP-84 ACCOUNT key held in the keystore rather than
- * from the seed, so that receiving and spending need no recovery phrase. That is
+ * from the seed, so that receiving and spending need no seed phrase. That is
  * only safe if the two paths agree exactly: an account key that derived even
  * slightly different addresses would show the user an address, take their money,
  * and then sign for something else. This asserts they match across every network

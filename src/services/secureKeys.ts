@@ -16,7 +16,7 @@ export interface WalletKeys {
   refundAddress?: string;
   // BIP-84 ACCOUNT extended private key (m/84'/coin'/0'), for the plain address
   // chain. Held here so the wallet can hand out a fresh plain address per
-  // payment and sign from it without the user re-entering their recovery phrase.
+  // payment and sign from it without the user re-entering their seed phrase.
   //
   // A smaller secret than the spendKey already in this record: it reaches one
   // branch holding coins in transit, where the spend key reaches the whole
@@ -109,7 +109,7 @@ export async function removeWalletKeys(walletId: string): Promise<void> {
   } catch {
     /* ignore */
   }
-  // The stored recovery phrase lives in its own entry (services/seedVault) and
+  // The stored seed phrase lives in its own entry (services/seedVault) and
   // would otherwise outlive the wallet it belongs to.
   await forgetSeed(walletId);
   await writeIndex((await readIndex()).filter((id) => id !== walletId));

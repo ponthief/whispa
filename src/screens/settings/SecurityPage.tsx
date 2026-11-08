@@ -33,7 +33,7 @@ import {
 //
 // Gathered on one page because these settings only make sense against each
 // other: the auto-lock delay is meaningless with nothing locking, the duress PIN
-// needs a PIN to hide behind, and the recovery phrase is only revealable because
+// needs a PIN to hide behind, and the seed phrase is only revealable because
 // one of the two guards it. On the old single-page Settings the phrase sat under
 // "Scanning", four screens of scrolling from the lock it depends on.
 export default function SecurityPage({ onBack }: { onBack: () => void }) {
@@ -342,7 +342,7 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
           is the belief that loses coins. */}
       {/* AND IT SAYS WHAT IS TRUE OF THIS DEVICE, nothing more (2026-11-08,
           reported against a wallet restored from a web backup file: "shows
-          that recovery phrase cannot be shown in Security. That is not right…
+          that seed phrase cannot be shown in Security. That is not right…
           if store just spend/scan keys and not seed phrase, just say that
           seed phrase was not entered on the phone").
 

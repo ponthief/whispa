@@ -116,7 +116,7 @@ export default function WalletScreen() {
   const [rate, setRate] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  // A recovery phrase still awaiting backup — the app lock unmounted the modal
+  // A seed phrase still awaiting backup — the app lock unmounted the modal
   // while it was on screen. Reopen it: the phrase is shown once and stored
   // nowhere, so the alternative is losing the only copy (see stores/seedBackup).
   const seedPending = useSeedBackup((s) => !!s.mnemonic);

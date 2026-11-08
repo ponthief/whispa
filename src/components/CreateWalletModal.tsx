@@ -126,12 +126,12 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
     if (mode === 'import') {
       const words = mnemonicInput.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (words.length !== 12) {
-        setError('Recovery phrase must be exactly 12 words.');
+        setError('Seed phrase must be exactly 12 words.');
         return;
       }
       seedPhrase = words.join(' ');
       if (!isValidMnemonic(seedPhrase)) {
-        setError('Invalid recovery phrase — the checksum (last word) is incorrect.');
+        setError('Invalid seed phrase — the checksum (last word) is incorrect.');
         return;
       }
       // IMPORT IS FOR WHISPA WALLETS, so the passphrase is required here too
@@ -244,7 +244,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
         setStep('reveal');
       } else {
         // Import: the user already has their phrase, but store it anyway so
-        // "show my recovery phrase" works the same on an imported wallet as on
+        // "show my seed phrase" works the same on an imported wallet as on
         // a generated one. They typed it, so nothing new is learned by keeping
         // it beside the keys it just derived.
         await saveSeed(res.wallet_id, seedPhrase);
@@ -385,14 +385,14 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
 
               {mode === 'import' ? (
                 <>
-                  <Text style={styles.label}>Recovery phrase (12 words)</Text>
+                  <Text style={styles.label}>Seed phrase (12 words)</Text>
                   <SeedInput
                     value={mnemonicInput}
                     onChangeText={setMnemonicInput}
                     placeholder="word1 word2 word3 …"
                   />
                   <Text style={styles.hint}>
-                    Import only a Silent Payments wallet's recovery phrase.
+                    Import only a Silent Payments wallet's seed phrase.
                     WhiSPa derives keys at the BIP-352 path (m/352′), so a
                     regular Bitcoin wallet phrase won't recover those coins here
                     — it would just start a new, empty SP wallet.
@@ -434,7 +434,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
                   <Text style={styles.hint}>
                     An extra secret mixed into your seed — needed every time you
                     restore this wallet, and it CANNOT be recovered if forgotten.
-                    You'll back it up on the next screen with your recovery phrase.
+                    You'll back it up on the next screen with your seed phrase.
                     Use standard keyboard characters (letters, numbers, and
                     symbols like ! ? # $); avoid accented or non-English letters.
                   </Text>
@@ -490,7 +490,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
             </ScrollView>
           ) : step === 'reveal' ? (
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.heading}>Save your recovery phrase</Text>
+              <Text style={styles.heading}>Save your seed phrase</Text>
               <Text style={styles.warn}>
                 Write these 12 words down in order — AND your passphrase below.
                 You need BOTH to recover this wallet, and neither can be shown
@@ -520,7 +520,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
                   </Text>
                   <Text style={styles.hint}>
                     Required together with the 12 words. Store it as carefully as
-                    your recovery phrase — it cannot be recovered.
+                    your seed phrase — it cannot be recovered.
                   </Text>
                 </View>
               ) : null}
@@ -532,7 +532,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
                   {acknowledged ? <Text style={styles.checkMark}>✓</Text> : null}
                 </View>
                 <Text style={styles.checkLabel}>
-                  I have saved my recovery phrase and passphrase.
+                  I have saved my seed phrase and passphrase.
                 </Text>
               </TouchableOpacity>
 
@@ -547,7 +547,7 @@ export default function CreateWalletModal({ visible, onClose, onCreated }: Props
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.heading}>Verify your backup</Text>
               <Text style={styles.hint}>
-                Enter the following words from the recovery phrase you just saved,
+                Enter the following words from the seed phrase you just saved,
                 to confirm you wrote it down correctly.
               </Text>
 

@@ -603,7 +603,7 @@ export default function ScanPanel() {
           <View style={styles.card}>
             <Text style={styles.warn}>
               This wallet's keys aren't on this device, so it can't scan. Restore
-              them from your recovery phrase.
+              them from your seed phrase.
             </Text>
             <TouchableOpacity
               style={styles.primaryBtn}

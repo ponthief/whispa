@@ -18,7 +18,7 @@ import com.facebook.react.bridge.ReactMethod
  * THE ONE RULE THIS FILE EXISTS TO ENFORCE: there is ALWAYS at least one
  * enabled alias. Zero enabled is an app with no icon on any launcher and no
  * way to start it — for a wallet, somebody's money behind a door with no
- * handle, recoverable only by reinstalling and restoring the recovery phrase,
+ * handle, recoverable only by reinstalling and restoring the seed phrase,
  * which many people do not have to hand. So [setAlias] enables the target
  * FIRST and only then disables the others, and it refuses a name it does not
  * recognise rather than disabling everything and leaving nothing on.

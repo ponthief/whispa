@@ -220,7 +220,7 @@ async function onPickFile(ev) {
   // backup is not evidence about an old file.
   //
   // What to ask for comes from the FILE's own header, so a backup written
-  // between 2026-11-04 and 2026-11-08 asks for the recovery phrase by name
+  // between 2026-11-04 and 2026-11-08 asks for the seed phrase by name
   // rather than failing to open and leaving the user guessing.
   password.value = ''
   say(info.encrypted
@@ -235,7 +235,7 @@ async function openPending() {
   if (busy.value || !pending.value) return
   // No length rule on this path: that is enforced on write, and refusing an
   // older file for failing today's policy would strand it. An older file may
-  // also be sealed with a recovery phrase or a wallet passphrase, which
+  // also be sealed with a seed phrase or a wallet passphrase, which
   // decryptBackup reads from the header and treats correctly.
   if (!password.value && pending.value.info.encrypted) {
     say(`Enter the ${pending.value.info.asksFor} for this file.`, 'error')
@@ -394,7 +394,7 @@ async function openPending() {
              { scanSecret, spendKey, refundAddress, sweepAccount } and has
              never held the words, so the file carries the derived KEYS. They
              are what makes a wallet scan and spend on a new phone — the one
-             thing they cannot do afterwards is show a recovery phrase, and
+             thing they cannot do afterwards is show a seed phrase, and
              the browser never had one to give.
 
              It said "labels" here for one build, and a web backup carried no

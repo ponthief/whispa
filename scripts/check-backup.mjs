@@ -45,7 +45,7 @@ const refuses = async (name, fn, code) => {
   }
 };
 
-// THE FILE'S KEY IS A RECOVERY PHRASE (2026-11-04). Both of these are real
+// THE FILE'S KEY IS A SEED PHRASE (2026-11-04). Both of these are real
 // BIP-39 mnemonics with valid checksums, because encryptBackup refuses
 // anything that is not one — which is the point: a typo cannot produce a file
 // its owner can never open.
@@ -206,7 +206,7 @@ console.log('a chosen file can be read for what it wants, before any secret');
   // opens; the one job is deciding what to ask for, and a forged header costs
   // a failed decrypt and nothing else.
   for (const [source, asks] of [
-    ['recovery-phrase', 'recovery phrase'],
+    ['recovery-phrase', 'seed phrase'],
     ['password', 'password'],
   ]) {
     const relabelled = JSON.stringify({ ...JSON.parse(file), keySource: source });
@@ -236,7 +236,7 @@ console.log('a chosen file can be read for what it wants, before any secret');
     () => decryptBackup(newer, PW), 'backup_version');
 }
 
-console.log('a backup sealed with the recovery phrase still opens');
+console.log('a backup sealed with the seed phrase still opens');
 {
   // 2026-11-04 to 2026-11-08. Rebuilt the way that build wrote one, and
   // opened with the phrase typed carelessly, because those files were
@@ -467,7 +467,7 @@ console.log('the parameters are not quietly weakened');
   // passes.
   ok('a memory-hard KDF, not a plain hash', KDF.name === 'scrypt');
   // 2^15 since 2026-11-08, raised with the stakes: the file can carry a
-  // recovery phrase now, so an offline attacker holding one is guessing at
+  // seed phrase now, so an offline attacker holding one is guessing at
   // coins rather than at somebody's notes. Lowering it is invisible — the file
   // still round-trips — which is why the floor is asserted rather than trusted.
   ok(`N is at least 2^15 (is 2^${Math.log2(KDF.N)})`, KDF.N >= 1 << 15);
@@ -588,7 +588,7 @@ console.log('every WhiSPa wallet has a passphrase, including imported ones');
   // generated through a path that has always demanded one, so the exemption
   // only ever admitted wallets this app did not make.
   //
-  // THE BACKUP NO LONGER RESTS ON THIS — it is sealed with the recovery phrase
+  // THE BACKUP NO LONGER RESTS ON THIS — it is sealed with the seed phrase
   // and holds no key material — but the rule stands on its own, and nothing
   // else would notice it being dropped.
   const paths = [
@@ -928,7 +928,7 @@ console.log('the two backup screens say the same simple thing');
     openAt > 0 && elseAt > 0 && elseAt < RK.indexOf('<SeedInput'),
     'both routes on one sheet is what made the shared field ambiguous');
   ok('with one tap back to the phrase for somebody who has no file',
-    /Use a recovery phrase instead/.test(RK),
+    /Use a seed phrase instead/.test(RK),
     'hiding the form is only safe while something says how to get back to it');
 
   ok('the web puts the collected keys into the payload it seals',
@@ -1185,7 +1185,7 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
     // ── A WEB BACKUP: KEYS, NO PHRASE ─────────────────────────────────
     //
     // "Saved backup in web app and restored in mobile and still asks for
-    // recovery key… after restore it was saying that the recovery phrase is
+    // recovery key… after restore it was saying that the seed phrase is
     // not there — there is no recovery phrase, just the passphrase!!"
     //
     // Correct, and the file had what the phone needed all along. The browser
@@ -1215,7 +1215,7 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
         got[0]?.[0] === 'server-side' && got[0]?.[1].scanSecret === 'scan1');
       // saveSeed throws in this fake: a web restore must never call it, and
       // an empty seed written "for symmetry" is a wallet that claims it can
-      // show a recovery phrase and then shows nothing.
+      // show a seed phrase and then shows nothing.
       ok('and no seed is written, since there is none', r.failed.length === 0);
 
       // IT MUST NOT LOOP. alreadyUsable asks for a seed as well when the file

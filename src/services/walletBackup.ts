@@ -5,7 +5,7 @@
 // he logs in to new phone, reinstalled app he can just restore from the backup
 // instead of importing wallet or entering wallet recovery keys."
 //
-// So the file carries each wallet's RECOVERY PHRASE, and a restore recreates
+// So the file carries each wallet's SEED PHRASE, and a restore recreates
 // the wallet from it rather than asking anybody to type twelve words. That is
 // the thing the 2026-11-04 decision took out, and it is back on purpose with
 // the reason that removed it now gone: the file was sealed WITH the phrase
@@ -54,7 +54,7 @@ export type BackupWalletRef = {
   /**
    * The derived keys, from a WEB backup — the browser has never held a
    * phrase, so this is what it can give. They make the wallet scan and spend
-   * on the new device; what they cannot do is show a recovery phrase
+   * on the new device; what they cannot do is show a seed phrase
    * afterwards, and the browser never had one to put in.
    */
   keys?: Omit<SilentPaymentKeysLike, 'spAddress'>;
@@ -88,7 +88,7 @@ export type LeftOut = {
  * Does this device already have everything it needs for a wallet?
  *
  * Both halves, because half a wallet is still a broken one: keys without the
- * phrase cannot show a recovery phrase, and the phrase without keys cannot
+ * phrase cannot show a seed phrase, and the phrase without keys cannot
  * scan or spend.
  *
  * NOT KNOWING MEANS NO. A caller that cannot answer, or a keystore that
@@ -398,7 +398,7 @@ export async function restoreWallets(
     // never keeps it, so a web file could not carry one — and this treated
     // that as nothing to restore, when the browser was holding exactly what
     // the phone needed. Keys make the wallet scan and spend; only "show my
-    // recovery phrase" is missing, and the browser never had it either.
+    // seed phrase" is missing, and the browser never had it either.
     if (!w.mnemonic && w.keys?.scanSecret && w.keys?.spendKey) {
       const stored = await adoptOrCreate(deps, w, existing, w.keys, null, report);
       if (stored === 'mismatch') report.mismatched.push({ title });
@@ -453,7 +453,7 @@ export async function restoreWallets(
  *
  * `phrase` is null for a web backup. The seed is then not written at all,
  * rather than written empty: an empty seed is a wallet that claims to be able
- * to show a recovery phrase and then shows nothing.
+ * to show a seed phrase and then shows nothing.
  */
 async function adoptOrCreate(
   deps: RestoreDeps,
@@ -546,7 +546,7 @@ async function store(
   if (phrase) {
     const okSeed = await deps.saveSeed(walletId, phrase);
     if (okSeed === false) {
-      throw new Error('Its recovery phrase could not be stored.');
+      throw new Error('Its seed phrase could not be stored.');
     }
   }
 }

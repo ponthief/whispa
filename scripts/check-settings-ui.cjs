@@ -68,7 +68,7 @@ const MUST_EXIST = {
   'clearing the PIN': /appPin\.clearPins\(\)/,
   'duress PIN': /appPin\.setDuressPin\(/,
   'trusted devices': /<DevicesModal/,
-  'show recovery phrase': /<SeedRevealModal/,
+  'show seed phrase': /<SeedRevealModal/,
   'background scanning on': /api\.enableBackgroundScan\(/,
   'background scanning off': /api\.disableBackgroundScan\(/,
   'catch-up threshold': /CATCH_UP_CHOICES/,

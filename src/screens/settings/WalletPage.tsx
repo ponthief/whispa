@@ -113,7 +113,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
       Alert.alert(
         'Keys not on this phone',
         "This wallet's keys aren't stored here, so it can't be removed from " +
-          'this phone. Recover the wallet from its recovery phrase first, then ' +
+          'this phone. Recover the wallet from its seed phrase first, then ' +
           'remove it.',
       );
       return;
@@ -122,7 +122,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
       'Remove this wallet?',
       `This removes "${wallet.title || 'this wallet'}" from this account and ` +
         'erases its keys from this phone. Your coins stay safe on chain — ' +
-        'your recovery phrase (and passphrase, if you set one) restores them.',
+        'your seed phrase (and passphrase, if you set one) restores them.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Remove wallet', style: 'destructive', onPress: doRemoveWallet },
@@ -187,7 +187,7 @@ export default function WalletPage({ onBack }: { onBack: () => void }) {
         <Block
           first
           title="Remove this wallet"
-          help="Removes the wallet from this account and erases its keys from this phone. Your coins stay safe on chain, and your recovery phrase restores them.">
+          help="Removes the wallet from this account and erases its keys from this phone. Your coins stay safe on chain, and your seed phrase restores them.">
           <Button
             label="Remove wallet"
             kind="danger"

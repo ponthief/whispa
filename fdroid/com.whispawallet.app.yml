@@ -56,7 +56,7 @@ Repo: https://github.com/ponthief/whispa.git
 # PUBLISH OUR APK, NOT THEIRS. Without this pair F-Droid signs its own build
 # with its own key, which is a different app to Android: nobody on an existing
 # install can update to it, and for a wallet that is a reinstall and a restore
-# from the recovery phrase for every user.
+# from the seed phrase for every user.
 #
 # With it, F-Droid builds from source, downloads this binary, and compares.
 # build.py:1245 — a mismatch raises, deletes the built APK and FAILS the build.

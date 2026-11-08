@@ -167,12 +167,12 @@ export default function RecoverKeysModal({
     if (!wallet) return;
     const words = mnemonic.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length !== 12) {
-      setError('Recovery phrase must be exactly 12 words.');
+      setError('Seed phrase must be exactly 12 words.');
       return;
     }
     const phrase = words.join(' ');
     if (!isValidMnemonic(phrase)) {
-      setError('Invalid recovery phrase — the checksum (last word) is incorrect.');
+      setError('Invalid seed phrase — the checksum (last word) is incorrect.');
       return;
     }
     setBusy(true);
@@ -230,7 +230,7 @@ export default function RecoverKeysModal({
             <Text style={styles.heading}>Recover wallet keys</Text>
             <Text style={styles.sub}>
               Restore this wallet from a backup file, or enter its 12-word
-              recovery phrase. Keys stay on-device — they're never sent to the
+              seed phrase. Keys stay on-device — they're never sent to the
               server.
             </Text>
 
@@ -296,7 +296,7 @@ export default function RecoverKeysModal({
                   }}
                   disabled={busy}>
                   <Text style={styles.linkBtnText}>
-                    Use a recovery phrase instead
+                    Use a seed phrase instead
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
@@ -327,7 +327,7 @@ export default function RecoverKeysModal({
                   or
                 </Text>
 
-                <Text style={styles.label}>Recovery phrase (12 words)</Text>
+                <Text style={styles.label}>Seed phrase (12 words)</Text>
                 <SeedInput
                   value={mnemonic}
                   onChangeText={setMnemonic}

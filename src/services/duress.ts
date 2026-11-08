@@ -64,7 +64,7 @@ export async function runDuress(
   } catch {
     /* best-effort */
   }
-  // A recovery phrase still on screen is the most valuable thing in the app —
+  // A seed phrase still on screen is the most valuable thing in the app —
   // it reconstructs every key the wipe just removed — so it goes with them.
   try {
     useSeedBackup.getState().done();

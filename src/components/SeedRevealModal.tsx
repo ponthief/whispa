@@ -105,7 +105,7 @@ export default function SeedRevealModal({
       setBusy(true);
       // Only the normal PIN reveals. A duress PIN is NOT honoured here: its
       // whole purpose is to look like a successful unlock while destroying the
-      // keys, and handing over the recovery phrase would undo that in the one
+      // keys, and handing over the seed phrase would undo that in the one
       // situation it exists for. It reads as a wrong PIN instead.
       const kind = await verifyPin(entered);
       setPin('');

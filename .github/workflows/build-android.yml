@@ -377,10 +377,42 @@ jobs:
           echo "archs=$ARCHS"     >> "$GITHUB_OUTPUT"
           echo "task=assemble${CAP}${CAPTYPE}" >> "$GITHUB_OUTPUT"
 
-      - name: Build ${{ steps.params.outputs.task }}
+      # THE WRAPPER'S DOWNLOAD IS A SINGLE POINT OF FAILURE, and it took every
+      # Android job down on 2026-11-08 — three runs in a row, each dying before
+      # it compiled anything:
+      #
+      #   Downloading https://services.gradle.org/distributions/gradle-8.3-all.zip
+      #   IOException: Server returned HTTP response code: 504 for URL:
+      #     https://github.com/gradle/gradle-distributions/releases/download/...
+      #
+      # services.gradle.org redirects to GitHub's release CDN, so a bad few
+      # minutes there is a red build with nothing wrong in the tree. The cache
+      # that would normally hold the zip was down in the same incident, which is
+      # why it recurred rather than being papered over by a cache hit.
+      #
+      # So the download is a step of its own, retried, and the build that
+      # follows runs against an already-installed distribution. `--version` is
+      # the cheapest thing that forces the fetch: it installs the distribution
+      # and configures no project.
+      #
+      # Deliberately NOT a retry around the build itself — a compile that fails
+      # is a compile that fails, and retrying it would turn a real failure into
+      # three times the minutes and a confusing log.
+      - name: Fetch the Gradle distribution
         working-directory: android
         run: |
           chmod +x gradlew
+          for attempt in 1 2 3 4; do
+            if ./gradlew --version; then exit 0; fi
+            echo "::warning::could not fetch the Gradle distribution (attempt $attempt)"
+            sleep $(( attempt * 20 ))
+          done
+          echo "::error::the Gradle distribution could not be downloaded after 4 attempts — this is almost always the CDN, not the tree"
+          exit 1
+
+      - name: Build ${{ steps.params.outputs.task }}
+        working-directory: android
+        run: |
           # The committed gradle.properties is sized for a desktop that is also
           # running an editor. A runner has its 16GB to itself, so undo that
           # here rather than in the file everyone shares. Quoted as one property
@@ -755,6 +787,39 @@ jobs:
       # Run the documented command verbatim — part of what is being verified is
       # that `npm run apk:fdroid` works at all. It nests `npm run apk:mainnet`,
       # so extra CLI args would not reach Gradle; configuration goes by env.
+      # THE WRAPPER'S DOWNLOAD IS A SINGLE POINT OF FAILURE, and it took every
+      # Android job down on 2026-11-08 — three runs in a row, each dying before
+      # it compiled anything:
+      #
+      #   Downloading https://services.gradle.org/distributions/gradle-8.3-all.zip
+      #   IOException: Server returned HTTP response code: 504 for URL:
+      #     https://github.com/gradle/gradle-distributions/releases/download/...
+      #
+      # services.gradle.org redirects to GitHub's release CDN, so a bad few
+      # minutes there is a red build with nothing wrong in the tree. The cache
+      # that would normally hold the zip was down in the same incident, which is
+      # why it recurred rather than being papered over by a cache hit.
+      #
+      # So the download is a step of its own, retried, and the build that
+      # follows runs against an already-installed distribution. `--version` is
+      # the cheapest thing that forces the fetch: it installs the distribution
+      # and configures no project.
+      #
+      # Deliberately NOT a retry around the build itself — a compile that fails
+      # is a compile that fails, and retrying it would turn a real failure into
+      # three times the minutes and a confusing log.
+      - name: Fetch the Gradle distribution
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          for attempt in 1 2 3 4; do
+            if ./gradlew --version; then exit 0; fi
+            echo "::warning::could not fetch the Gradle distribution (attempt $attempt)"
+            sleep $(( attempt * 20 ))
+          done
+          echo "::error::the Gradle distribution could not be downloaded after 4 attempts — this is almost always the CDN, not the tree"
+          exit 1
+
       - name: Build the no-push APK
         env:
           # gradle.properties asks for -Xmx2048m, sized for a desktop also
@@ -768,7 +833,6 @@ jobs:
           # unbounded, i.e. looser than the 512m being replaced, not tighter.
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g
         run: |
-          chmod +x android/gradlew
           npm run apk:fdroid
 
       - name: Inspect the APK

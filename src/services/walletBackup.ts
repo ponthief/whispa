@@ -174,26 +174,59 @@ export async function collectWalletSeeds(
 }
 
 /**
- * The derived keys a WEB backup carries, read out of the browser's vault.
+ * What a WEB backup carries: the derived keys, and the SEED PHRASE when this
+ * browser has one.
  *
- * Verified before they go in: `spAddressFromKeys` must give the address the
- * account holds for that wallet. The browser cannot check the PASSPHRASE —
- * that needs a seed, which it has never had — so this is the check it can
- * make, and it is the one that decides whether the file can restore anything.
- * A wallet whose keys are missing or do not add up is left out and named,
- * exactly as the phone leaves out one its passphrase does not open.
+ * THE TWO FILES ARE INTERCHANGEABLE NOW, which is the instruction that got
+ * them here (2026-11-08): *"this needs to work regardless of the app:
+ * backup/restore from either web or mobile app"*.
+ *
+ * They were not, and the asymmetry was invisible from the outside: a phone
+ * file carried words, a web file carried keys, so restoring a web file on a
+ * phone produced a wallet that scans and spends and cannot show a phrase.
+ * That is correct for a wallet the browser never had words for — it never
+ * had them to give — but since the browser started KEEPING the phrase
+ * (keyvault's `seed:` records), it had them and still shipped keys only. The
+ * collector simply never asked.
+ *
+ * So it asks, and a file now carries whichever the browser actually holds:
+ *
+ *  - `mnemonic` for a wallet created, imported, recovered or restored here
+ *    since the browser began keeping the words. Restoring that file ANYWHERE
+ *    gives a wallet that can show its phrase.
+ *  - `keys` either way, which is what restores a wallet whose words this
+ *    browser has never had. Dropping them for a wallet that has both would
+ *    make an older wallet's file restore nothing.
+ *
+ * VERIFIED BEFORE EITHER GOES IN, and with the phrase the browser can finally
+ * run the phone's own check: `deriveSilentPayment(phrase, passphrase)` must
+ * give the address the account holds, which is a complete test of the typed
+ * passphrase. Without a phrase it falls back to `spAddressFromKeys`, which
+ * checks the keys add up but can say nothing about the passphrase. A wallet
+ * that fails either is left out and named.
  */
 export async function collectWalletKeys(
   deps: {
     getWalletKeys(walletId: string): Promise<Omit<SilentPaymentKeysLike, 'spAddress'> | null>;
     spAddressFromKeys(scanSecret: string, spendKey: string, network: string): string;
+    /** The browser's stored phrase for this wallet, when it has one. */
+    readSeed?(walletId: string): Promise<string | null>;
+    /** Only needed to CHECK a phrase; absent, the keys check still runs. */
+    deriveSilentPayment?(
+      mnemonic: string,
+      passphrase: string,
+      network: string,
+    ): SilentPaymentKeysLike;
   },
   wallets: BackupWalletRef[],
+  passphrase = '',
 ): Promise<{
   keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>>;
+  seeds: Record<string, string>;
   leftOut: LeftOut[];
 }> {
   const keys: Record<string, Omit<SilentPaymentKeysLike, 'spAddress'>> = {};
+  const seeds: Record<string, string> = {};
   const leftOut: LeftOut[] = [];
 
   for (const w of wallets || []) {
@@ -228,9 +261,35 @@ export async function collectWalletKeys(
       refundAddress: k.refundAddress || '',
       sweepAccount: k.sweepAccount || '',
     };
+
+    // AND THE WORDS, when this browser has them. Best-effort on the read: a
+    // vault that cannot answer leaves a file carrying keys, which is what
+    // every web file carried before and still restores a working wallet.
+    let phrase: string | null = null;
+    try {
+      phrase = deps.readSeed ? await deps.readSeed(w.id) : null;
+    } catch {
+      phrase = null;
+    }
+    if (!phrase) continue;
+
+    // The phone's check, now that the browser can run it. A phrase that does
+    // not derive this wallet under the typed passphrase is NOT written —
+    // sealing one that cannot open the wallet is how a file looks perfect and
+    // restores a stranger. The keys above still go in, so the wallet is not
+    // lost from the file over it.
+    if (deps.deriveSilentPayment) {
+      try {
+        const fromSeed = deps.deriveSilentPayment(phrase, passphrase, w.network || 'mainnet');
+        if (!sameAddress(fromSeed.spAddress, w.spAddress)) continue;
+      } catch {
+        continue;
+      }
+    }
+    seeds[w.id] = phrase;
   }
 
-  return { keys, leftOut };
+  return { keys, seeds, leftOut };
 }
 
 /**

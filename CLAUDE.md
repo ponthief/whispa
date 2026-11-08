@@ -481,10 +481,37 @@ So a web backup cannot carry a phrase, and for one build it therefore carried
 **no wallet at all**, while the browser was holding exactly what
 `storeWalletKeys` takes.
 
+**THE TWO FILES ARE INTERCHANGEABLE NOW** (2026-11-08, on the user's
+instruction: *"this needs to work regardless of the app: backup/restore from
+either web or mobile app"*). They were not, and the asymmetry was invisible
+from the outside: restoring a web file on a phone produced a wallet that scans
+and spends and cannot show its phrase. That was honest while the browser had
+no words — but since it started KEEPING them (`keyvault`'s `seed:` records),
+it had them and still shipped keys only. The collector never asked.
+
 - A **phone** file carries `wallets[n].mnemonic`.
-- A **web** file carries `wallets[n].keys` — the derived keys. They make the
-  wallet scan and spend on the new device. The one thing they cannot do
-  afterwards is show a seed phrase, and the browser never had one to give.
+- A **web** file carries `wallets[n].mnemonic` too, for every wallet this
+  browser holds the words for, **and `wallets[n].keys` beside it**. Both,
+  deliberately: the keys are what restore a wallet whose words this browser
+  has never had, and dropping them would stop an older wallet's file
+  restoring at all. A record carrying both restores from the phrase —
+  `restoreWallets` reaches the keys-only branch only when there is no
+  `mnemonic`.
+
+So a file from either app, restored into either app, gives a wallet that can
+show its seed phrase — provided the file HAS one. A file written before this,
+or made for a wallet whose words were never kept, has none to give, and both
+screens say that rather than naming a client.
+
+**And the browser can check the passphrase now**, which it could not before
+and said so. With a phrase in hand it runs the phone's own test —
+`deriveSilentPayment(phrase, passphrase)` must give the address the account
+holds — and a phrase that fails is **not written**, while the keys still are,
+so a wallet is never lost from the file over a mistyped secret. For a wallet
+with no stored phrase the only check is `spAddressFromKeys`, which says
+nothing about the passphrase. The copy states which case a wallet is in, since
+"checked" and "cannot be checked" are both true here depending on the wallet
+and claiming either alone is a lie about half of them.
 
 `spAddressFromKeys` (in `spKeys.ts`) is what makes the web half honest: the
 same bech32m encoding `deriveSilentPayment` ends with, from the other

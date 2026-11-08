@@ -730,14 +730,17 @@ console.log('the two backup screens say the same simple thing');
     /Backs up your wallets and labels\./.test(copy(P)) &&
     /Backs up your wallets and labels\./.test(copy(V)),
     'the red line names the key; this one names the contents');
-  // And the web says it CANNOT check the passphrase, because it cannot:
-  // verifying means deriving an address from the seed, which is on the phone.
-  // THE WEB STILL CANNOT CHECK THE PASSPHRASE — that needs a seed, which it
-  // has never had. It CAN check that the keys it is sealing belong to the
-  // wallet, which is a different and more useful guarantee, and it says which
-  // of the two it is making.
-  ok('the web says it cannot check the passphrase before saving',
-    /cannot check the passphrase before saving/.test(copy(V)));
+  // THE WEB CAN CHECK THE PASSPHRASE NOW, for any wallet whose words this
+  // browser holds — deriving an address from (phrase, passphrase) is the
+  // phone's own test and the browser has a phrase to run it on since it
+  // started keeping them. For an older wallet it has none, and the check is
+  // the keys adding up, which says nothing about the passphrase. The line has
+  // to say WHICH, because "checked" and "cannot be checked" are both true
+  // here depending on the wallet, and claiming either alone is a lie about
+  // half of them.
+  ok('the web says which wallets it can check the passphrase for',
+    /checked against your[\s\S]{0,40}passphrase and left out if it does not match/.test(copy(V)) &&
+    /cannot be checked/.test(copy(V)));
 
   // WHERE IT LIVES ON THE WEB. Moved out of Settings into the wallet card's
   // gear menu; two screens offering one thing, with nothing to say which you
@@ -1259,6 +1262,64 @@ console.log('a wallet travels in the file, and a wrong passphrase leaves it out'
       ok('and leaves out keys that are not that wallet\'s',
         !mis.keys.web && mis.leftOut.length === 1,
         'putting the wrong keys in the file is a restore that cannot work');
+
+      // THE TWO FILES ARE INTERCHANGEABLE, which is the whole instruction:
+      // "this needs to work regardless of the app: backup/restore from either
+      // web or mobile app". A browser that HOLDS the words must put them in,
+      // or restoring its file anywhere gives a wallet that cannot show a
+      // phrase — correct when the browser never had one, and simply a dropped
+      // field once it does.
+      //
+      // This wallet's address is what BOTH routes give for it: the seed
+      // derivation under the right passphrase, and the keys adding up. That
+      // is the real situation — one wallet, two ways of recognising it — and
+      // it is what lets the passphrase case below mean anything.
+      const SEED_WEB = 'legal winner thank';
+      const webAddr = derive(SEED_WEB, PASS).spAddress;
+      const seedWallet = { id: 'web', title: 'From the web', network: 'signet',
+                           spAddress: webAddr, lastHeight: 77 };
+      const bothAgree = () => webAddr;
+
+      const held = await collectWalletKeys(
+        {
+          getWalletKeys: async () => vaultKeys,
+          spAddressFromKeys: bothAgree,
+          readSeed: async () => SEED_WEB,
+          deriveSilentPayment: derive,
+        },
+        [seedWallet], PASS);
+      ok('a web file carries the words when the browser has them',
+        held.seeds.web === SEED_WEB,
+        'the file is the only thing that makes the two clients interchangeable');
+      ok('and still carries the keys beside them',
+        !!held.keys.web,
+        'dropping them would stop an older wallet\'s file restoring at all');
+
+      // AND THE PASSPHRASE IS CHECKED, which the browser could not do until it
+      // had a phrase to check. A phrase sealed under a secret that does not
+      // open it restores a stranger's wallet, or nothing.
+      const wrongPass = await collectWalletKeys(
+        {
+          getWalletKeys: async () => vaultKeys,
+          spAddressFromKeys: bothAgree,
+          readSeed: async () => SEED_WEB,
+          deriveSilentPayment: derive,
+        },
+        [seedWallet], 'not-the-passphrase');
+      ok('a phrase that does not derive the wallet is not written',
+        !wrongPass.seeds.web,
+        'this is the phone\'s own check, now that the browser can run it');
+      ok('and the keys still go in, so the wallet is not lost over it',
+        !!wrongPass.keys.web);
+
+      // A browser with no phrase for that wallet is the OLD case and must
+      // still produce a usable file.
+      const noWords = await collectWalletKeys(
+        { getWalletKeys: async () => vaultKeys, spAddressFromKeys: bothAgree,
+          readSeed: async () => null, deriveSilentPayment: derive },
+        [seedWallet], PASS);
+      ok('a browser with no words still writes a restorable file',
+        !!noWords.keys.web && !noWords.seeds.web);
     }
 
     // A caller that cannot answer errs towards storing. Writing keys that are

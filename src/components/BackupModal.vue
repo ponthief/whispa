@@ -115,18 +115,35 @@ async function doSave() {
     const { collectBackup, describeBackup } = await import('@/stores/backupdata')
     const { collectServerLabels } = await import('@/services/serverLabels')
     const { collectWalletKeys } = await import('@/services/walletBackup')
-    const { spAddressFromKeys } = await import('@/services/spKeys')
+    const { spAddressFromKeys, deriveSilentPayment } = await import('@/services/spKeys')
 
     const refs = await walletRefs()
-    // THE WALLETS, as far as a browser can carry them: the derived keys from
-    // the vault, verified to add up to each wallet's own SP address. The
-    // phrase is not here to carry — keyvault.js has never held the words —
-    // and for one build that meant a web backup carried no wallet at all,
-    // reported as "saved backup in web app and restored in mobile and still
-    // asks for recovery key".
-    const { keys, leftOut } = await collectWalletKeys(
-      { getWalletKeys: (id) => auth.getWalletKeys(id), spAddressFromKeys }, refs)
-    const withKeys = refs.map(w => (keys[w.id] ? { ...w, keys: keys[w.id] } : w))
+    // THE WALLETS, and the words where this browser has them (2026-11-08:
+    // "this needs to work regardless of the app: backup/restore from either
+    // web or mobile app").
+    //
+    // The derived keys are what a web file always carried — verified to add
+    // up to each wallet's own SP address, because for one build it carried no
+    // wallet at all, reported as "saved backup in web app and restored in
+    // mobile and still asks for recovery key". The PHRASE rides along now for
+    // any wallet the vault holds one for, which is what makes a file from
+    // here identical in kind to one from the phone: restore it anywhere and
+    // the wallet can show its seed phrase.
+    const { keys, seeds, leftOut } = await collectWalletKeys(
+      {
+        getWalletKeys: (id) => auth.getWalletKeys(id),
+        spAddressFromKeys,
+        readSeed: (id) => auth.readSeed(id),
+        deriveSilentPayment,
+      },
+      refs,
+      password.value,
+    )
+    const withKeys = refs.map(w => ({
+      ...w,
+      ...(keys[w.id] ? { keys: keys[w.id] } : {}),
+      ...(seeds[w.id] ? { mnemonic: seeds[w.id] } : {}),
+    }))
     // The SERVER-side labels too, as of 2026-11-08. An SP coin's label is
     // silnt.utxos.label and a labelled address's is wallet_addresses.label;
     // neither was in the file, so a restore brought back a SegWit label and
@@ -428,14 +445,19 @@ async function openPending() {
                  :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
                  autocomplete="off" autocapitalize="off" spellcheck="false"
                  @keyup.enter="pending ? openPending() : doSave()" />
-          <!-- THE WEB CANNOT VERIFY THE PASSPHRASE, and says so rather than
-               implying a check it cannot do: verifying means deriving an SP
-               address from (seed, passphrase), and the seed is on the phone.
-               It sits under the field, not in the red box — that box is one
-               line now, and this is a note about this screen's limits rather
-               than a warning about the file. -->
+          <!-- IT CAN CHECK IT NOW, for any wallet whose words this browser
+               holds: deriving an SP address from (phrase, passphrase) is the
+               phone's own test, and the browser has a phrase to run it on
+               since it started keeping them. For an older wallet it has none
+               and the check is the keys adding up, which says nothing about
+               the passphrase — so the line says which, rather than claiming a
+               guarantee it only sometimes has. Under the field, not in the
+               red box: a note about this screen's limits, not a warning about
+               the file. -->
           <span v-if="!pending" class="text-dim text-xs">
-            This page cannot check the passphrase before saving.
+            A wallet whose seed phrase is stored here is checked against your
+            passphrase and left out if it does not match. One from before the
+            words were kept cannot be checked.
           </span>
         </div>
 

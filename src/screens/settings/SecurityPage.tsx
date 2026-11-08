@@ -419,9 +419,10 @@ export default function SecurityPage({ onBack }: { onBack: () => void }) {
                     keys and never the words, because the browser has never
                     held them; a file saved from THIS app carries them. */}
                 <Help>
-                  A backup saved from this app carries the words; one saved from
-                  the web app carries keys only, because the browser has never
-                  held the words. Restoring the first kind puts them back here.
+                  Restoring a backup brings the words back when the file has
+                  them. Both apps put them in now; a file saved before they
+                  did, or made for a wallet whose words were never kept, has
+                  none to give.
                 </Help>
               </Block>
             ),

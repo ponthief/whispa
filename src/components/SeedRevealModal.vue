@@ -165,9 +165,9 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
             keys that scan and spend — which is why it still works.
           </p>
           <p class="text-dim text-sm" style="margin:0">
-            Restoring a backup saved from the <strong>phone app</strong> brings
-            the words with it. A backup saved from this browser carries keys
-            only, so restoring one will not.
+            Restoring a backup brings the words back when the file has them.
+            Both apps put them in now — a file saved before they did, or made
+            for a wallet whose words were never kept, has none to give.
           </p>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-primary btn-sm" @click="close">Close</button>

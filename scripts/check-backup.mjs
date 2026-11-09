@@ -1200,11 +1200,16 @@ console.log('a passphrase that opens nothing refuses the save');
     none.noSeed.length === 1 && none.noSeed[0].reason === 'none',
     'refusing here would stop an older wallet backing up at all');
 
-  // 3. Two wallets, two passphrases: one verifies, one does not. That is a
-  //    real account, not a typo, and it must save the one that matched.
+  // 3. NOT A CASE THIS PRODUCT PRODUCES, and it is here anyway. An account
+  //    holds ONE wallet: the server's max_wallets_per_user defaults to 1 per
+  //    network, the create is refused with "Wallet limit reached", and the
+  //    web hides its New Wallet button at the cap. The cap is an instance
+  //    setting though (0 = unlimited), so the rule is written per wallet
+  //    rather than as a single compare, and this pins that it degrades
+  //    sensibly if one is ever raised: save what matched, name what did not.
   const w2 = mk('w2', 'words-two', 'other');
   const mixed = await run([w1, w2], { w1: 'words-one', w2: 'words-two' }, 'right');
-  ok('a second wallet on another passphrase still saves the first',
+  ok('with the cap raised, a wallet on another passphrase does not block the rest',
     Object.keys(mixed.seeds).length === 1 && !!mixed.seeds.w1 &&
     mixed.noSeed.length === 1 && mixed.noSeed[0].id === 'w2' &&
     mixed.noSeed[0].reason === 'passphrase',

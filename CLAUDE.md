@@ -470,14 +470,24 @@ those wallets, carrying keys and no words, with the mismatch mentioned after
 the download had already happened.
 
 **The test is "opened nothing it COULD have opened", never "opened
-everything"**, and the two cases it must not refuse are why. A browser holding
-no phrases has nothing to check, so nothing can be concluded about what was
-typed and the keys-only file still saves — that is the older wallet's backup
-and always was. And an account whose second wallet has a different passphrase
-is a real account, not a typo: it saves the one that matched and names the
-other. `check:backup` exercises all three, and pins that the refusal sits
-BEFORE `encryptBackup` on both — a warning after the download is not a
-refusal. Deriving an SP address from (seed,
+everything"**, and the case it must not refuse is a browser holding no
+phrases: nothing can be concluded about what was typed, so the keys-only file
+still saves — that is the older wallet's backup and always was.
+
+**AN ACCOUNT HAS ONE WALLET**, which is worth stating because the first
+version of this note justified the rule with a second one and was corrected:
+*"what second wallet!!?? we only allow single wallet per account!!"* The server
+caps it — `max_wallets_per_user` defaults to **1 per network** (siLNt
+`models.py`), `api_create_wallet` refuses the rest with *"Wallet limit
+reached"*, and `WalletsView` hides ＋ New Wallet at the cap. Each client build
+is network-locked, so one build sees one network and one wallet.
+
+With one wallet the rule reads simply as *"that passphrase did not open your
+wallet"*. It is still written per wallet because the cap is an INSTANCE
+setting (0 = unlimited) rather than a law, and a loop that degrades sensibly
+costs nothing; `check:backup` pins that degradation rather than claiming the
+product has two. `check:backup` also pins that the refusal sits BEFORE
+`encryptBackup` on both — a warning after the download is not a refusal. Deriving an SP address from (seed,
 typed passphrase) and comparing it to the one the account holds is a complete
 test, since BIP-39 feeds the passphrase into the seed: one wrong character
 gives a different wallet. A wallet that fails is **left out and named on
@@ -579,12 +589,14 @@ works and cannot show a phrase, which is the state that report is written
 from.
 
 **The section lists EVERY wallet on this network**, each row naming its own
-state, rather than the one `pickSilntWallet` happens to return. The rest of
-the phone app is single-wallet by design, so with one wallet this reads
-exactly as before; with two it stopped answering about one while the reader
-was asking about the other, under a heading that named neither. The wallet's
-title appears on the row only when there is more than one — naming it always
-would be noise on the common case.
+state, rather than the one `pickSilntWallet` happens to return — and that was
+written against a case this product does not have. An account holds ONE
+wallet (see "an account has one wallet" above), so with one wallet the list
+renders exactly as a single row would and the title is hidden; it answers a
+two-wallet reader who cannot exist unless an operator raises the cap. Dead
+generality rather than a fix: harmless, identical on screen, and not what
+solved the report it was written for — the FIELD was. Worth collapsing if
+anyone is in here anyway; not worth a commit of its own.
 
 **The web can show the words now, and until 2026-11-08 it could not** — asked
 for straight after the Security message above: *"if the seed phrase is not on

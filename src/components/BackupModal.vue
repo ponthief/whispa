@@ -152,10 +152,17 @@ async function doSave() {
     // THE TEST IS "OPENED NOTHING IT COULD HAVE OPENED", not "opened
     // everything". A phrase that fails is reason 'passphrase'; a wallet whose
     // words this browser never had is reason 'none' and says nothing about
-    // what was typed. So a browser holding no phrases at all still saves —
-    // that is the older wallet's keys-only file and always was — and a
-    // genuine two-wallet, two-passphrase account still saves the one that
-    // matched and names the other, which is the phone's rule exactly.
+    // what was typed, so a browser holding no phrases at all still saves —
+    // that is the older wallet's keys-only file and always was. THAT is the
+    // case this wording exists for.
+    //
+    // It is NOT about a second wallet. This account has one: the server caps
+    // it at `max_wallets_per_user`, which defaults to 1 per network
+    // (siLNt models.py), refuses the create with "Wallet limit reached", and
+    // WalletsView hides ＋ New Wallet at the cap. With one wallet the test
+    // reads simply as "that passphrase did not open your wallet". The loop
+    // form costs nothing and stays correct if an operator ever raises the
+    // cap, which is the only reason it is not written as a single compare.
     const failedOnPassphrase = noSeed.filter(w => w.reason === 'passphrase')
     if (!Object.keys(seeds).length && failedOnPassphrase.length) {
       say('That passphrase does not open any of your wallets, so none would ' +

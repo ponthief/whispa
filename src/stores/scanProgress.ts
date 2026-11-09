@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as api from '@services/api';
+import { flushLabelQueue } from '@services/pendingLabelsStore';
 
 /**
  * Whether a scan is running, for anything that wants to say so.
@@ -65,8 +66,17 @@ export const useScanProgress = create<ScanProgressState>((set, get) => ({
       try {
         const p = await api.getScanProgress(inkey, id);
         if (get().walletId !== id) return;
+        const wasActive = get().active;
         set({ progress: p, active: !!p.active });
-        if (!p.active) clear();
+        if (!p.active) {
+          clear();
+          // A SCAN JUST FINISHED, which is the moment a label that a restore
+          // could not place has something to attach to: the coins are what it
+          // was waiting for. Only on the active→inactive edge, so a poll that
+          // finds nothing running does not keep asking. Costs one keystore
+          // read when nothing is owed. See services/pendingLabels.ts.
+          if (wasActive) flushLabelQueue(inkey);
+        }
       } catch {
         // Transient. The next tick asks again; if this was the immediate read
         // and nothing is running, the poll below settles it.

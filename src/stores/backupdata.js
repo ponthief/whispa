@@ -81,6 +81,15 @@ export const BACKUP_EXCLUDED = {
   thrilla_plain_sends_v1: 'same',
   thrilla_tango_commit_v1: 'a live round on THIS device; it cannot be moved to another',
 
+  // The labels a restore on THIS device has not managed to place yet
+  // (services/pendingLabels.ts). A work queue, not data: the labels in it are
+  // already in whatever file they came from, and the moment they land they are
+  // on the server, where a backup collects them properly. Restoring the queue
+  // itself somewhere else would re-apply a label the user has since changed on
+  // purpose — the file winning twice, once long after it was opened.
+  thrilla_pending_labels_v1: 'a retry queue for THIS device; the labels in it ' +
+    'are already in the file they came from',
+
   // Session and account identity. None of it is the user's data to restore,
   // and a stale copy is worse than none: a token or an API key from another
   // day is an authentication decision made by a file.

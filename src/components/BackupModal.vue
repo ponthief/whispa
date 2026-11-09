@@ -406,14 +406,21 @@ async function openPending() {
     const srv = await applyServerLabels(
       api, auth.inkey, payload.sections || {},
       remapWalletIds(payload.wallets, live), live)
-    // NAMED APART from the `pending` ref holding the chosen FILE. It was
-    // `pending` for one build, which shadowed the ref inside this function:
-    // the restore itself worked and then `pending.value = null` threw
-    // "Cannot create property 'value' on number '0'", so the file and the
-    // password were both left sitting in the modal. tsc catches this on the
-    // phone and cannot here, and no check would — it took running it.
-    const pendingLabels = (srv.coinLabels?.pending || 0) + (srv.addressLabels?.pending || 0)
-
+    // WHAT DID NOT LAND IS KEPT AND RETRIED, rather than reported and left to
+    // the user (2026-11-09: "labels for SP outputs are not being backed up...
+    // i meant tnx in the Recent tnx or in Activity"). They were in the file;
+    // a coin label needs a coin of this wallet's to attach to, and a wallet
+    // that has just been restored has none until a scan finishes. This screen
+    // used to say "scan, then restore again", which is a second restore
+    // nobody performs. services/pendingLabels.ts holds them and App.vue
+    // flushes the queue when a scan completes.
+    const { queueFrom, mergeQueue } = await import('@/services/pendingLabels')
+    const { loadPendingLabels, savePendingLabels } = await import('@/stores/pendinglabels')
+    savePendingLabels(mergeQueue(
+      loadPendingLabels(),
+      queueFrom((payload.wallets || []).map(w => ({ id: w.id, spAddress: w.spAddress })),
+        srv.unplaced),
+    ))
 
     // ONE WORD (2026-11-08: "restore text is too long and meaningless, just
     // say whether restored or not", then "do not say Nothing new, Restored is
@@ -451,14 +458,12 @@ async function openPending() {
         ? `${noKeys} wallet${noKeys === 1 ? '' : 's'} in this file could not be ` +
           'restored: it carries no keys for them. Save a new backup and use that.'
         : '',
-      // A label whose coin is not here yet — the one thing the user has to
-      // come BACK and do, which is why it outlived the cut. The coins come
-      // from the chain, so this is the normal state between adding a wallet
-      // back and finishing a rescan.
-      pendingLabels
-        ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
-          'coins scanned first — scan, then restore again.'
-        : '',
+      // GONE on 2026-11-09: "N labels need their coins scanned first — scan,
+      // then restore again." It was the one instruction that outlived the cut,
+      // and the instruction is what was wrong: a second restore is a step
+      // nobody takes, so a label that waited on it never arrived. They are
+      // queued and retried now, which leaves nothing for the user to do and
+      // therefore nothing for this message to say.
       // GONE: the wallet counts, and `skipped` — which is what named
       // bitmailPins, and is the "no bitmail pinned etc" in the report. A
       // section this client cannot store is a fact about the FILE, not about

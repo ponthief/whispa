@@ -863,12 +863,23 @@ console.log('the two backup screens say the same simple thing');
       !/\$\{madeWallets\}/.test(src) && !/\$\{gotKeys\}/.test(src) &&
       !/\$\{unchanged\}/.test(src) && !/skipped\.join/.test(src),
       'every one of those numbers was true and none was the question');
+    // AND IT NO LONGER SENDS THE USER BACK FOR A SECOND RESTORE (2026-11-09:
+    // "labels for SP outputs are not being backed up... i meant tnx in the
+    // Recent tnx or in Activity"). They were in the file; a coin label needs
+    // a coin to attach to and a just-restored wallet has none until a scan
+    // finishes, so this said "scan, then restore again" — an instruction
+    // nobody follows, which is the same to its owner as a label that was
+    // never saved. The leftovers are queued and retried now, so there is
+    // nothing for the user to do and nothing for this message to say.
+    ok(`${who} does not ask for a second restore`,
+      !/restore again/.test(src) && !/scanned first/.test(src),
+      'the queue places them; the user is not the retry mechanism');
     // AND `skipped` IS NOT NAMED ANY MORE. It listed the sections this client
     // has nowhere to put — which on the phone is the web's bitmailPins, and
     // is the "no bitmail pinned etc" in the 2026-11-09 report. The rule it
     // used to enforce (do not claim a restore that did not happen) is kept by
-    // what DID survive: a wallet that failed, and a label whose coin is not
-    // scanned yet. A section the other client owns is a fact about the file.
+    // what DID survive: a wallet that failed, and a wallet with no phrase in
+    // the file. A section the other client owns is a fact about the file.
     ok(`${who} does not list the sections it had nowhere to put`,
       !/skipped\.length \?/.test(src),
       'that line is what the report named');
@@ -1844,9 +1855,18 @@ console.log('the SP labels on the server travel in the file too');
   const none = await collectServerLabels(phoneish, 'k', [{ id: 'w1' }]);
   ok('a client without the address api writes no addressLabels section',
     !('addressLabels' in none));
-  ok('and applying one it cannot write is not an error',
-    JSON.stringify(await applyServerLabels(phoneish, 'k',
-      { addressLabels: { w1: { sp1qalice: 'alice' } } }, {}, [{ id: 'w1' }])) === '{}');
+  {
+    // Not an error, nothing reported — and NOTHING QUEUED either. A client
+    // that cannot place these must not hold them owed for ever: no scan will
+    // ever make the phone able to write a labelled SP address, so a retry
+    // queue carrying them would never empty. The web's file restores them.
+    const r = await applyServerLabels(phoneish, 'k',
+      { addressLabels: { w1: { sp1qalice: 'alice' } } }, {}, [{ id: 'w1' }]);
+    ok('and applying one it cannot write is not an error',
+      !r.addressLabels && !r.coinLabels, JSON.stringify(r));
+    ok('nor does it queue a label it can never place',
+      !r.unplaced?.addressLabels, JSON.stringify(r.unplaced));
+  }
 
   // And neither client reports these as sections it did not understand.
   const { applyBackup: webApply } = await import(
@@ -1860,6 +1880,218 @@ console.log('the SP labels on the server travel in the file too');
     /SERVER_SECTIONS = \['coinLabels', 'addressLabels'\]/.test(RNB) &&
     /KNOWN_SECTIONS = \['txLabels', 'segwitLabels', \.\.\.SERVER_SECTIONS\]/.test(RNB),
     'a section that WAS restored must not be reported as dropped');
+}
+
+console.log('a label with no coin to attach to yet is kept and retried');
+{
+  // THE REPORTED BUG, 2026-11-09: "labels for SP outputs are not being backed
+  // up... i meant tnx in the Recent tnx or in Activity on web app."
+  //
+  // They were in the file. A coin label is silnt.utxos.label, so it needs a
+  // COIN of this wallet's to attach to, and the coins come from the chain — a
+  // wallet that has just been restored has none until a scan finishes. Every
+  // SP label came back `pending` while the device-only SegWit ones landed at
+  // once, which from outside is a backup that carried half the labels.
+  //
+  // EXERCISED, not read: the whole point is the sequence — restore with no
+  // coins, scan, flush — and every step of it looks fine on its own.
+  const PL = pathToFileURL(
+    new URL('../src/services/pendingLabels.ts', import.meta.url).pathname).href;
+  const { flushPendingLabels, mergeQueue, queueFrom, countQueued, normalizeQueue, MAX_QUEUED } =
+    await import(PL);
+  const { applyServerLabels } = await import(
+    pathToFileURL(new URL('../src/services/serverLabels.ts', import.meta.url).pathname).href);
+
+  // A wallet whose coins have not been scanned in yet.
+  const makeApi = (state) => ({
+    calls: [],
+    async getUtxos(_k, wid) {
+      this.calls.push(['get', wid]);
+      return { utxos: state[wid] || [] };
+    },
+    async updateUtxoLabel(_k, txid, label, wid) {
+      this.calls.push(['put', wid, txid, label]);
+      const row = (state[wid] || []).find((u) => u.txid === txid);
+      if (!row) throw Object.assign(new Error('no coin from that transaction'), { status: 404 });
+      row.label = label;
+    },
+  });
+
+  const FILE_WALLETS = [{ id: 'old-1', spAddress: 'sp1qalice' }];
+  const SECTIONS = { coinLabels: { 'old-1': { 'tx-a': 'rent', 'tx-b': 'salary' } } };
+
+  // ── The restore, into a wallet that is on the account with no coins yet.
+  const state = { 'new-1': [] };
+  const api1 = makeApi(state);
+  const live = [{ id: 'new-1', spAddress: 'sp1qalice' }];
+  const { remapWalletIds } = await import(
+    pathToFileURL(new URL('../src/services/backup.ts', import.meta.url).pathname).href);
+  const r1 = await applyServerLabels(api1, 'k', SECTIONS, remapWalletIds(FILE_WALLETS, live), live);
+  ok('a label with no coin is still pending', r1.coinLabels.pending === 2 && r1.coinLabels.added === 0);
+  ok('and it comes back as unplaced, not just counted',
+    r1.unplaced?.coinLabels?.['old-1']?.['tx-a'] === 'rent' &&
+    r1.unplaced?.coinLabels?.['old-1']?.['tx-b'] === 'salary',
+    JSON.stringify(r1.unplaced));
+  ok('keyed by the id in the FILE, so the references still match it',
+    'old-1' in (r1.unplaced.coinLabels || {}),
+    'keying it under the live id would strand a wallet that is not back yet');
+
+  // What the restore screen stores.
+  let stored = queueFrom(FILE_WALLETS, r1.unplaced);
+  ok('the queue carries the wallet references with them', stored.wallets.length === 1);
+  ok('and counts what is owed', countQueued(stored) === 2);
+
+  // ── A flush BEFORE the scan: nothing lands, and the queue is unchanged.
+  const api2 = makeApi(state);
+  let saves = 0;
+  let r2 = await flushPendingLabels({
+    api: api2, inkey: 'k',
+    load: () => stored,
+    save: (q) => { saves++; stored = q; },
+    liveWallets: async () => live,
+  });
+  ok('a flush before the coins arrive places nothing', r2.placed === 0 && r2.remaining === 2);
+  ok('and does not rewrite storage for no change', saves === 0,
+    'a scan that placed nothing must not write the keystore every time');
+
+  // ── The scan lands the coins. Now the same queue places them.
+  state['new-1'] = [{ txid: 'tx-a', label: null }, { txid: 'tx-b', label: null }];
+  const api3 = makeApi(state);
+  r2 = await flushPendingLabels({
+    api: api3, inkey: 'k',
+    load: () => stored,
+    save: (q) => { saves++; stored = q; },
+    liveWallets: async () => live,
+  });
+  ok('THE REPORTED CASE: once the coins are scanned the labels land',
+    r2.placed === 2 && r2.remaining === 0, JSON.stringify(r2));
+  ok('on the wallet the account holds NOW, not the id in the file',
+    state['new-1'].find((u) => u.txid === 'tx-a').label === 'rent',
+    'a re-added wallet has a new id; sp_address is what matches the two');
+  ok('and the queue is emptied', countQueued(stored) === 0 && saves === 1);
+
+  // ── An empty queue costs nothing. This runs after every scan.
+  const api4 = makeApi(state);
+  const r3 = await flushPendingLabels({
+    api: api4, inkey: 'k',
+    load: () => stored,
+    save: () => { throw new Error('must not write'); },
+    liveWallets: async () => { throw new Error('must not ask'); },
+  });
+  ok('an empty queue makes no network call at all',
+    api4.calls.length === 0 && r3.placed === 0,
+    'this is on the scan-completion path; it must be free when nothing is owed');
+
+  // ── A FAILED write stays owed. A 500 must not be how a label is lost.
+  const brokenApi = {
+    calls: [],
+    async getUtxos() { return { utxos: [{ txid: 'tx-c', label: null }] }; },
+    async updateUtxoLabel() { throw new Error('boom'); },
+  };
+  const r4 = await applyServerLabels(brokenApi, 'k',
+    { coinLabels: { w1: { 'tx-c': 'rent' } } }, {}, [{ id: 'w1', spAddress: 's' }]);
+  ok('a failed write is counted as failed', r4.coinLabels.failed === 1);
+  ok('and is still owed, so a retry can place it',
+    r4.unplaced?.coinLabels?.w1?.['tx-c'] === 'rent',
+    'a dropped connection must not be the thing that loses a label');
+
+  // ── A label already equal to the file is placed, not owed for ever.
+  const same = { w1: [{ txid: 'tx-d', label: 'rent' }] };
+  const api5 = makeApi(same);
+  const r5 = await applyServerLabels(api5, 'k',
+    { coinLabels: { w1: { 'tx-d': 'rent' } } }, {}, [{ id: 'w1', spAddress: 's' }]);
+  ok('an already-correct label is kept and not queued',
+    r5.coinLabels.kept === 1 && !r5.unplaced?.coinLabels,
+    'otherwise the queue never empties and every scan retries it');
+
+  // ── Merging. A second restore's value wins, as the file always does.
+  const merged = mergeQueue(
+    { v: 1, wallets: [{ id: 'a', spAddress: 'sp1' }], sections: { coinLabels: { a: { t: 'old' } } } },
+    { v: 1, wallets: [{ id: 'b', spAddress: 'sp2' }], sections: { coinLabels: { a: { t: 'new' }, b: { u: 'x' } } } },
+  );
+  ok('a second restore replaces the value it carries',
+    merged.sections.coinLabels.a.t === 'new');
+  ok('and keeps what the first one left owed', merged.sections.coinLabels.b.u === 'x');
+  ok('references from both are kept', merged.wallets.length === 2);
+
+  // ── Junk in storage reads as an empty queue rather than throwing.
+  for (const junk of [null, 'nonsense', 42, { sections: { coinLabels: 'no' } }, { wallets: 'no' }]) {
+    ok(`a malformed queue (${JSON.stringify(junk)}) reads as empty`,
+      countQueued(normalizeQueue(junk)) === 0);
+  }
+  ok('a queue entry whose label is not a string is dropped',
+    countQueued(normalizeQueue({ sections: { coinLabels: { w: { t: { bad: 1 } } } } })) === 0);
+
+  // ── Bounded. A hand-edited file must not park an unbounded map on the
+  // device, retried after every scan for ever.
+  const huge = { coinLabels: { w: {} } };
+  for (let i = 0; i < MAX_QUEUED + 50; i++) huge.coinLabels.w[`tx-${i}`] = 'x';
+  ok('the queue is capped', countQueued(mergeQueue(null,
+    { v: 1, wallets: [], sections: huge })) === MAX_QUEUED, `cap is ${MAX_QUEUED}`);
+
+  // ── A reference with nothing owed is not stored. The refs exist only to
+  // match a label that is waiting.
+  ok('a wallet with nothing owed keeps no reference',
+    queueFrom([{ id: 'x', spAddress: 'sp' }], {}).wallets.length === 0);
+}
+
+console.log('both clients queue what a restore could not place, and flush it');
+{
+  const V = readFileSync(new URL('../src/components/BackupModal.vue', import.meta.url), 'utf8');
+  const P = readFileSync(new URL('../src/screens/settings/BackupPage.tsx', import.meta.url), 'utf8');
+  const APP = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8');
+  const SP = readFileSync(new URL('../src/stores/scanProgress.ts', import.meta.url), 'utf8');
+  const WS = readFileSync(new URL('../src/screens/WalletScreen.tsx', import.meta.url), 'utf8');
+  const DU = readFileSync(new URL('../src/services/duress.ts', import.meta.url), 'utf8');
+  // Comments first, for the trap this file documents about itself: the prose
+  // explaining this fix names every symbol the assertions look for.
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\/[^\n]*$/gm, '');
+
+  // THE RESTORE SIDE. Collecting the leftovers and never storing them is the
+  // bug this whole file keeps catching in other forms — the phone's collector
+  // discarding every phrase it had just verified, the web's doing it to the
+  // keys. Both call sites, both halves.
+  for (const [who, src] of [['the web', strip(V)], ['the phone', strip(P)]]) {
+    ok(`${who} queues what applyServerLabels could not place`,
+      /queueFrom\(/.test(src) && /srv\.unplaced/.test(src),
+      'the leftovers have to be kept or the retry has nothing to retry');
+    ok(`${who} merges them with what was already owed`,
+      /mergeQueue\(/.test(src) && /savePendingLabels\(/.test(src),
+      'a second restore must not throw away the first one\'s leftovers');
+    ok(`${who} keeps the file's wallet references with them`,
+      /spAddress: w\.spAddress/.test(src),
+      'a re-added wallet is matched by address, never by the id in the file');
+  }
+
+  // THE FLUSH SIDE, which is the half that makes the queue mean anything.
+  ok('the web flushes when a scan completes',
+    /clearScanWatch\(wid\)[\s\S]{0,300}flushLabelQueue\(\)/.test(strip(APP)),
+    'the coins a label is waiting for arrive with a scan');
+  ok('and once at startup, for a scan it never saw',
+    /seedScanWatch\(\)[\s\S]{0,200}flushLabelQueue\(\)/.test(strip(APP)),
+    'the scan may have run on the phone, or been the server\'s own');
+  ok('the phone flushes on the scan-completion EDGE',
+    /wasActive/.test(strip(SP)) && /flushLabelQueue\(inkey\)/.test(strip(SP)),
+    'flushing on every inactive poll would ask the server after every tick');
+  ok('and once when the wallet screen loads',
+    /flushLabelQueue\(inkey\)/.test(strip(WS)));
+
+  // The queue holds the same "who I paid" metadata the labels themselves do,
+  // waiting. A duress wipe that took the ones that landed and left the ones
+  // that did not would hand a coerced unlock the half still on the device.
+  ok('the duress wipe takes the queue too',
+    /wipePendingLabels\(\)/.test(strip(DU)),
+    'it holds the same labels, waiting');
+
+  // AND IT IS NOT IN A BACKUP. The total-partition check above fails a
+  // thrilla_* key that is neither collected nor excluded, so this pins the
+  // SIDE it was put on: a work queue for one device, whose labels are already
+  // in the file they came from.
+  const WEB = readFileSync(new URL('../src/stores/backupdata.js', import.meta.url), 'utf8');
+  ok('the pending-label queue is excluded from the backup, with a reason',
+    /thrilla_pending_labels_v1: /.test(WEB),
+    'restoring a retry queue elsewhere would re-apply a label since changed');
 }
 
 console.log('the web collector never reaches the key vault');

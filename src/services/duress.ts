@@ -2,6 +2,7 @@ import * as api from '@services/api';
 import { wipeAllWalletKeys } from '@services/secureKeys';
 import { clearSession } from '@services/session';
 import { forgetPlainDerivations } from '@services/spKeys';
+import { wipePendingLabels } from '@services/pendingLabelsStore';
 import { wipeTangoCommits } from '@services/tangoCommit';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
@@ -54,6 +55,14 @@ export async function runDuress(
   // so "who I gave this to" is the map a coerced unlock must not read back.
   try {
     await useSegwitLabels.getState().clearAll();
+  } catch {
+    /* best-effort */
+  }
+  // And the labels a restore has not placed yet, which are the same thing
+  // waiting in a queue — wiping the ones that landed and leaving the ones that
+  // did not would hand a coerced unlock the half that is still on the device.
+  try {
+    await wipePendingLabels();
   } catch {
     /* best-effort */
   }

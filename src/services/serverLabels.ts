@@ -130,6 +130,19 @@ export async function collectServerLabels(
  * round trip spent saying nothing.
  *
  * `remap` is walletId-in-the-file -> walletId-now, from remapWalletIds.
+ *
+ * AND IT SAYS WHICH ONES DID NOT LAND, not just how many. `unplaced` is the
+ * subset of `sections` that is still owed, keyed exactly as it came in — by
+ * the id in the FILE, so the caller can keep it beside the same wallet
+ * references and hand the pair straight back here later. That is what
+ * services/pendingLabels.ts stores, and it is the whole of the fix for
+ * "scan, then restore again": a label with no coin to attach to yet is kept
+ * and retried when the coins arrive, instead of being counted out loud and
+ * left to the user to come back for.
+ *
+ * A FAILED call is unplaced too, not only a pending one. The label is owed
+ * either way, and a 500 or a dropped connection must not be the thing that
+ * loses it — a retry costs one PUT and the alternative is silence.
  */
 export async function applyServerLabels(
   api: LabelApi,
@@ -137,9 +150,23 @@ export async function applyServerLabels(
   sections: ServerLabelSections,
   remap: Record<string, string>,
   live: WalletRef[],
-): Promise<{ coinLabels?: ServerLabelReport; addressLabels?: ServerLabelReport }> {
-  const out: { coinLabels?: ServerLabelReport; addressLabels?: ServerLabelReport } = {};
+): Promise<{
+  coinLabels?: ServerLabelReport;
+  addressLabels?: ServerLabelReport;
+  unplaced: ServerLabelSections;
+}> {
+  const out: {
+    coinLabels?: ServerLabelReport;
+    addressLabels?: ServerLabelReport;
+    unplaced: ServerLabelSections;
+  } = { unplaced: {} };
   const liveIds = new Set((live || []).map((w) => w?.id).filter(Boolean));
+
+  /** Keep one entry, under the id it arrived with. */
+  const owed = (kind: 'coinLabels' | 'addressLabels', fileId: string, key: string, label: string) => {
+    const sect = out.unplaced[kind] || (out.unplaced[kind] = {});
+    (sect[fileId] || (sect[fileId] = {}))[key] = label;
+  };
 
   if (sections.coinLabels) {
     const r = { ...EMPTY };
@@ -150,6 +177,9 @@ export async function applyServerLabels(
       // place them.
       if (!liveIds.has(walletId)) {
         r.pending += Object.keys(byTxid || {}).length;
+        for (const [txid, label] of Object.entries(byTxid || {})) {
+          owed('coinLabels', fileId, txid, label);
+        }
         continue;
       }
       // One read per wallet rather than one per label, so a wallet with forty
@@ -174,6 +204,7 @@ export async function applyServerLabels(
         // known from the read above.
         if (!(txid in current)) {
           r.pending++;
+          owed('coinLabels', fileId, txid, label);
           continue;
         }
         try {
@@ -182,6 +213,7 @@ export async function applyServerLabels(
         } catch (e) {
           if (isMissing(e)) r.pending++;
           else r.failed++;
+          owed('coinLabels', fileId, txid, label);
         }
       }
     }
@@ -194,6 +226,9 @@ export async function applyServerLabels(
       const walletId = remap[fileId] || fileId;
       if (!liveIds.has(walletId)) {
         r.pending += Object.keys(byAddr || {}).length;
+        for (const [addr, label] of Object.entries(byAddr || {})) {
+          owed('addressLabels', fileId, addr, label);
+        }
         continue;
       }
       // The address row's id is the SERVER's, so a restore cannot use the one
@@ -217,6 +252,7 @@ export async function applyServerLabels(
         // failure.
         if (!row) {
           r.pending++;
+          owed('addressLabels', fileId, addr, label);
           continue;
         }
         if ((row.label || '') === label) {
@@ -228,6 +264,7 @@ export async function applyServerLabels(
           r.added++;
         } catch {
           r.failed++;
+          owed('addressLabels', fileId, addr, label);
         }
       }
     }

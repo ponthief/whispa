@@ -1059,9 +1059,9 @@ that looks like it worked:
 - **A label whose coin is not scanned yet is `pending`, not failed.** The
   endpoint 404s when the wallet holds no coin from that txid, which is the
   normal state between adding a wallet back and finishing a rescan — the coins
-  come from the chain. Both screens say so: *"N labels need their coins scanned
-  first — scan, then restore again."* The same goes for a labelled address,
-  which a scan does not recreate at all because the user made it.
+  come from the chain. It is **kept and retried** now rather than reported; see
+  "the labels a restore could not place" below. The same goes for a labelled
+  address, which a scan does not recreate at all because the user made it.
 - **An address row's id is the SERVER's**, so the one in the file is stale by
   definition after a wallet is re-added. The match is on the address.
 - **A label already equal to the file's is not written.** This talks to a
@@ -1076,6 +1076,81 @@ wants its own decision.
 **Labelled SP addresses are web-only**, so the phone writes no `addressLabels`
 section and ignores one it finds. Both clients name the server sections as
 KNOWN, or a section that WAS restored would be reported as left in the file.
+
+### The labels a restore could not place are kept, not announced
+
+Reported 2026-11-09: *"labels for SP outputs are not being backed up.. can they
+be?"*, then *"i meant tnx in the Recent tnx or in Activity on web app"*.
+
+**They were in the file.** The collector above has carried them since
+2026-11-08 and `check:backup` exercised it. What failed is the other end, and
+the reason is the one sentence this whole section rests on: a coin label is
+`silnt.utxos.label`, so it needs **a coin of this wallet's to attach to**, and
+the coins come from the chain. A wallet that has just been restored has none
+until a scan finishes. So every SP label came back `pending` while the
+device-only SegWit ones landed at once — which from outside is a backup that
+restored half the labels, by a rule nobody can see. That is the *same
+complaint* the server-side half was written to answer, arriving from the other
+direction.
+
+What the screens did about it was **say so**: *"N labels need their coins
+scanned first — scan, then restore again."* True, and useless. A second
+restore is a step nobody takes, so a label waiting on one never arrives, and a
+label that never arrives is the same thing to its owner as a label that was
+never saved. **An instruction in a message is not a mechanism.**
+
+`services/pendingLabels.ts` is the mechanism. `applyServerLabels` now returns
+`unplaced` — the entries it did not write, not just a count of them — the
+restore stores those, and a flush retries them when a scan completes. Six
+things about it are each a bug if they go:
+
+- **Keyed by the id in the FILE, with the wallet references beside them.**
+  That is the pair `remapWalletIds` takes. A wallet that is not on the account
+  at the moment of the restore has no live id to be keyed under, and its
+  sp_address is what finds it later; keying it under the remapped id would
+  file it under one nothing will ever match.
+- **A FAILED write is owed too, not only a pending one.** The label is owed
+  either way, and a 500 or a dropped connection must not be the thing that
+  loses it.
+- **An already-correct label is placed, not owed.** `kept` leaves the queue,
+  or it never empties and every scan retries it for ever.
+- **An empty queue makes no network call at all** — one storage read and it
+  returns. That is what makes it safe on a path that runs after every scan,
+  and it is asserted rather than assumed.
+- **A flush that places nothing does not rewrite storage.** The usual case
+  while a wallet is still scanning is that nothing lands, and that must not
+  cost a keystore write per scan.
+- **It is bounded** (`MAX_QUEUED`). A hand-edited file must not park an
+  unbounded map on the device to be retried for ever.
+
+**Two triggers per client, and the second is not redundant.** The scan
+completion edge is the moment the coins appear — `App.vue`'s completion
+watcher on the web, the active→inactive edge in `stores/scanProgress.ts` on
+the phone. But that edge only fires for a scan *this client watched*: the scan
+that places the labels may have run on the other client, or while the app was
+closed, or been the server's own background scanner. So both also flush once
+when they load.
+
+**The queue is NOT in a backup** (`thrilla_pending_labels_v1`, named in
+`BACKUP_EXCLUDED`). It is a work list for one device; its labels are already
+in whatever file they came from, and the moment they land they are on the
+server, where a backup collects them properly. Restoring the queue itself
+somewhere else would re-apply a label the user has since changed — the file
+winning twice, long after it was opened.
+
+**And the duress wipe takes it**, with `txLabels` and `segwitLabels`. It holds
+the same "who I paid" map, waiting; wiping the labels that landed and leaving
+the ones that did not would hand a coerced unlock the half still on the device.
+
+Both restore messages lost the "scan, then restore again" clause, and
+`check:backup` asserts it **absent** on both — the usual rule for copy that was
+cut here, because there is now nothing for the user to do and so nothing for
+the message to say.
+
+A note for whoever reads the next report of this: **the web cannot label a
+transaction at all.** `TransactionsView.vue` has no input in it; the 🏷 badges
+are the server's coin labels, set on the Coins page or in the phone's
+transaction detail. That is a real gap and is deliberately still open.
 
 And the bug this nearly shipped with is the reason to run things: the web
 modal's new counter was called `pending`, which **shadowed the ref holding the

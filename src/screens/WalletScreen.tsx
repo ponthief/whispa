@@ -31,6 +31,7 @@ import { usePendingSends } from '@stores/pendingSends';
 import { usePlainStatus } from '@stores/plainStatus';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import { useScanProgress } from '@stores/scanProgress';
+import { flushLabelQueue } from '@services/pendingLabelsStore';
 import ScanProgressBar from '../components/ScanProgressBar';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
@@ -336,6 +337,15 @@ export default function WalletScreen() {
   useEffect(() => {
     kickScan(inkey, spWalletId ?? null);
   }, [kickScan, inkey, spWalletId]);
+
+  // And one attempt at any labels a restore left owed, for the scan that
+  // placed them while this app was closed — on the web, or on the server's
+  // own background scanner. The completion edge in scanProgress sees only a
+  // scan this app watched. Nothing owed costs one keystore read and no
+  // network call at all. See services/pendingLabels.ts.
+  useEffect(() => {
+    flushLabelQueue(inkey);
+  }, [inkey]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

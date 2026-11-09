@@ -19,6 +19,8 @@ import { hasWalletKeys, storeWalletKeys } from '@services/secureKeys';
 import { deriveSilentPayment, spAddressFromKeys } from '@services/spKeys';
 import { resetCatchUp } from '../../hooks/useCatchUpScan';
 import { applyServerLabels, collectServerLabels } from '@services/serverLabels';
+import { mergeQueue, queueFrom } from '@services/pendingLabels';
+import { loadPendingLabels, savePendingLabels } from '@services/pendingLabelsStore';
 import { Block, Button, Group, Help, LineInput, Note, Page } from './ui';
 
 // The backup screen.
@@ -317,10 +319,25 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
         ? await applyServerLabels(
             api as any, inkey, (payload as any).sections || {},
             remapWalletIds((payload as any).wallets, live), live)
-        : {};
-      // Named apart from the `pending` FILE above — this one counts labels.
-      const pendingLabels =
-        (srv.coinLabels?.pending || 0) + (srv.addressLabels?.pending || 0);
+        : { unplaced: {} };
+      // WHAT DID NOT LAND IS KEPT AND RETRIED (2026-11-09: "labels for SP
+      // outputs are not being backed up... i meant tnx in the Recent tnx").
+      // They were in the file; a coin label needs a coin of this wallet's to
+      // attach to, and a wallet that has just been restored has none until a
+      // scan finishes. This screen used to say "scan, then restore again",
+      // which is a second restore nobody performs. The queue is flushed when
+      // a scan completes — see stores/scanProgress.ts.
+      await savePendingLabels(
+        mergeQueue(
+          await loadPendingLabels(),
+          queueFrom(
+            ((payload as any).wallets || []).map((w: any) => ({
+              id: w.id, spAddress: w.spAddress,
+            })),
+            srv.unplaced,
+          ),
+        ),
+      );
       // ONE WORD, and the web modal says the same (2026-11-08: "do not say
       // Nothing new, Restored is fine"). The file IS restored whether or not
       // anything changed — a merge that added nothing still means every label
@@ -377,14 +394,12 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
               'could not be restored: it carries no keys for them. It was ' +
               'saved by an older version — save a new backup and use that.'
             : '',
-          // A label whose coin is not here yet. The coins come back from the
-          // chain, so this is the normal state between adding a wallet back
-          // and finishing a rescan — and it is the one thing the user has to
-          // come BACK and do, which is why it outlived the cut.
-          pendingLabels
-            ? `${pendingLabels} label${pendingLabels === 1 ? '' : 's'} need their ` +
-              'coins scanned first — scan, then restore again.'
-            : '',
+          // GONE on 2026-11-09: "N labels need their coins scanned first —
+          // scan, then restore again." It was the one instruction that
+          // outlived the cut, and the instruction is what was wrong: a second
+          // restore is a step nobody takes, so a label waiting on it never
+          // arrived. They are queued and retried now, which leaves nothing
+          // for the user to do and nothing for this message to say.
           // GONE, all of it: the wallets-made and keys-back counts, the
           // "already set up on this device" no-op, the file-holds-no-wallets
           // note, and `skipped` — which is what named bitmailPins and is the

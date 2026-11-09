@@ -171,6 +171,38 @@ function startLoggedInTasks() {
   // before it is on the network.
   if (TANGO_ENABLED) startTangoWatch()
   seedScanWatch()   // one-time check for a scan already running server-side
+  // And one attempt at any labels a restore left owed. The scan that would
+  // place them may have finished while this tab was closed, or run on the
+  // phone, or been the server's own background scan — none of which reaches
+  // the completion watcher below.
+  flushLabelQueue()
+}
+
+// THE LABELS A RESTORE COULD NOT PLACE, retried.
+//
+// A coin label needs a coin of this wallet's to attach to, and the coins come
+// from the chain — so a wallet that has just been restored cannot take any of
+// them until a scan has run. They are kept in a queue (services/
+// pendingLabels.ts) and tried again here: once when the app starts, and after
+// every scan that finishes, which is the moment the coins appear.
+//
+// COSTS NOTHING WHEN NOTHING IS OWED. flushPendingLabels reads one
+// localStorage key and returns without touching the network on an empty
+// queue, which is what makes it safe on a path that runs after every scan.
+async function flushLabelQueue() {
+  if (!auth.isLoggedIn || !auth.inkey) return
+  try {
+    const { flushPendingLabels } = await import('@/services/pendingLabels')
+    const { loadPendingLabels, savePendingLabels } = await import('@/stores/pendinglabels')
+    await flushPendingLabels({
+      api,
+      inkey: auth.inkey,
+      load: loadPendingLabels,
+      save: savePendingLabels,
+      liveWallets: async () => ((await api.getSilntWallets(auth.inkey)) || [])
+        .map(w => ({ id: w.id, spAddress: w.sp_address || '' })),
+    })
+  } catch { /* the queue keeps them; the next scan tries again */ }
 }
 
 // On startup/login, check once whether any wallet has a scan in flight (e.g. one
@@ -425,6 +457,8 @@ async function pollScanCompletions() {
         clearScanWatch(wid)
         _scanToast(wallets.find(w => w.id === wid), p, prev?.total)
         notifySwapCompleted()   // a scan just changed the balance — refresh views
+        // The coins this scan found are what a queued label was waiting for.
+        flushLabelQueue()
       }
     }
   }

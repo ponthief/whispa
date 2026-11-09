@@ -670,7 +670,10 @@ export type BackupWalletRef = {
  * id (which an app reinstall, as opposed to a wallet delete, does preserve).
  */
 export function remapWalletIds(
-  backedUp: BackupWalletRef[] | undefined,
+  // Only the two fields this reads, so the pending-label queue — which keeps
+  // references and no wallet data — can be matched the same way without
+  // carrying a title and a network it has no use for.
+  backedUp: Pick<BackupWalletRef, 'id' | 'spAddress'>[] | undefined,
   live: { id: string; spAddress: string }[] | undefined,
 ): Record<string, string> {
   const byAddress = new Map<string, string>();

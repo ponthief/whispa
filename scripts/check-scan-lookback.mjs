@@ -307,6 +307,46 @@ console.log('\nthe screen and the picker use them');
   ok('the weekday names are the service\'s', /WEEKDAYS\.map\(/.test(pick));
 }
 
+// ── the web's own range, after a scan ────────────────────────────────────
+//
+// Two reports from one session (2026-11-09), both in ScanView and neither
+// visible to tsc, lint or check:vue.
+//
+// "after scan finished from i.e 330000 to 330050, from height is set to tip
+// 330102 with error message from can't be greater than to" — a consequence of
+// the resume point only moving FORWARD, which is what makes a backward rescan
+// safe. Scan an earlier range, last_scan_height stays put, and the recompute
+// resumes from there: above the To the user set for the scan that just ran.
+// The screen then shows an error about a range nobody typed.
+//
+// "there was no rate limit so I was able to press check for payments
+// repeatedly. scans took longer than 1 minute so maybe you set timer at the
+// start, not the end" — exactly right, on the server (helpers/
+// scan_rate_limiter.py, fixed there and pinned by its own test) and here.
+{
+  console.log('the web scan screen');
+  const src = read('src/views/ScanView.vue')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\/[^\n]*/g, '');
+
+  // The To is carried up only when the recomputed From has passed it. A custom
+  // To still ahead of the resume point is the user's and stays.
+  ok('a recomputed From brings the To with it when it has to',
+     /if \(toHeight\.value != null && Number\(toHeight\.value\) < start\) \{[\s\S]{0,120}toHeight\.value = Math\.max\(liveTip, start\)/.test(src),
+     'otherwise the screen shows "From can\'t be greater than To" for a range nobody typed');
+
+  // The cooldown is re-armed when the scan ENDS. Armed only at the start, a
+  // scan longer than the window has already spent it by the time it finishes.
+  ok('the cooldown is re-armed when the scan finishes',
+     /if \(!wasStopped\) armCooldown\(\)/.test(src),
+     'a minute that runs alongside the scan is not a minute between scans');
+  // And NOT on a stop: the backend clears its own cooldown there, so arming
+  // here would be a client limit stricter than the server it mirrors.
+  ok('and not when the user stopped it',
+     src.indexOf('const wasStopped') < src.indexOf('if (!wasStopped) armCooldown()'),
+     'the backend resets its cooldown on an explicit stop');
+}
+
 console.log('');
 if (failures) {
   console.log(`${failures} check(s) failed`);

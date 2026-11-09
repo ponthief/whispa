@@ -2471,6 +2471,52 @@ and is reported as `gap` on the progress record, so neither client claims the
 wallet is up to date while there is a hole in it. See
 `tests/test_scan_gap_is_reported.py` and `tests/test_resume_point.py`.
 
+### The scan cooldown ran DURING the scan, and the range broke after one
+
+Two reports from one session (2026-11-09), both on the web scan screen.
+
+**"there was no rate limit so I was able to press check for payments
+repeatedly. scans took longer than 1 minute so maybe you set timer at the
+start, not the end."** Exactly that. `check_scan_allowed` stamps
+`_last_scan_time[wallet_id]` at the moment a scan is ALLOWED, so the sixty
+seconds ran alongside the scan rather than after it — and a scan longer than a
+minute, which on mainnet is most of them, left the window already expired the
+instant it finished. The limit was real, correct, and unreachable for the case
+it was written for.
+
+`mark_scan_finished` re-stamps it now, so the minute starts when the scan
+**ends**. Both stamps are kept deliberately: the START one is what a second
+press during a SHORT scan hits, the FINISH one is what the next press after a
+long one hits, and `_active_scans` bounds how many run at once while saying
+nothing about rate. An explicit stop still clears it
+(`reset_wallet_cooldown`) — somebody who stopped a scan to fix the range
+retries immediately, and the block budget is the real oracle-load guard there.
+`tests/test_scan_cooldown_from_finish.py` drives a fake clock rather than
+sleeping, and the reported case fails against the old limiter.
+
+The client mirrors it: `ScanView` armed its cooldown only at the start, so the
+same minute expired mid-scan. It re-arms on completion — and **not on a
+stop**, which is why that call sits below `wasStopped` rather than at the top
+of the branch: arming there would make the client stricter than the server it
+mirrors, on the one path somebody takes to fix a range and retry.
+
+**"after scan finished from i.e 330000 to 330050, from height is set to tip
+330102 with error message from can't be greater than to."** A consequence of
+the resume point only ever moving FORWARD — the rule that makes a deliberate
+backward rescan safe. Scan an earlier range, `last_scan_height` stays where it
+was, and `onWalletChange` then resumes from there: **above** the custom To the
+user set for the scan that has just finished. The screen shows a range error
+about something nobody typed.
+
+The To they chose belonged to the scan that is over, so it is **carried up
+with the From** rather than left behind, and the next offer is the honest
+"resume point → tip". Only when it would otherwise be invalid: a custom To
+still ahead of the resume point is untouched. Driven in Chromium against the
+real view — without the fix it reproduces as From 330102, To 330050 and the
+error; with it, both land on the tip and there is none. `check:scan` pins
+both halves source-side, because neither is a syntax error, an undefined
+identifier, or visible to any build.
+
 ### The catch-up banner scanned the same blocks twice
 
 Reported 2026-11-07, web only. The banner on Wallet said "N blocks behind";

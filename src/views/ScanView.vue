@@ -181,6 +181,24 @@ function onWalletChange(preserveProgress = false) {
     start = Math.max(scanGap.value, minScanHeight.value || 0)
   }
   fromHeight.value = start
+  // AND THE TO-HEIGHT COMES WITH IT WHEN IT HAS TO. Reported 2026-11-09:
+  // "after scan finished from i.e 330000 to 330050, from height is set to tip
+  // 330102 with error message from can't be greater than to".
+  //
+  // It is a consequence of the resume point only ever moving FORWARD, which is
+  // the rule that makes a deliberate backward rescan safe. Scan an earlier
+  // range and last_scan_height stays where it was; this recompute then resumes
+  // from there — above the custom To the user set for the scan that just ran —
+  // and the screen shows an error about a range the user never typed.
+  //
+  // The To they chose belonged to the scan that has FINISHED. What the screen
+  // should offer next is the honest next range, "resume point → tip", so the
+  // To is carried up rather than left behind. Only when it would otherwise be
+  // invalid: a custom To still ahead of the resume point is untouched.
+  const liveTip = Number(chainTip.value) || 0
+  if (toHeight.value != null && Number(toHeight.value) < start) {
+    toHeight.value = Math.max(liveTip, start)
+  }
 }
 
 async function pollProgress() {
@@ -194,6 +212,19 @@ async function pollProgress() {
       // current === total; a stop leaves current < total. The backend now reports
       // the real blocks scanned (no longer forced to total), so this is reliable.
       const wasStopped = progress.value.total > 0 && progress.value.current < progress.value.total
+      // THE COOLDOWN RUNS FROM THE END, mirroring the backend's own stamp in
+      // mark_scan_finished. Armed only at the start, a scan longer than a
+      // minute had already spent its window by the time it finished and the
+      // button came straight back — "there was no rate limit so I was able to
+      // press check for payments repeatedly".
+      //
+      // NOT ON A STOP, and that is why it is below `wasStopped` rather than at
+      // the top of this branch: the backend clears the cooldown when the user
+      // stops a scan themselves (`reset_wallet_cooldown`), so arming here would
+      // grey the button out for a minute the server would have allowed —
+      // a client limit stricter than the one it mirrors, on the path somebody
+      // takes to fix a range and retry.
+      if (!wasStopped) armCooldown()
       if (progress.value.total > 0) {
         scanResult.value = {
           utxos_found:    progress.value.found,

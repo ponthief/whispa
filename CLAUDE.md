@@ -460,7 +460,24 @@ file invented, the floor rose from 8 to 12 by that change alone
 (`PASSPHRASE_MIN_LENGTH`), and the KDF cost doubled.
 
 **The passphrase is CHECKED, not taken on trust** — *"if wrong passphrase
-entered the wallet doesn't get backed up"*. Deriving an SP address from (seed,
+entered the wallet doesn't get backed up"*, and since 2026-11-09 a passphrase
+that opens NOTHING refuses the save outright, on both clients (*"if user enter
+invalid passphrase, we would warn him that it's wrong and won't save the
+backup?"*). The phone already did; the web did not, and the asymmetry was the
+kind that hides — its keys do not depend on the passphrase, so a mistyped one
+still wrote a perfectly good file, sealed under a secret that opens none of
+those wallets, carrying keys and no words, with the mismatch mentioned after
+the download had already happened.
+
+**The test is "opened nothing it COULD have opened", never "opened
+everything"**, and the two cases it must not refuse are why. A browser holding
+no phrases has nothing to check, so nothing can be concluded about what was
+typed and the keys-only file still saves — that is the older wallet's backup
+and always was. And an account whose second wallet has a different passphrase
+is a real account, not a typo: it saves the one that matched and names the
+other. `check:backup` exercises all three, and pins that the refusal sits
+BEFORE `encryptBackup` on both — a warning after the download is not a
+refusal. Deriving an SP address from (seed,
 typed passphrase) and comparing it to the one the account holds is a complete
 test, since BIP-39 feeds the passphrase into the seed: one wrong character
 gives a different wallet. A wallet that fails is **left out and named on

@@ -141,6 +141,27 @@ async function doSave() {
       refs,
       password.value,
     )
+    // A WRONG PASSPHRASE REFUSES THE SAVE, as it does on the phone. Asked
+    // 2026-11-09: *"if user enter invalid passphrase, we would warn him that
+    // it's wrong and won't save the backup?"* — and here it did not. The keys
+    // this browser seals do not depend on the passphrase, so a mistyped one
+    // still produced a perfectly good file: sealed under a secret that opens
+    // none of these wallets, carrying keys and no words, with the mismatch
+    // mentioned after the download had already happened.
+    //
+    // THE TEST IS "OPENED NOTHING IT COULD HAVE OPENED", not "opened
+    // everything". A phrase that fails is reason 'passphrase'; a wallet whose
+    // words this browser never had is reason 'none' and says nothing about
+    // what was typed. So a browser holding no phrases at all still saves —
+    // that is the older wallet's keys-only file and always was — and a
+    // genuine two-wallet, two-passphrase account still saves the one that
+    // matched and names the other, which is the phone's rule exactly.
+    const failedOnPassphrase = noSeed.filter(w => w.reason === 'passphrase')
+    if (!Object.keys(seeds).length && failedOnPassphrase.length) {
+      say('That passphrase does not open any of your wallets, so none would ' +
+          'be in the file. Check it and try again.', 'error')
+      return
+    }
     const withKeys = refs.map(w => ({
       ...w,
       ...(keys[w.id] ? { keys: keys[w.id] } : {}),
@@ -191,7 +212,10 @@ async function doSave() {
     // fixed, rather than discovered on another device that has nothing to
     // show. The two cases need different answers, so they are reported apart.
     else if (noSeed.length) {
-      const bad = noSeed.filter(w => w.reason === 'passphrase')
+      // Only reachable now when SOME wallet verified, so this names the
+      // odd one out rather than reporting a wholly wrong passphrase after
+      // the fact — that case is refused above, before anything is written.
+      const bad = failedOnPassphrase
       noWords = bad.length
         ? `Saved. ${bad.map(w => w.title).join(', ')}: that passphrase does not ` +
           'match, so its seed phrase was left out of the file.'

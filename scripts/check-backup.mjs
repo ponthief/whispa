@@ -1130,6 +1130,87 @@ console.log('the restore says what it is doing after the KDF');
 // Pinned source-side on all three screens, because the fix is an ORDER — a
 // yield between the message and the synchronous work — and nothing about a
 // missing one is visible to tsc, lint, check:vue, or any behavioural test.
+// ── a wrong passphrase refuses the SAVE, on both ─────────────────────────
+//
+// Asked 2026-11-09: *"if user enter invalid passphrase, we would warn him
+// that it's wrong and won't save the backup?"* The phone did; the web did
+// not. Its keys do not depend on the passphrase, so a mistyped one still
+// wrote a perfectly good file — sealed under a secret that opens none of
+// these wallets, carrying keys and no words — and said so only after the
+// download had happened.
+//
+// The rule is "opened NOTHING it could have opened", and the two cases it
+// must NOT refuse are the whole reason it is written that way.
+console.log('a passphrase that opens nothing refuses the save');
+{
+  const stripc = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\/[^\n]*/g, '');
+  const WEB = stripc(readFileSync(
+    new URL('../src/components/BackupModal.vue', import.meta.url), 'utf8'));
+  const PHONE = stripc(readFileSync(
+    new URL('../src/screens/settings/BackupPage.tsx', import.meta.url), 'utf8'));
+
+  // SOURCE-SIDE, and before the encrypt: a refusal that ran after
+  // encryptBackup would be a message over a file already written.
+  for (const [who, src, call] of [['the web', WEB, 'encryptBackup('],
+                                  ['the phone', PHONE, 'encryptBackup(']]) {
+    const guard = src.indexOf('does not open any of your wallets');
+    ok(`${who} refuses a passphrase that opens nothing`, guard >= 0);
+    ok(`${who} refuses it BEFORE writing anything`,
+      guard >= 0 && guard < src.indexOf(call),
+      'a warning after the download is not a refusal');
+  }
+
+  // AND IT IS EXERCISED, because the interesting half is what it lets
+  // through. collectWalletKeys is the web's half and imports cleanly.
+  const { collectWalletKeys } = await import('../src/services/walletBackup.ts');
+  const derive = (m, pp) => ({ spAddress: `sp1-${m}-${pp}`, scanSecret: 's',
+    spendKey: 'k', refundAddress: 'r', sweepAccount: 'a' });
+  // The keys half must PASS so the phrase half is what is being tested: each
+  // wallet's scanSecret is its id, and spAddressFromKeys maps that back to
+  // the address the wallet record carries.
+  const addrOf = {};
+  const mk = (id, seed, pp) => {
+    const spAddress = derive(seed, pp).spAddress;
+    addrOf[id] = spAddress;
+    return { id, title: id, network: 'signet', spAddress };
+  };
+  const run = (wallets, seedsFor, typed) => collectWalletKeys(
+    { getWalletKeys: async (id) => ({ scanSecret: id, spendKey: 'k',
+                                      refundAddress: 'r', sweepAccount: 'a' }),
+      spAddressFromKeys: (scanSecret) => addrOf[scanSecret],
+      readSeed: async (id) => seedsFor[id] ?? null,
+      deriveSilentPayment: derive },
+    wallets, typed);
+
+  // 1. One wallet, wrong passphrase: nothing verified, and it was checkable.
+  const w1 = mk('w1', 'words-one', 'right');
+  const wrong = await run([w1], { w1: 'words-one' }, 'WRONG');
+  ok('a wrong passphrase verifies nothing and says why',
+    Object.keys(wrong.seeds).length === 0 &&
+    wrong.noSeed.length === 1 && wrong.noSeed[0].reason === 'passphrase',
+    'this is the state the screens refuse on');
+
+  // 2. A browser holding NO phrases: nothing was checkable, so nothing can be
+  //    concluded about what was typed — this file must still save. It is the
+  //    older wallet's keys-only backup and always was.
+  const none = await run([w1], {}, 'WRONG');
+  ok('a wallet with no stored phrase does not look like a wrong passphrase',
+    Object.keys(none.seeds).length === 0 &&
+    none.noSeed.length === 1 && none.noSeed[0].reason === 'none',
+    'refusing here would stop an older wallet backing up at all');
+
+  // 3. Two wallets, two passphrases: one verifies, one does not. That is a
+  //    real account, not a typo, and it must save the one that matched.
+  const w2 = mk('w2', 'words-two', 'other');
+  const mixed = await run([w1, w2], { w1: 'words-one', w2: 'words-two' }, 'right');
+  ok('a second wallet on another passphrase still saves the first',
+    Object.keys(mixed.seeds).length === 1 && !!mixed.seeds.w1 &&
+    mixed.noSeed.length === 1 && mixed.noSeed[0].id === 'w2' &&
+    mixed.noSeed[0].reason === 'passphrase',
+    'the test is "opened nothing", never "opened everything"');
+}
+
 console.log('every screen paints before it decrypts');
 {
   const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')

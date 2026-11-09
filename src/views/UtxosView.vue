@@ -308,7 +308,6 @@ watch(selectedWallet, () => { loadSegwit() })
     <div class="flex items-center justify-between" style="margin-bottom:24px">
       <div>
         <h1>Coins</h1>
-        <p class="text-dim text-sm" style="margin-top:2px">The individual coins that make up your wallet — spendable, pending, and spent</p>
       </div>
       <button class="btn btn-ghost btn-sm" @click="loadUtxos" :disabled="!selectedWallet || loading">
         <span v-if="loading" class="spinner"></span>

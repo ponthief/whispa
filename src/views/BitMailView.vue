@@ -557,9 +557,7 @@ onBeforeUnmount(() => {
       <div class="card-body">
         <h3 style="margin-bottom:10px">What is BitMail?</h3>
         <p class="text-dim text-sm" style="line-height:1.7">
-          BitMail lets you receive Bitcoin at a memorable address that looks like an email — for example <span class="mono text-green">{{ exampleAddress() }}</span> — instead of sharing a long, hard-to-read payment code. Behind the scenes it maps your friendly name to your private payment code, so senders just type your BitMail address and the payment reaches you.
-          An address like <span class="mono text-orange">{{ exampleAddress() }}</span> resolves via a DNS lookup
-          to <span class="mono">bitcoin:?sp=sp1q…</span>, giving you the recipient's Silent Payment address.
+          BitMail lets you receive Bitcoin at a memorable address that looks like an email — for example <span class="mono text-green">{{ exampleAddress() }}</span> — instead of sharing a long, hard-to-read payment code.
         </p>
       </div>
     </div>

@@ -1153,6 +1153,45 @@ threshold can be changed from the phone, and a value held from the last time
 the modal was opened would be a stale number on the one screen whose job is
 saying what is in force.
 
+### The web's Account page, and the page with no way off it
+
+**Trusted Devices is a ROUTE, and it had no link back** — reported 2026-11-09:
+*"in web app, clicking on Trusted devices, there is no way to go back to
+Account"*. It is reached from one button on Account and from nowhere else, so
+the browser's own Back was the only way out of it. `DevicesView.vue` now
+carries a **← Account** link, the same shape `ScanView` uses for **← Wallet**.
+
+It is **guarded on the route existing**, which is not defensive clutter: the
+admin portal renders this same component (`adminRoutes` has its own `/devices`
+so an admin can manage their own devices), and the admin build compiles the
+user routes out entirely. A `:to="{ name: 'config' }"` that cannot resolve
+throws where it renders, so an ungated link would have traded one missing way
+back for a dead page. `router.hasRoute('config')` decides, and both builds
+were driven in Chromium to check: the link is there in one and absent, with no
+error, in the other.
+
+**And the copy on that page is the user's own** (2026-11-09), replacing
+explanations with the decision in front of the reader:
+
+- The page subtitle (*"Your sign-in, devices and invites"*) is gone; the
+  heading says Account.
+- **Invite**: *"Ask friend to join WhiSPa!"*
+- **Password** stops at *"…a secure link to set a new one."* — the clause
+  about which way is safest was advice nobody asked for in front of a button.
+- **Local Wallet Keys**: *"Delete keys to disable spending and scanning for
+  payment for the wallet in this session. Removing them will require
+  reimporting seed + passphrase."* Two paragraphs before — what the keys are
+  and that they never reach the server, then when to wipe them — became what
+  the button does and what it costs.
+- **Close Account**: *"Full account closure permanently removes both your
+  wallet and account. Make sure you have seed phrase and passphrase, if you
+  wish to recreate WhiSPa wallet at a later date."* It keeps both halves that
+  matter, and note which secret it now names: the phrase **and** the
+  passphrase, which is the pair the rest of this file keeps insisting on.
+- **Coins** loses its subtitle, and **BitMail**'s *"What is BitMail?"* keeps
+  its first sentence — the DNS mechanics went, which were an answer to a
+  question the heading does not ask.
+
 ### Where it lives, and the one line both screens say
 
 **On the web it is a modal off the wallet card's ⚙ menu** (2026-11-08, on the

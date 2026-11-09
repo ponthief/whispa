@@ -236,7 +236,6 @@ onMounted(() => {
            with Account as they are more account settings"). What is left here
            is the account itself; anything about coins lives with the coins. -->
       <h1>Account</h1>
-      <p class="text-dim text-sm" style="margin-top:2px">Your sign-in, devices and invites</p>
     </div>
 
     <div v-if="loading" class="flex items-center gap-2 text-dim" style="padding:40px 0">
@@ -268,7 +267,7 @@ onMounted(() => {
       <div class="card-header"><h2>Invite a friend</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
         <p class="text-dim text-sm" style="margin:0">
-          Send email invite to a friend to join WhiSPa.
+          Ask friend to join WhiSPa!
         </p>
         <div class="flex gap-2" style="flex-wrap:wrap">
           <input
@@ -300,8 +299,7 @@ onMounted(() => {
         <p class="text-dim text-sm" style="margin:0">
           To change your password, use <strong>Logout</strong>, then tap
           <strong>“Forgot password?”</strong> on the sign-in screen. We'll email you
-          a secure link to set a new one — the safest way to change it, especially
-          if you think someone may know your current password.
+          a secure link to set a new one.
         </p>
       </div>
     </div>
@@ -316,11 +314,14 @@ onMounted(() => {
     <div class="card">
       <div class="card-header"><h2>Local Wallet Keys</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <!-- The user's own wording (2026-11-09). It was two paragraphs: what
+             the keys are and that they are never sent to the server, then
+             when to wipe them. What is left says what the button DOES and
+             what it costs, which is the decision in front of the reader. -->
         <p class="text-dim text-sm" style="margin:0">
-          Wallet scan and spend keys are encrypted and stored on this device only — they are never sent to the server. They persist across logout/login so you don't have to re-import each session.
-        </p>
-        <p v-if="hasAnyLocalKeys" class="text-dim text-sm" style="margin:0">
-          If you're handing this device to someone else, click below to permanently wipe locally stored keys. You'll need to re-import wallets from your mnemonic to use them again.
+          Delete keys to disable spending and scanning for payment for the
+          wallet in this session. Removing them will require reimporting seed
+          + passphrase.
         </p>
         <template v-if="hasAnyLocalKeys">
           <div v-if="!confirmForget">
@@ -347,14 +348,13 @@ onMounted(() => {
     <div class="card danger-zone settings-danger">
       <div class="card-header"><h2 style="color:#ff7b72">Close Account</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <!-- The user's own wording (2026-11-09), replacing two paragraphs.
+             It keeps both halves that matter: this is permanent, and the
+             seed phrase AND passphrase are what let you come back. -->
         <p class="text-dim text-sm" style="margin:0">
-          Permanently delete your account and all of its wallets from the server. This removes your
-          wallet records, scan data, and any BitMail address you were assigned. <strong>This cannot be undone.</strong>
-        </p>
-        <p class="text-dim text-sm" style="margin:0">
-          Your on-chain funds are <em>not</em> affected — they live on the blockchain, not on the server.
-          As long as you keep your mnemonic, you can recover your wallet elsewhere. But once this account
-          is closed, its scan history and settings here are gone for good.
+          Full account closure permanently removes both your wallet and
+          account. Make sure you have seed phrase and passphrase, if you wish
+          to recreate WhiSPa wallet at a later date.
         </p>
         <div v-if="!showCloseAccount">
           <button class="btn btn-danger btn-sm" @click="showCloseAccount = true">

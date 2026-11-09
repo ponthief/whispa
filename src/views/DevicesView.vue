@@ -1,9 +1,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 
 const auth = useAuthStore()
+const router = useRouter()
+// The admin build compiles the user routes out, so Account may not exist here.
+const hasAccountPage = computed(() => router.hasRoute('config'))
 
 const devices       = ref([])
 const currentDevice = ref(null)
@@ -108,6 +112,18 @@ onMounted(loadDevices)
 <template>
   <div class="page-wrap">
     <div class="page-inner">
+      <!-- THE WAY BACK. This is a ROUTE, reached from one button on Account
+           and from nowhere else, and it had no link out — reported 2026-11-09
+           as "clicking on Trusted devices, there is no way to go back to
+           Account". Same shape as ScanView's "← Wallet". -->
+      <!-- GUARDED, because this same component is the admin portal's devices
+           page and the admin build has no `config` route at all — an
+           unresolvable named target throws where it is rendered, so an
+           ungated link would trade one missing way back for a broken page. -->
+      <router-link v-if="hasAccountPage" :to="{ name: 'config' }"
+                   class="btn btn-ghost btn-sm"
+                   style="margin-bottom:10px">← Account</router-link>
+
       <div class="page-header">
         <h2 class="page-title">Trusted Devices</h2>
         <p class="text-dim text-sm" style="margin-top:4px">

@@ -105,11 +105,18 @@ export async function getSilntWallets(inkey, network = undefined) {
   })
 }
 
+// THE NETWORK IS DEFAULTED HERE, as the phone's api has always done, because
+// the server's own default is "mainnet" and a caller that omits it does not
+// get an error — it gets a mainnet wallet. `restoreWallets` omitted it, and on
+// a signet build that made the create fail on the birth-height clamp (read
+// against the MAINNET oracle's floor) and on the `tsp1…` prefix check. An
+// explicit network in `data` still wins: a backup's wallet belongs to the
+// network the file names.
 export async function createSilntWallet(inkey, data) {
   return req(`${SILNT}/api/v1/wallet`, {
     method: 'POST',
     headers: keyHeaders(inkey),
-    body: JSON.stringify(data),
+    body: JSON.stringify({ network: NETWORK_LOCK || 'mainnet', ...data }),
   })
 }
 

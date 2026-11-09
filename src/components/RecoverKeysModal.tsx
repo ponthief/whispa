@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,7 @@ import { usePlainStatus } from '@stores/plainStatus';
 import { useAuthStore } from '@stores/authStore';
 import SeedInput from './SeedInput';
 import { colors } from '@/theme';
+import Config from 'react-native-config';
 
 const PRIMARY = colors.primary;
 
@@ -66,6 +68,9 @@ export default function RecoverKeysModal({
   const inkey = useAuthStore((st) => st.inkey);
   const [file, setFile] = useState<null | { text: string; asksFor: string }>(null);
   const [filePass, setFilePass] = useState('');
+  // The eye on the file's secret: masked by default, revealed on demand when
+  // an open is refused and the typing is the suspect.
+  const [showFilePass, setShowFilePass] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -138,6 +143,7 @@ export default function RecoverKeysModal({
           deriveSilentPayment,
           spAddressFromKeys,
           createWallet: (data) => api.createSilntWallet(inkey, data) as any,
+          network: Config.NETWORK_LOCK || undefined,
           storeWalletKeys,
           saveSeed,
           hasKeys: hasWalletKeys,
@@ -270,21 +276,34 @@ export default function RecoverKeysModal({
                   {file.asksFor.charAt(0).toUpperCase() + file.asksFor.slice(1)}{' '}
                   for this file
                 </Text>
-                <TextInput
-                  style={styles.input}
-                  value={filePass}
-                  onChangeText={setFilePass}
-                  placeholder={`The ${file.asksFor} that opens it`}
-                  placeholderTextColor={colors.faint}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                  // Not masked, for the reason the Backup screen gives: a
-                  // per-file secret with no checksum, typed once, where seeing
-                  // it is the only way to tell you typed what you typed before.
-                  secureTextEntry={false}
-                  onSubmitEditing={openBackup}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={filePass}
+                    onChangeText={setFilePass}
+                    placeholder={`The ${file.asksFor} that opens it`}
+                    placeholderTextColor={colors.faint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                    // MASKED (2026-11-09: "passphrase needs to be masked when
+                    // opening backup file as it gets visible for too long").
+                    // The Backup screen's argument for showing it is about
+                    // SAVING, where a typo seals a file nobody can open and
+                    // nothing says so for weeks. Opening answers in seconds,
+                    // so the secret does not need to sit on screen for the
+                    // whole of a restore — and the eye gives it back when an
+                    // open is refused and the typing is the suspect.
+                    secureTextEntry={!showFilePass}
+                    onSubmitEditing={openBackup}
+                  />
+                  <Pressable
+                    onPress={() => setShowFilePass((v) => !v)}
+                    hitSlop={10}
+                    accessibilityLabel={showFilePass ? 'Hide passphrase' : 'Show passphrase'}>
+                    <Text style={{ fontSize: 18 }}>{showFilePass ? '🙈' : '👁'}</Text>
+                  </Pressable>
+                </View>
 
                 {note ? <Text style={styles.hint}>{note}</Text> : null}
                 {error ? <Text style={styles.error}>{error}</Text> : null}

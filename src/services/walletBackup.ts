@@ -364,8 +364,19 @@ export type RestoreDeps = {
   createWallet(data: {
     title: string;
     sp_address: string;
+    network?: string;
     last_height?: number;
   }): Promise<{ wallet_id: string }>;
+  /**
+   * The network THIS BUILD is locked to, when the caller knows it.
+   *
+   * Both clients are network-locked and `getSilntWallets` filters on it, so a
+   * wallet created for another network would be made, stored against, and
+   * then never listed — a ghost with keys on the device and no row on screen.
+   * Naming it as not restored is the honest answer; absent means no check,
+   * which is what a test harness wants.
+   */
+  network?: string;
   // BOTH RETURN A BOOLEAN on the phone, and `false` means the write did not
   // happen — the keystore refused, or the device has no secure storage. A
   // caller that ignored it would leave a wallet created on the server with no
@@ -603,11 +614,49 @@ async function adoptOrCreate(
     }
   }
 
+  // A WALLET FOR ANOTHER NETWORK IS NOT RESTORED, it is reported. Creating it
+  // would succeed and then vanish: both clients are network-locked and list
+  // their own network only, so the row never appears while its keys sit in
+  // this device's keystore.
+  if (deps.network && w.network && w.network !== deps.network) {
+    report.failed.push({
+      title,
+      message: `it is a ${w.network} wallet and this app is ${deps.network}`,
+    });
+    return 'failed';
+  }
+
   try {
-    const data: { title: string; sp_address: string; last_height?: number } = {
+    const data: {
+      title: string;
+      sp_address: string;
+      network?: string;
+      last_height?: number;
+    } = {
       title,
       sp_address: w.spAddress,
     };
+    // THE NETWORK, WHICH THIS NEVER SENT until 2026-11-09 — and the server
+    // defaults `CreateWallet.network` to "mainnet", so every restore that
+    // created a wallet created a MAINNET one.
+    //
+    // Reported as "born at height doesn't get saved correctly to backup file"
+    // and "label on SP utxo does not get restored", which are both this. On a
+    // signet build the create is refused twice over: `get_backend_config`
+    // reads the MAINNET oracle's `min_scan_height`, which is far above a
+    // signet birth height, so the clamp raises *"Wallet birth height must be
+    // at least N. You entered …"* — the error that report is quoting — and
+    // behind it the prefix check refuses a `tsp1…` address "for mainnet".
+    // The wallet is then not on the account at all, so every SP coin label
+    // has no live wallet to be written to and comes back unplaced: one root
+    // cause, both reports.
+    //
+    // The file knows the answer and always has. The phone's api injected its
+    // own NETWORK_LOCK and so hid this from that client entirely; the web's
+    // passed the body through untouched, which is the usual one-sided
+    // asymmetry — and the fix belongs HERE, because the file's wallet is for
+    // the network the file says, not for whichever build is restoring it.
+    if (w.network) data.network = w.network;
     // Only when the file has one. A missing birth height is better left to
     // the server's own default than guessed at here: a number invented on
     // this side could sit ABOVE the wallet's first payment, and the resume

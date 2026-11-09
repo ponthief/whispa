@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules, Platform, Pressable, Text, View } from 'react-native';
+import Config from 'react-native-config';
 import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
 import { paint } from '@services/paint';
@@ -69,6 +70,9 @@ function native(): Native {
 
 export default function BackupPage({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState('');
+  // The eye on the file's secret. Reset with the password itself: a revealed
+  // secret must not still be on screen for the next file.
+  const [showPass, setShowPass] = useState(false);
   // THE FILE COMES FIRST ON A RESTORE (2026-11-08, on the user's instruction:
   // "when restoring user selects the file and if the file is encrypted it
   // should ask for a password"). A chosen file waits here while its password
@@ -219,6 +223,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // between 2026-11-04 and 2026-11-08 asks for the seed phrase by
       // name rather than failing to open and leaving the user guessing.
       setPassword('');
+      setShowPass(false);
       say(
         info.encrypted
           ? `This backup is encrypted. Enter its ${info.asksFor} and press Open.`
@@ -281,6 +286,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             // phrase to re-derive from.
             spAddressFromKeys,
             createWallet: (data) => api.createSilntWallet(inkey, data) as any,
+            // This build's network, so a wallet for the OTHER one is named
+            // rather than created into a list that filters it out.
+            network: Config.NETWORK_LOCK || undefined,
             storeWalletKeys,
             saveSeed,
             // What this device already has, asked per wallet. Without these a
@@ -419,6 +427,7 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // disappeared": the field still held what had been typed to OPEN the
       // file, so Save sealed a new backup with it, having asked nothing.
       setPassword('');
+      setShowPass(false);
     } catch (e: any) {
       say(e?.message || 'Could not read that backup.', true);
     } finally {
@@ -480,22 +489,40 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
 
       {backupFileAvailable() ? (
         <Group title="Backup file">
-          {/* NOT MASKED (2026-11-08, on the user's instruction, and the web
-              modal matches). A per-file password with no checksum, typed once
-              — seeing it is the only way to tell you are typing what you typed
-              before, and a masked field is how "I can't restore" happens when
-              the file is fine and the typing was not. */}
+          {/* SAVING IS NOT MASKED (2026-11-08, on the user's instruction, and
+              the web modal matches). A per-file secret with no checksum,
+              typed once — seeing it is the only way to tell you are typing
+              what you typed before, and a typo seals a file nobody can ever
+              open with nothing finding out until a restore.
+
+              OPENING ONE IS MASKED (2026-11-09: "passphrase needs to be
+              masked when opening backup file as it gets visible for too
+              long"). The halves differ because the feedback does: an open
+              answers within seconds where a mistyped save is silent for ever.
+              The eye gives back what masking costs — a refused open is often
+              a good file and bad typing — without leaving the secret on
+              screen for the whole of a restore. */}
           {/* ONE FIELD. The confirmation box went on 2026-11-08 ("drop
               confirm password field, one field is sufficient"). It was the
-              checksum a password does not have; what is left in its place is
-              that this field is not masked, so what was typed can be read
-              back before pressing Save. */}
+              checksum a password does not have. */}
           <Block first>
-            <LineInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder={pending ? pending.info.asksFor : 'Wallet passphrase'}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <LineInput
+                style={{ flex: 1 }}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!!pending && !showPass}
+                placeholder={pending ? pending.info.asksFor : 'Wallet passphrase'}
+              />
+              {pending ? (
+                <Pressable
+                  onPress={() => setShowPass((v) => !v)}
+                  hitSlop={10}
+                  accessibilityLabel={showPass ? 'Hide passphrase' : 'Show passphrase'}>
+                  <Text style={{ fontSize: 18 }}>{showPass ? '🙈' : '👁'}</Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Help>
               {pending
                 ? `The ${pending.info.asksFor} this file was saved with.`

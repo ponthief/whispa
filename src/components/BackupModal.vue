@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { paint } from '@/services/paint'
@@ -42,6 +42,11 @@ const fileInput = ref(null)
 // which matters for one made before 2026-11-08 and sealed with the seed
 // phrase.
 const pending = ref(null)   // { text, info } once a file has been chosen
+// The file's secret is masked; saving is not. See the field for why the two
+// halves differ. `showFilePass` is the eye, and it is reset with the password
+// itself — a revealed secret must not still be on screen for the next file.
+const showFilePass = ref(false)
+const masked = computed(() => !!pending.value && !showFilePass.value)
 
 // Three tones, because two were not enough once the screen started ASKING
 // for things. "This backup is encrypted, enter its password" is an
@@ -56,6 +61,7 @@ function say(m, tone = 'ok') {
 // but not opened, which must not be waiting there the next time this appears.
 watch(() => props.show, () => {
   password.value = ''
+  showFilePass.value = false
   pending.value = null
   busy.value = null
   say('')
@@ -303,6 +309,7 @@ async function onPickFile(ev) {
   // between 2026-11-04 and 2026-11-08 asks for the seed phrase by name
   // rather than failing to open and leaving the user guessing.
   password.value = ''
+  showFilePass.value = false
   say(info.encrypted
     ? `This backup is encrypted. Enter its ${info.asksFor} and press Open.`
     : 'Press Open to restore this backup.', 'info')
@@ -357,6 +364,9 @@ async function openPending() {
         deriveSilentPayment,
         spAddressFromKeys,
         createWallet: (data) => api.createSilntWallet(auth.inkey, data),
+        // This build's network, so a wallet for the OTHER one is named rather
+        // than created into a list that filters it out.
+        network: import.meta.env.VITE_NETWORK_LOCK || undefined,
         // The store takes these POSITIONALLY; walletBackup hands an object.
         storeWalletKeys: (id, k) =>
           auth.storeWalletKeys(id, k.scanSecret, k.spendKey, k.refundAddress, k.sweepAccount),
@@ -481,6 +491,7 @@ async function openPending() {
     // must be emptied between them; it is the same rule as clearing it when a
     // file is picked, from the other end.
     password.value = ''
+    showFilePass.value = false
   } catch (e) {
     say(e?.message || 'Could not read that backup.', 'error')
   } finally {
@@ -518,20 +529,34 @@ async function openPending() {
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm
              password field, one field is sufficient"). It was the checksum a
-             password does not have; what is left in its place is that this
-             field is NOT MASKED, so what was typed can be read back before
-             pressing Save. That is also why a restore that refuses is
-             readable: the file is often fine and the typing was not, and a
-             masked field cannot say which. -->
+             password does not have; what is left in its place is that when
+             SAVING this field is not masked, so what was typed can be read
+             back before pressing Save — a typo there seals a file nobody can
+             ever open, and nothing finds out until a restore.
+
+             OPENING A FILE IS MASKED (2026-11-09: "passphrase needs to be
+             masked when opening backup file as it gets visible for too
+             long"). The two halves differ because the feedback does: an open
+             either works or says so within seconds, where a mistyped save is
+             silent for ever. What that costs is the reason this was unmasked
+             in the first place — a refused open is often a good file and bad
+             typing, and a masked field cannot say which — so the eye gives it
+             back on demand rather than leaving the secret on screen for the
+             whole of a restore. -->
         <div class="field">
           <!-- The label follows the FILE once one is chosen, so a backup from
                the older scheme does not say "Password" over a box that wants
                twelve words. -->
           <label>{{ pending ? `${pending.info.asksFor} for this file` : 'Wallet passphrase' }}</label>
-          <input class="input" type="text" v-model="password"
-                 :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
-                 autocomplete="off" autocapitalize="off" spellcheck="false"
-                 @keyup.enter="pending ? openPending() : doSave()" />
+          <div style="display:flex;gap:6px;align-items:center">
+            <input class="input" style="flex:1" :type="masked ? 'password' : 'text'" v-model="password"
+                   :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
+                   autocomplete="off" autocapitalize="off" spellcheck="false"
+                   @keyup.enter="pending ? openPending() : doSave()" />
+            <button v-if="pending" type="button" class="btn btn-ghost btn-sm"
+                    :title="showFilePass ? 'Hide' : 'Show'"
+                    @click="showFilePass = !showFilePass">{{ showFilePass ? '🙈' : '👁' }}</button>
+          </div>
         </div>
 
         <!-- NO RED WARNING (2026-11-09: "remove red text: Encrypted..."),

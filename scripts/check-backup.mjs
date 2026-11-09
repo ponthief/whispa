@@ -805,13 +805,38 @@ console.log('the two backup screens say the same simple thing');
       'otherwise Save seals a backup with the password typed to open one');
   }
 
-  // AND THE PASSWORD IS NOT MASKED (2026-11-08, on the user's instruction).
-  // It is a per-file password with no checksum, typed once: seeing it is the
-  // only way to tell you are typing what you typed before, and a masked field
-  // is how "I can't restore" happens when the file is fine.
-  ok('the web does not mask the backup password',
+  // THE TWO HALVES OF THE FIELD ARE MASKED DIFFERENTLY, and the split is the
+  // whole rule.
+  //
+  // SAVING is not masked (2026-11-08, on the user's instruction): a per-file
+  // secret with no checksum, typed once, where a typo seals a file nobody can
+  // ever open and nothing says so until a restore — seeing it is the only
+  // check that remains.
+  //
+  // OPENING is masked (2026-11-09: "passphrase needs to be masked when
+  // opening backup file as it gets visible for too long"). An open answers in
+  // seconds, so the secret has no reason to sit on screen for the whole of a
+  // restore. The eye is what pays for it, because the original argument —
+  // a refused open is often a good file and bad typing — is still true.
+  //
+  // Pinned as the CONDITION rather than as the presence of a mask, because
+  // either half drifting is a different bug: a hard-coded mask takes the save
+  // path's only check away, and dropping the condition leaves the secret on
+  // screen again.
+  ok('the web masks the file secret only while a file is waiting',
+    /:type="masked \? 'password' : 'text'"/.test(V) &&
+    /const masked = computed\(\(\) => !!pending\.value && !showFilePass\.value\)/.test(V),
+    'masked for an open, visible for a save');
+  ok('the web never hard-codes the mask',
     !/type="password"/.test(V),
-    'a per-file password with no checksum has to be visible');
+    'that would take the save path\'s only check away');
+  ok('and offers to reveal it',
+    /showFilePass = !showFilePass/.test(V),
+    'a refused open is often a good file and bad typing');
+  ok('and the reveal does not outlive the password',
+    (V.match(/showFilePass\.value = false/g) || []).length ===
+    (V.match(/password\.value = ''/g) || []).length,
+    'a revealed secret must not still be on screen for the next file');
   // Scoped to the component the backup screen actually renders, not to the
   // whole of ui.tsx: an app PIN elsewhere is still a thing to mask, and the
   // mention of `secureTextEntry` left behind in LineInput's own doc comment
@@ -821,9 +846,31 @@ console.log('the two backup screens say the same simple thing');
   const lineInput = copy(UI.slice(UI.indexOf('export function LineInput')))
     .slice(0, 400);
   ok('the phone backup fields are LineInput', /<LineInput/.test(P));
-  ok('the phone does not mask the backup password',
-    !!lineInput && !/secureTextEntry/.test(lineInput) && !/secureTextEntry/.test(copy(P)),
-    'a per-file password with no checksum has to be visible');
+  ok('the phone leaves LineInput itself unmasked',
+    !!lineInput && !/secureTextEntry/.test(lineInput),
+    'the component is shared; the backup screen states its own rule');
+  ok('the phone masks the file secret only while a file is waiting',
+    /secureTextEntry=\{!!pending && !showPass\}/.test(copy(P)),
+    'masked for an open, visible for a save');
+  ok('and offers to reveal it',
+    /setShowPass\(\(v\) => !v\)/.test(copy(P)),
+    'a refused open is often a good file and bad typing');
+  ok('and the reveal does not outlive the password',
+    (copy(P).match(/setShowPass\(false\)/g) || []).length ===
+    (copy(P).match(/setPassword\(''\)/g) || []).length,
+    'a revealed secret must not still be on screen for the next file');
+  // The Recover Keys sheet opens files too, and is where somebody with a
+  // replaced phone lands. Same rule, and it has only the one path — a file —
+  // so it is masked outright with the same eye.
+  {
+    const RK = copy(readFileSync(
+      new URL('../src/components/RecoverKeysModal.tsx', import.meta.url), 'utf8'));
+    ok('the recover sheet masks the file secret',
+      /secureTextEntry=\{!showFilePass\}/.test(RK),
+      'it asks for the same secret, on the screen a replaced phone lands on');
+    ok('and offers to reveal it',
+      /setShowFilePass\(\(v\) => !v\)/.test(RK));
+  }
 
   // THE MODAL CLOSES ON A SUCCESSFUL SAVE and stays open on a failure. The
   // download is the confirmation; a message in a dialog the user then has to
@@ -1209,6 +1256,49 @@ console.log('the wallet is restored at the height it was born');
   ok('the file\'s birth height is what the new wallet is created at',
     made.length === 1 && made[0].last_height === 812345,
     JSON.stringify(made));
+
+  // AND THE NETWORK GOES WITH IT, which this never sent until 2026-11-09.
+  //
+  // THE SERVER DEFAULTS `CreateWallet.network` TO "mainnet", so a payload
+  // without one did not fail — it made a MAINNET wallet. On a signet build
+  // the create was then refused twice: `get_backend_config` reads the mainnet
+  // oracle's `min_scan_height`, far above a signet birth height, so the clamp
+  // raises *"Wallet birth height must be at least N. You entered …"* — which
+  // is what "born at height doesn't get saved correctly to backup file" was
+  // quoting — and behind it the prefix check refuses a `tsp1…` address "for
+  // mainnet". The wallet was then not on the account, so every SP coin label
+  // had no live wallet to be written to: "label on SP utxo does not get
+  // restored" is the same bug, one step downstream.
+  //
+  // The phone's api injected its own NETWORK_LOCK and hid this from that
+  // client entirely; the web's passed the body through. Pinned HERE, on the
+  // shared restore, because the wallet belongs to the network the FILE names.
+  ok('the file\'s network is what the new wallet is created on',
+    made[0].network === 'signet',
+    `a payload with no network is a mainnet wallet: ${JSON.stringify(made[0])}`);
+
+  // AND A WALLET FOR THE OTHER NETWORK IS REPORTED, not created. Both clients
+  // list their own network only, so it would be made, have its keys stored,
+  // and never appear.
+  {
+    const other = [];
+    const r = await restoreWallets(
+      { ...deps, network: 'mainnet', onCreated: () => {},
+        createWallet: async (d) => { other.push(d); return { wallet_id: 'x' }; } },
+      'pp', [w], []);
+    ok('a wallet for another network is not created',
+      other.length === 0, JSON.stringify(other));
+    ok('and is named as not restored, with the reason',
+      r.failed.length === 1 && /signet/.test(r.failed[0].message) &&
+      /mainnet/.test(r.failed[0].message), JSON.stringify(r.failed));
+    // The matching build still creates it, or the guard would be a wall.
+    const same = [];
+    await restoreWallets(
+      { ...deps, network: 'signet', onCreated: () => {},
+        createWallet: async (d) => { same.push(d); return { wallet_id: 'y' }; } },
+      'pp', [w], []);
+    ok('and the matching build still creates it', same.length === 1);
+  }
 
   // A FILE WITHOUT ONE still restores — every backup written before this, and
   // the keys-only files. The server defaults it to the tip, which is the old

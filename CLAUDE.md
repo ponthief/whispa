@@ -847,6 +847,38 @@ would look like it worked:
   return booleans, and ignoring them leaves a wallet on the server with no keys
   on the device: it appears in the list, shows "Recover Keys", cannot scan, and
   reads as a restore that worked.
+- **THE NETWORK TRAVELS TOO, and it never did until 2026-11-09.** Reported as
+  two things — *"label on SP utxo does not get restored"* and *"born at height
+  doesn't get saved correctly to backup file"* — which are one bug, and
+  neither of them is about the file. The file was right both times.
+
+  `restoreWallets` built its create payload as `{ title, sp_address,
+  last_height }` with **no network**, and the server's `CreateWallet.network`
+  **defaults to `"mainnet"`**. So a payload without one did not fail; it asked
+  for a mainnet wallet. On a signet build the create is then refused twice
+  over: `api_wallet_create` reads `get_backend_config(data.network)`, so the
+  birth height is clamped against the MAINNET oracle's `min_scan_height` —
+  far above any signet height — and raises *"Wallet birth height must be at
+  least N. You entered 123456."*, which is the sentence that report is
+  quoting. Behind it, `expected_prefix` refuses a `tsp1…` address "for
+  mainnet". Either way the wallet is **not created**, so it is not on the
+  account, so `applyServerLabels` has no live wallet to write to and every SP
+  coin label comes back unplaced. One root cause, two reports, one step apart.
+
+  **The phone could not see it**, which is why it went unnoticed: its
+  `createSilntWallet` injects `network: Config.NETWORK_LOCK` before spreading
+  the caller's data, so that client supplied one all along. The web's passed
+  the body straight through — the usual one-sided asymmetry, in the same
+  shape as the `keys` and `lastHeight` bugs above.
+
+  The fix is in the SHARED restore, because the wallet belongs to the network
+  the **file** names, not to whichever build is restoring it; the web's api
+  gained the phone's default as well, so no caller can omit it again. And a
+  wallet whose network does not match this build is now **named as not
+  restored** rather than created: both clients list their own network only, so
+  it would otherwise be made, have its keys written to the keystore, and never
+  appear — a ghost wallet, which is the same class of silent success this
+  whole section exists to refuse.
 
 **Wallets are restored BEFORE labels**, and `live` is re-read in between, so
 the labels land on the wallets this restore just made instead of being remapped
@@ -1430,11 +1462,28 @@ control with no explanation is indistinguishable from one that is not there.**
 Both buttons are live now; the handlers say what is missing, and `startRestore`
 refuses before opening a file picker whose result it would only reject.
 
-**The password is not masked** (2026-11-08, on the user's instruction). It is a
-per-file password with no checksum, typed once, not an account credential —
-seeing it is the only way to tell you are typing what you typed before. A
-masked field is also how "I can't restore" happens when the file is perfectly
-good and the typing was not, with nothing on screen able to say which.
+**SAVING is not masked; OPENING a file is.** The first half is 2026-11-08, on
+the user's instruction: it is a per-file secret with no checksum, typed once,
+not an account credential — seeing it is the only way to tell you are typing
+what you typed before, and a typo seals a file nobody can ever open with
+nothing finding out until a restore.
+
+The second half is 2026-11-09, also on the user's instruction (*"passphrase
+needs to be masked when opening backup file as it gets visible for too
+long"*), and the two differ because the FEEDBACK does. An open either works or
+says so within seconds; a mistyped save is silent for weeks. There is no
+reason for the secret that opens a file to sit on screen for the whole of a
+restore, and a restore is the slowest thing either client does.
+
+What masking costs is the argument that put it the other way round — a refused
+open is often a perfectly good file and bad typing, and a masked field cannot
+say which — so **an eye gives it back on demand** rather than the choice being
+made for the user. `check:backup` pins the CONDITION rather than the presence
+of a mask, on both clients and on the phone's Recover Keys sheet: a hard-coded
+mask would take the save path's only check away, and dropping the condition
+puts the secret back on screen. It also pins that the eye is reset wherever
+the password is cleared, since a revealed secret must not still be showing for
+the next file.
 
 **Both of those are on BOTH clients.** The report came from the web and the
 phone carried the same two bindings — `disabled={!!busy || !password ||

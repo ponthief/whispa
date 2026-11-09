@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { paint } from '@/services/paint'
+import { resetLoginScanFor } from '@/composables/useLoginScan'
 
 // Backup, as a modal off the wallet card's ⚙ menu (2026-11-08, on the user's
 // instruction: "we should move Backup under Settings in Wallet for web app,
@@ -77,6 +78,21 @@ async function walletRefs() {
       title: w.title || 'Wallet',
       network: w.network,
       spAddress: w.sp_address || '',
+      // THE BIRTH HEIGHT, which this dropped until 2026-11-09 and which is
+      // not a missing field so much as a silently empty wallet. Reported as
+      // "backup file does not store the born at height block for the wallet".
+      //
+      // api_create_wallet DEFAULTS last_height TO THE ORACLE TIP when the
+      // payload omits it, so a web file restored anywhere created a wallet
+      // born TODAY. Every coin received before that sits below its birth
+      // height; the catch-up prompt takes max(last_scan_height, last_height),
+      // finds nothing behind the tip, and offers no scan. A restore that
+      // looked perfectly successful, with the history gone.
+      //
+      // The phone's walletRefs has carried it all along — the usual one-sided
+      // asymmetry, and the collectors on BOTH sides already preserve the
+      // field. It was never put in.
+      lastHeight: typeof w.last_height === 'number' ? w.last_height : undefined,
     }))
   } catch {
     return []
@@ -360,6 +376,15 @@ async function openPending() {
         saveSeed: (id, phrase) => auth.saveSeed(id, phrase),
         hasSeed: async (id) => auth.hasSeed(id),
         hasKeys: async (id) => !!(await auth.getWalletKeys(id)),
+        // SO THE SCAN IS OFFERED, which is the other half of the report:
+        // "once restored, it should ask to restore from that block". The
+        // catch-up banner computes its gap from max(last_scan_height,
+        // last_height), so a restored wallet with no scan progress prompts
+        // from its birth height — but only if the evaluation is redone.
+        // `_evaluated` is module-level and outlives the route, so without
+        // this the banner never recomputes and the prompt never appears.
+        // The phone passes resetCatchUp here for the same reason.
+        onCreated: (id) => resetLoginScanFor(id),
         // PER WALLET, and awaited so the message paints before the thread is
         // taken again. Reported on the phone (2026-11-09, "nothing happens
         // for some time and then suddenly it restores") and true here for the

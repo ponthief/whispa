@@ -1141,6 +1141,87 @@ console.log('the restore says what it is doing after the KDF');
 //
 // The rule is "opened NOTHING it could have opened", and the two cases it
 // must NOT refuse are the whole reason it is written that way.
+// ── the birth height travels, and the restore offers the scan ────────────
+//
+// Reported 2026-11-09: *"backup file does not store the born at height block
+// for the wallet.. add it.. once restored, it should ask to restore from that
+// block"*. Both collectors already PRESERVED `lastHeight`; the web's
+// `walletRefs` never put it in, so a web file carried none.
+//
+// That is not a missing field, it is a silently empty wallet.
+// `api_create_wallet` DEFAULTS last_height to the oracle TIP when the payload
+// omits it, so a web backup restored anywhere created a wallet born today:
+// every coin received before the restore sits below its birth height, the
+// catch-up prompt takes max(last_scan_height, last_height) and finds nothing
+// behind the tip, and no scan is offered. A restore that looked perfectly
+// successful with the history gone.
+//
+// The previous check here asserted the PHONE's collector map carried the
+// field — one-sided, exactly like the `keys` bug before it, and green over
+// this the whole time. These assert the SOURCE of the value on both.
+console.log('the wallet is restored at the height it was born');
+{
+  const stripc = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\/[^\n]*/g, '');
+  const WEB = stripc(readFileSync(
+    new URL('../src/components/BackupModal.vue', import.meta.url), 'utf8'));
+  const PHONE = stripc(readFileSync(
+    new URL('../src/screens/settings/BackupPage.tsx', import.meta.url), 'utf8'));
+
+  // WHERE THE VALUE COMES FROM, not where it is copied. A collector that
+  // preserves a field it is never handed passes every map-shaped assertion.
+  for (const [who, src] of [['the web', WEB], ['the phone', PHONE]]) {
+    ok(`${who} reads the birth height off the wallet list`,
+      /lastHeight: typeof w\.last_height === 'number' \? w\.last_height : undefined/.test(src),
+      'omitting it has the server default the new wallet to the chain tip');
+  }
+
+  // AND IT REACHES THE CREATE. restoreWallets is what passes it on, and only
+  // for a wallet it creates — an adopted one already has its own row.
+  const { restoreWallets } = await import('../src/services/walletBackup.ts');
+  const made = [];
+  const derive = (m, p) => ({ spAddress: `sp1-${m}-${p}`, scanSecret: 's',
+    spendKey: 'k', refundAddress: 'r', sweepAccount: 'a' });
+  const created = [];
+  const deps = {
+    deriveSilentPayment: derive,
+    createWallet: async (d) => { made.push(d); return { wallet_id: 'new-1' }; },
+    storeWalletKeys: async () => true,
+    saveSeed: async () => true,
+    hasKeys: async () => false,
+    hasSeed: async () => false,
+    onCreated: (id) => created.push(id),
+  };
+  const w = { id: 'w', title: 'W', network: 'signet', spAddress: derive('ws', 'pp').spAddress,
+              mnemonic: 'ws', lastHeight: 812345 };
+  await restoreWallets(deps, 'pp', [w], []);
+  ok('the file\'s birth height is what the new wallet is created at',
+    made.length === 1 && made[0].last_height === 812345,
+    JSON.stringify(made));
+
+  // A FILE WITHOUT ONE still restores — every backup written before this, and
+  // the keys-only files. The server defaults it to the tip, which is the old
+  // behaviour and the reason this was worth fixing rather than refusing.
+  made.length = 0;
+  await restoreWallets(deps, 'pp', [{ ...w, lastHeight: undefined }], []);
+  ok('and a file without one still restores',
+    made.length === 1 && made[0].last_height === undefined);
+
+  // THEN THE SCAN IS OFFERED. The catch-up prompt computes its gap from
+  // max(last_scan_height, last_height), so a restored wallet with no progress
+  // prompts from its birth height — but both clients hold the evaluation in
+  // module-level state that outlives the screen, so it has to be reset or the
+  // banner never recomputes and nothing is offered.
+  ok('the restore tells the catch-up prompt to re-evaluate',
+    created.length === 2, 'onCreated fires per created wallet');
+  ok('the web resets the login-scan evaluation on a restored wallet',
+    /onCreated: \(id\) => resetLoginScanFor\(id\)/.test(WEB) &&
+    /resetLoginScanFor/.test(WEB.slice(0, WEB.indexOf('doSave'))),
+    'imported and wired, or the banner keeps its stale answer');
+  ok('the phone does the same with resetCatchUp',
+    /onCreated: resetCatchUp/.test(PHONE));
+}
+
 console.log('a passphrase that opens nothing refuses the save');
 {
   const stripc = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')

@@ -816,6 +816,33 @@ would look like it worked:
   new row with no coins; setting `last_height` from the old `last_scan_height`
   would declare every block below it already read, and the resume point only
   moves forward, so the history would be gone for good.
+- **And the WEB never put one in the file until 2026-11-09**, reported as
+  *"backup file does not store the born at height block for the wallet"*.
+  Both collectors had preserved `lastHeight` all along; the web's
+  `walletRefs` built its records without it, so there was nothing to
+  preserve. The phone's has carried it from the start — the same one-sided
+  asymmetry as the `keys` bug, and the check here was one-sided in the same
+  way: it asserted the phone's collector MAP carried the field and was green
+  over a web file that never had one.
+
+  **It is not a missing field, it is a silently empty wallet.**
+  `api_create_wallet` defaults `last_height` to the **oracle tip** when the
+  payload omits it, so a web backup restored anywhere created a wallet born
+  today. Every coin received before the restore sits below that birth height,
+  the catch-up prompt takes `max(last_scan_height, last_height)`, finds
+  nothing behind the tip and offers no scan — a restore that looks perfectly
+  successful with the history gone. `check:backup` now pins where the value
+  is READ from on both clients, not where it is copied to.
+
+  **Then the scan is offered**, which is the other half of that report. Both
+  catch-up mechanisms already compute from `max(last_scan_height,
+  last_height)`, so a restored wallet with no progress prompts from its birth
+  height — but both hold their evaluation in state that outlives the screen,
+  so a restore has to reset it or the banner keeps its stale answer. The
+  phone passed `onCreated: resetCatchUp` already; the web passes
+  `resetLoginScanFor` now. A file with no height still restores, and still
+  lands at the tip: that is the old behaviour, unchanged, for files written
+  before this.
 - **`false` from the keystore is a failure.** `storeWalletKeys` and `saveSeed`
   return booleans, and ignoring them leaves a wallet on the server with no keys
   on the device: it appears in the list, shows "Recover Keys", cannot scan, and

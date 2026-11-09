@@ -1237,7 +1237,23 @@ could not state without saying *browser* on a product that is also a phone
 app. `check:backup` refuses either word on either screen, and the phone's
 status messages lost "on this phone" with them.
 
-**The red warning is ONE SENTENCE on both**, and the same one: *"Encrypted
+**THERE IS NO RED WARNING ANY MORE, on either screen** (2026-11-09, on the
+user's instruction: *"remove red text: Encrypted..."*). `check:backup` asserts
+it **absent**, with the styling rule that used to pin it gone too, because
+this is the end of a sequence — four clauses, cut to one on 2026-11-08, cut to
+none a day later — and every previous cut grew back a true clause at a time.
+
+Know exactly what is left, because with the contents line already gone these
+screens now say **nothing at all about the file**: not that it is sealed with
+the wallet passphrase, not that anyone holding both can spend, not that it is
+worth storing safely. What names the key is the **field's own label**, which is
+why that must keep saying *Wallet passphrase* — pinned on both. The behaviour
+is untouched: the file is still sealed with the passphrase, a wallet it does
+not open is still left out, and the save still names it.
+
+What the warning said before, for the record:
+
+**The red warning was ONE SENTENCE on both**, and the same one: *"Encrypted
 with wallet passphrase. Store safely."* (2026-11-08, on the user's
 instruction: *"text in red is too long"*, with that line given as the
 replacement.)
@@ -1466,6 +1482,41 @@ runs for seconds on a phone and synchronously it froze the JS thread — which i
 exactly what the report described, the native spinner still turning because
 only JavaScript had stopped. `asyncTick` yields every 20ms and both screens
 count up.
+
+**AND THE KDF'S OWN YIELD IS A MICROTASK, which is why none of that paints.**
+Found 2026-11-09 while measuring the fix for *"pressing Open backup file after
+passphrase entered shows as if nothing is happening!!"*. `@noble/hashes`'
+`asyncLoop` returns control with `await nextTick()`, and `nextTick` is
+`async () => {}` — an empty async function resolves on the **microtask**
+queue, which drains before any macrotask. Its own comment claims the promise
+"will be fulfilled only on next scheduler queue processing step"; that is not
+what an empty async function does.
+
+So `asyncTick: 20` never returns to the event loop, and **no render can commit
+for the whole derivation** — not the percentage, not a spinner, not the
+message set on the line before it. Measured against a real file: a macrotask
+queued at the start of the open had not run by the end of it, and a
+self-requeueing "renderer" got one slot in 151ms.
+
+That is the real explanation for both progress reports — this one, and
+2026-11-08's *"stuck at 20%, but then completed"*. `throttleKdfProgress` was
+treating a symptom.
+
+**What actually fixes it is yielding BEFORE the work**, which is all a client
+can do without reimplementing scrypt: `services/paint.ts`, awaited after the
+message is set and before `decryptBackup` or `encryptBackup` — both of which
+parse, assemble and base64 for a while before the KDF even starts. With it the
+message is on screen at 0ms; without it, never. All five sites use the one
+helper and `check:backup` pins each, because the fix is an ORDER and nothing
+in tsc, lint, `check:vue` or any behavioural test can see a missing yield.
+
+The first message is therefore **worded, not a bare percentage** — "Opening
+backup file…" — because a number that cannot move reads as stuck, which is
+what the earlier report called it.
+
+Patching the dependency is NOT the answer: a `postinstall` patch against a
+crypto library is what `check:lock` exists to refuse, and the honest cost here
+is a progress number that does not animate, not a wallet nobody can open.
 
 **But the REPORTS are throttled, and the yielding is not.** At 20ms ticks the
 raw callback fires about fifty times a second, each one a `setState` on a

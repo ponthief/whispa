@@ -658,38 +658,26 @@ console.log('the two backup screens say the same simple thing');
   // "saved backup in web app and restored in mobile and still asks for
   // recovery key" was.
 
-  // THE RED LINE IS ONE SENTENCE AND THE SAME ON BOTH (2026-11-08, on the
-  // user's instruction: "text in red is too long: Encrypted with wallet
-  // passphrase. Store safely"). It had grown to three or four clauses on each
-  // screen — what the file holds, who can spend it, that the passphrase
-  // cannot be recovered — and a warning nobody finishes reading warns nobody.
-  // Pinned as the exact sentence rather than by keywords, because what was
-  // wrong with the old one was its LENGTH, and a keyword test is satisfied by
-  // a paragraph that happens to contain the words.
-  const RED = 'Encrypted with wallet passphrase. Store safely.';
-  ok('the red line is the one short sentence, on both',
-    copy(V).includes(RED) && copy(P).includes(RED),
-    'a warning nobody finishes reading warns nobody');
-  // AND NOTHING ELSE IS IN THE RED BOX. Asserting the sentence is present
-  // says nothing about what grew back around it, which is exactly how this
-  // got long the first time — each clause was true and went in beside the
-  // last. The box's whole contents are read and bounded.
-  const redOf = (src, open, close, toTagEnd) => {
-    let i = src.indexOf(open);
-    if (i < 0) return null;
-    i += open.length;
-    // The web's opening tag carries attributes after the class, so the text
-    // starts at the end of that tag rather than at the end of the match.
-    if (toTagEnd) i = src.indexOf('>', i) + 1;
-    const j = src.indexOf(close, i);
-    return j < 0 ? null : src.slice(i, j)
-      .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  };
-  const webRed = redOf(copy(V), 'class="alert alert-error"', '</div>', true);
-  const phoneRed = redOf(copy(P), '<Note kind="error">', '</Note>', false);
-  ok('and the red box holds nothing but that sentence',
-    phoneRed === RED && webRed === RED,
-    'every clause that made it long was true; they went in one at a time');
+  // THERE IS NO RED WARNING ANY MORE, on either screen (2026-11-09, on the
+  // user's instruction: "remove red text: Encrypted..."). It is asserted
+  // ABSENT rather than merely not asserted, because this is the end of a
+  // sequence — four clauses, cut to one on 2026-11-08, cut to none a day
+  // later — and every previous cut grew back a true clause at a time.
+  //
+  // KNOW WHAT IS GONE. Nothing on either screen now says the file is sealed
+  // with the wallet passphrase, that anyone holding both can spend, or that
+  // it is worth storing safely. The FIELD's label is what names the key, and
+  // the behaviour is untouched: the file is still sealed with the passphrase,
+  // a wallet it does not open is still left out, and the save still names it.
+  ok('neither screen carries a red warning about the file',
+    !/Encrypted with wallet passphrase/.test(copy(V)) &&
+    !/Encrypted with wallet passphrase/.test(copy(P)) &&
+    !/<Note kind="error">/.test(copy(P)),
+    'the field label is what names the key now');
+  // AND THE FIELD STILL DOES NAME IT, which is the whole of what is left.
+  ok('the field is labelled with the wallet passphrase, on both',
+    /Wallet passphrase/.test(copy(V)) && /Wallet passphrase/.test(copy(P)),
+    'with the warning gone this is the only thing that says what to type');
 
   for (const [who, src] of [['the web', copy(V)], ['the phone', copy(P)]]) {
     // AND DOES NOT PROMISE CONTACTS. The file has never held one: a Tango
@@ -719,11 +707,11 @@ console.log('the two backup screens say the same simple thing');
       !/coins are not in this file/.test(src) && !/Bitcoin network/.test(src));
   }
 
-  ok('the web warning uses the red alert style',
-    /class="alert alert-error"/.test(V),
-    'alert alone is the neutral box; this one has to read as a warning');
-  ok('the phone warning uses the error note',
-    /<Note kind="error">/.test(P));
+  // The styling of that warning was pinned here. The warning is gone, so what
+  // this rule protected — a caution rendered in the neutral box, which reads
+  // as information — is now protected by there being nothing to render. An
+  // error style returning to either screen means a warning came back, which
+  // the absence check above is what refuses.
 
   // WHAT THE FILE IS, now that the red box no longer spells it out: the line
   // above it says the backup carries WALLETS, which is the claim somebody
@@ -731,14 +719,8 @@ console.log('the two backup screens say the same simple thing');
   // asserted on both screens above and must not be shortened in its turn —
   // between it and the red sentence, "this file plus that passphrase is the
   // wallet" is still on screen, and with neither it would not be.
-  // WITH THE CONTENTS LINE GONE, the red sentence is the only thing on
-  // either screen that says anything about the file — so it has to keep
-  // naming the key. Shortening it further leaves a screen that asks for a
-  // secret and says nothing about what it is for.
-  ok('the red sentence still names the wallet passphrase',
-    /Encrypted with wallet passphrase/.test(copy(P)) &&
-    /Encrypted with wallet passphrase/.test(copy(V)),
-    'it is the last line about the file on either screen');
+  // The contents line and the red sentence are both gone now; what used to be
+  // asserted here is asserted above, as their absence.
   // THE WEB CAN CHECK THE PASSPHRASE NOW, for any wallet whose words this
   // browser holds — deriving an address from (phrase, passphrase) is the
   // phone's own test and the browser has a phrase to run it on since it
@@ -1134,6 +1116,52 @@ console.log('the restore says what it is doing after the KDF');
       /Restoring labels…/.test(src),
       'the server round trip is the other silent stretch');
   }
+}
+
+// ── and the OPEN says so before it starts ─────────────────────────────────
+//
+// Reported 2026-11-09: *"pressing Open backup file after passphrase entered
+// shows as if nothing is happening!!"* — one step earlier than the restore
+// loop above, and the same cause. `decryptBackup` parses the file and decodes
+// three base64 blobs before the KDF's first yield, so the "Opening…" set on
+// the line before it, and the button's own spinner, were both queued behind
+// the wait they were meant to explain.
+//
+// Pinned source-side on all three screens, because the fix is an ORDER — a
+// yield between the message and the synchronous work — and nothing about a
+// missing one is visible to tsc, lint, check:vue, or any behavioural test.
+console.log('every screen paints before it decrypts');
+{
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/\/\/[^\n]*/g, '');
+  const SCREENS = [
+    ['the phone backup page', 'src/screens/settings/BackupPage.tsx', 'decryptBackup('],
+    ['the phone recover sheet', 'src/components/RecoverKeysModal.tsx', 'decryptBackup('],
+    ['the web modal', 'src/components/BackupModal.vue', 'decryptBackup('],
+  ];
+  for (const [who, file, call] of SCREENS) {
+    const src = strip(readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
+    const at = src.indexOf(call);
+    // The 400 characters before the call: the message, then the yield.
+    const before = at < 0 ? '' : src.slice(Math.max(0, at - 400), at);
+    ok(`${who} yields before decrypting`,
+      at >= 0 && /await paint\(\)/.test(before),
+      'a message set in front of synchronous work arrives after it');
+  }
+  // The SAVE side is the same shape and was never reported only because the
+  // browser's download lands at the end of it.
+  for (const [who, file] of [['the phone', 'src/screens/settings/BackupPage.tsx'],
+                             ['the web', 'src/components/BackupModal.vue']]) {
+    const src = strip(readFileSync(new URL('../' + file, import.meta.url), 'utf8'));
+    const at = src.indexOf('encryptBackup(');
+    ok(`${who} yields before encrypting too`,
+      at >= 0 && /await paint\(\)/.test(src.slice(Math.max(0, at - 400), at)));
+  }
+  // ONE HELPER, not three copies: the web had its own inline setTimeout and
+  // the phone a local const, which is how two of the five sites went without.
+  const helper = strip(readFileSync(new URL('../src/services/paint.ts', import.meta.url), 'utf8'));
+  ok('and they all use the one helper',
+    /export function paint\(\)/.test(helper) && /setTimeout\(resolve, 0\)/.test(helper));
 }
 
 console.log('a wallet travels in the file, and a wrong passphrase leaves it out');

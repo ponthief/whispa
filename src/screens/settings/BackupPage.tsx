@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
 import { useAuthStore } from '@stores/authStore';
 import * as api from '@services/api';
+import { paint } from '@services/paint';
 import type { BackupFileInfo } from '@services/backup';
 import {
   backupFilename,
@@ -57,16 +58,6 @@ type Native = {
 export function backupFileAvailable(): boolean {
   return Platform.OS === 'android' && !!NativeModules.BackupFile;
 }
-
-/**
- * Let React render what was just set before the thread is taken again.
- *
- * A `setState` followed by synchronous work never reaches the screen: the
- * update is queued and the JS thread goes straight into the next derivation,
- * so the message that was meant to explain the wait arrives after it. One
- * macrotask is enough, and it costs a frame.
- */
-const paint = () => new Promise<void>((r) => setTimeout(r, 0));
 
 function native(): Native {
   const m = NativeModules.BackupFile as Native | undefined;
@@ -163,6 +154,9 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       // version blocked the JS thread and read as a hang, with the native
       // spinner still turning because only JavaScript had stopped.
       say('Encrypting… 0%');
+      // Same reason as the open below: encryptBackup assembles and encodes
+      // before the KDF yields, so this line has to be drawn first.
+      await paint();
       const text = await encryptBackup(payload, password, (f) =>
         say(`Encrypting… ${Math.round(f * 100)}%`));
       const where = await native().save(backupFilename(), text);
@@ -251,7 +245,13 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
     say(null);
     try {
       const text = pending.text;
-      say('Opening… 0%');
+      say('Opening backup file…');
+      // BEFORE THE DECRYPT, not only inside the restore loop below. Reported
+      // 2026-11-09: "pressing Open backup file after passphrase entered shows
+      // as if nothing is happening!!" — decryptBackup parses the file and
+      // decodes three base64 blobs before the KDF's first yield, so the line
+      // above had not been drawn and the button looked dead.
+      await paint();
       const payload = await decryptBackup(text, password, (f) =>
         say(`Opening… ${Math.round(f * 100)}%`));
       // The live wallets decide where a backed-up wallet's labels go: an id
@@ -432,10 +432,10 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             screens offering one feature and describing it differently is the
             thing this file keeps having to undo.
 
-            It was load-bearing and what it carried has to go somewhere: it
-            was the last line saying what is IN the file, so the red sentence
-            below is now the whole of it and must keep naming the wallet
-            passphrase as the key. "labels" also replaced "labels and
+            It was load-bearing and what it carried had to go somewhere: it
+            was the last line saying what is IN the file, and the red sentence
+            that carried the rest went a day later, so nothing here describes
+            the file now. "labels" also replaced "labels and
             contacts" on 2026-11-08 for being a promise the file could not
             keep — nothing claims contacts now because nothing claims
             anything, and the only way that comes back is a new line here. */}
@@ -447,29 +447,20 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
             and leaving it would undo the point of no longer asking for one.
             What it was defending against — somebody reading this as a wallet
             backup — the first line already handles by saying what IS saved. */}
-        {/* The red one, and it is about the PASSWORD now. The file holds
-            labels and is sealed with a password that exists nowhere else, so
-            that password is the single point of failure for this file — and
-            unlike the seed phrase it protects nothing that spends. */}
-        {/* THE RED ONE IS ONE LINE (2026-11-08, on the user's instruction:
-            "text in red is too long: Encrypted with wallet passphrase. Store
-            safely"). It ran to three sentences — what the file holds, that
-            anyone with it and the passphrase can spend, and that nobody can
-            recover the passphrase. Every clause true, and a warning nobody
-            finishes reading warns nobody.
+        {/* NO RED WARNING. "Encrypted with wallet passphrase. Store
+            safely." went on 2026-11-09, on the user's instruction ("remove
+            red text: Encrypted..."), and with the contents line already gone
+            this screen now says nothing about the file at all.
 
-            What the short line keeps is the pair that decides what somebody
-            does with the file: the key is the WALLET passphrase, not a
-            password this screen invented, and the file is worth storing
-            safely. What it drops is the spelled-out consequence. The line
-            above it said what was in the file until 2026-11-09; with that
-            gone this sentence is the only thing left on the screen about
-            either, so it must keep naming the wallet passphrase. */}
-        <Block>
-          <Note kind="error">
-            Encrypted with wallet passphrase. Store safely.
-          </Note>
-        </Block>
+            KNOW WHAT THAT LEAVES, because it is the end of a sequence rather
+            than one cut: the warning had four clauses, was reduced to one on
+            2026-11-08, and is now none. Nothing on either screen states that
+            the file is sealed with the wallet passphrase, that anyone holding
+            both can spend, or that it is worth storing safely. The FIELD is
+            what says it — it is labelled "Wallet passphrase" — and the
+            behaviour is unchanged: the file is still sealed with it, still
+            refuses a wallet that passphrase does not open, and still names
+            the wallet it left out. */}
       </Group>
 
       {backupFileAvailable() ? (

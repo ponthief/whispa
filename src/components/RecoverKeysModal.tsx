@@ -18,6 +18,7 @@ import { restoreWallets } from '@services/walletBackup';
 import { hasSeed } from '@services/seedVault';
 import { resetCatchUp } from '../hooks/useCatchUpScan';
 import { saveSeed } from '@services/seedVault';
+import { paint } from '@services/paint';
 import { usePlainStatus } from '@stores/plainStatus';
 import { useAuthStore } from '@stores/authStore';
 import SeedInput from './SeedInput';
@@ -117,10 +118,19 @@ export default function RecoverKeysModal({
     setError(null);
     setBusy(true);
     try {
-      setNote('Opening…');
+      setNote('Opening backup file…');
+      // REPORTED 2026-11-09: "pressing Open backup file after passphrase
+      // entered shows as if nothing is happening!!" — and it was not: the
+      // note and the button's spinner were both set and neither had been
+      // drawn. decryptBackup parses the file and decodes three base64 blobs
+      // before the KDF's first yield, and a state update in front of
+      // synchronous work arrives after it. One macrotask puts both on screen
+      // first. See services/paint.ts.
+      await paint();
       const payload: any = await decryptBackup(file.text, filePass,
         (f) => setNote(`Opening… ${Math.round(f * 100)}%`));
-      setNote('Restoring wallets…');
+      setNote('Reading your wallets…');
+      await paint();
       const live = (await api.getSilntWallets(inkey).catch(() => []) as any[])
         .map((w: any) => ({ id: w.id, spAddress: w.sp_address || '' }));
       const r = await restoreWallets(
@@ -133,6 +143,15 @@ export default function RecoverKeysModal({
           hasKeys: hasWalletKeys,
           hasSeed,
           onCreated: resetCatchUp,
+          // The stretch after the KDF, which this screen reported nothing for
+          // at all: one synchronous deriveSilentPayment per wallet, plus the
+          // creates and the keystore writes.
+          onProgress: async (done, total, title) => {
+            setNote(total > 1
+              ? `Restoring ${title} (${done} of ${total})…`
+              : `Restoring ${title}…`);
+            await paint();
+          },
         },
         filePass, payload.wallets || [], live);
       const done = r.created.length + r.adopted.length;

@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
+import { paint } from '@/services/paint'
 
 // Backup, as a modal off the wallet card's ⚙ menu (2026-11-08, on the user's
 // instruction: "we should move Backup under Settings in Wallet for web app,
@@ -164,6 +165,7 @@ async function doSave() {
     // The KDF yields every 20ms and reports progress, so the tab stays
     // responsive and the count goes up rather than looking wedged.
     say('Saving… 0%', 'info')
+    await paint()
     const text = await encryptBackup(payload, password.value,
       (f) => say(`Saving… ${Math.round(f * 100)}%`, 'info'))
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
@@ -274,13 +276,18 @@ async function openPending() {
   }
   const { text } = pending.value
   busy.value = 'restore'
-  say('Opening… 0%', 'info')
+  say('Opening backup file…', 'info')
   try {
     const { decryptBackup, remapWalletIds } = await import('@/services/backup')
     const { applyBackup } = await import('@/stores/backupdata')
     const { applyServerLabels } = await import('@/services/serverLabels')
     const { restoreWallets } = await import('@/services/walletBackup')
     const { deriveSilentPayment, spAddressFromKeys } = await import('@/services/spKeys')
+    // Painted first: encryptBackup and decryptBackup both do their assembling
+    // and base64 work before the KDF's first yield, so a message set on the
+    // line above arrives after the wait it was meant to explain. The phone was
+    // reported for exactly this ("shows as if nothing is happening").
+    await paint()
     const payload = await decryptBackup(text, password.value,
       (f) => say(`Opening… ${Math.round(f * 100)}%`, 'info'))
     // STAGES, not one message that sits there. Reported 2026-11-08: "there is
@@ -330,7 +337,7 @@ async function openPending() {
         // synchronous work does not reach the screen.
         onProgress: async (done, total, title) => {
           say(total > 1 ? `Restoring ${title} (${done} of ${total})…` : `Restoring ${title}…`, 'info')
-          await new Promise(r => setTimeout(r, 0))
+          await paint()
         },
       }, password.value, fileWallets, live)
       if (walletReport.created.length) live = await walletRefs().catch(() => live)
@@ -439,10 +446,10 @@ async function openPending() {
              their passphrase checked.
 
              KNOW WHAT THAT COSTS, because the line was load-bearing twice
-             over. It is the last thing on either screen saying what is IN the
-             file, so the red warning below is now the whole of it — which is
-             why that one sentence must keep naming the wallet passphrase as
-             the key. And "labels" replaced "labels and contacts" on
+             over. It was the last thing on either screen saying what is IN
+             the file; the red warning that carried the rest went a day later,
+             so NOTHING here describes the file now and the field's label is
+             what names the key. And "labels" replaced "labels and contacts" on
              2026-11-08 for being a promise the file could not keep; nothing
              says "contacts" now because nothing says anything, so the only
              way that claim comes back is somebody writing a new line here.
@@ -466,20 +473,11 @@ async function openPending() {
                  @keyup.enter="pending ? openPending() : doSave()" />
         </div>
 
-        <!-- Only while saving is the password the thing that can be lost. Once
-             a file is in hand the question is what opens THAT file, and this
-             warning would be answering the wrong one. -->
-        <!-- ONE LINE (2026-11-08, on the user's instruction: "text in red is
-             too long: Encrypted with wallet passphrase. Store safely"). Same
-             line on the phone, for the usual reason. It ran to four clauses
-             here; a warning nobody finishes reading warns nobody, and what
-             decides what somebody does with the file is that the key is the
-             WALLET passphrase and the file is worth keeping safe. -->
-        <div v-if="!pending" class="alert alert-error" style="padding:10px;border-radius:6px">
-          <p class="text-sm" style="margin:0">
-            Encrypted with wallet passphrase. Store safely.
-          </p>
-        </div>
+        <!-- NO RED WARNING (2026-11-09: "remove red text: Encrypted..."),
+             matching the phone. With the contents line already gone this
+             screen says nothing about the file; what names the key is the
+             field's own label, and the behaviour is untouched. See the note
+             in BackupPage.tsx for what the sequence of cuts has left. -->
 
         <!-- NEITHER BUTTON IS EVER DISABLED FOR MISSING INPUT, which is what
              "you dropped Restore" was: both sat greyed out on open, because

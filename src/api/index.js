@@ -61,7 +61,16 @@ async function req(url, options = {}) {
   const resp = await fetch(BASE + url, {
     credentials: 'include',
     ...options,
-    headers: { 'X-Thrilla-Client': '1', ...devHeader, ...tfaHeader, ...(options.headers || {}) },
+    headers: {
+      'X-Thrilla-Client': '1',
+      // WHICH APP THIS IS, on every request including GETs. The second factor
+      // applies to the browser and not to the phone (which has no screen for
+      // it), and this is what says so. It used to be inferred from `Origin`,
+      // which a browser does NOT send on a same-origin GET — so the gate
+      // answered "not required" for every read and "required" for every write,
+      // which is the 2026-11-10 lockout. See siLNt helpers/twofa.py.
+      'X-Silnt-Web': '1',
+      ...devHeader, ...tfaHeader, ...(options.headers || {}) },
   })
   if (resp.status === 204) return null
   const data = await resp.json().catch(() => ({ detail: resp.statusText }))

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 
@@ -33,6 +33,26 @@ const message = ref(null)      // { text, tone }
 const canvas  = ref(null)
 
 const say = (text, tone = 'info') => { message.value = text ? { text, tone } : null }
+
+// What the switch shows: the SERVER's answer, never the click.
+const isOn = computed(() => !!(status.value && status.value.enabled))
+
+// One control for both directions. Off → start setup (which needs the QR and a
+// code before anything is enabled). On → ask for a code to remove it.
+function onToggle() {
+  if (busy.value) return
+  say('')
+  if (isOn.value) { confirmOff.value = true; return }
+  if (secret.value) { cancelSetup(); return }
+  startSetup()
+}
+
+function cancelSetup() {
+  secret.value = ''
+  uri.value = ''
+  code.value = ''
+  say('')
+}
 
 async function load() {
   busy.value = 'load'
@@ -112,7 +132,9 @@ async function confirm() {
     confirmOff.value = false
     await load()
     emit('changed')
-    say('Two-factor is on.', 'ok')
+    // NO SUCCESS LINE. The toggle moved; saying so again is the prose this
+    // screen was asked to lose. Errors still speak, because nothing else
+    // reports those.
   } catch (e) {
     say(e.detail || e.message || 'That code is not right.', 'error')
     code.value = ''
@@ -132,7 +154,6 @@ async function disable() {
     confirmOff.value = false
     await load()
     emit('changed')
-    say('Two-factor is off.', 'ok')
   } catch (e) {
     say(e.detail || e.message || 'That code is not right.', 'error')
     code.value = ''
@@ -172,47 +193,27 @@ function close() { emit('close') }
           {{ message.text }}
         </div>
 
-        <!-- ON.
-             NO CODE FIELD STANDING OPEN, and that is a fix rather than a
-             layout choice. This used to render "A code is required to open
-             your wallet" over a **Current code** box the moment 2FA was
-             switched on — which reads as being asked for a code again, on the
-             very screen that had just accepted one. Reported 2026-11-10: "I
-             enabled 2fa on web and entered the code. the popup was still there
-             asking to enter code again to access wallet or Turn Off."
-             The field now belongs to the decision that needs it. -->
-        <template v-if="status && status.enabled">
-          <p class="text-sm">Two-factor is on. A code is asked for when you sign in.</p>
-          <template v-if="!confirmOff">
-            <button class="btn btn-warn" :disabled="!!busy" @click="confirmOff = true">
-              Turn off
-            </button>
-          </template>
-          <template v-else>
-            <div class="field">
-              <label>Enter a current code to turn it off</label>
-              <input class="input" v-model="code" inputmode="numeric" maxlength="6"
-                     autocomplete="one-time-code" placeholder="000000"
-                     @keyup.enter="disable" />
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-warn" :disabled="!!busy" @click="disable">
-                {{ busy === 'disable' ? 'Working…' : 'Turn off' }}
-              </button>
-              <button v-if="status.email_available" class="btn btn-ghost"
-                      :disabled="!!busy" @click="emailCode">
-                {{ busy === 'email' ? 'Sending…' : 'Email me a code' }}
-              </button>
-              <button class="btn btn-ghost" :disabled="!!busy"
-                      @click="confirmOff = false; code = ''">Cancel</button>
-            </div>
-          </template>
-        </template>
+        <!-- ONE TOGGLE, which is what was asked for (2026-11-10: "drop text A
+             code is asked.. and Two factor is on.. can you just have a toggle
+             for on/off for 2fa?"). The prose went with it: the heading says
+             Two-Factor and the switch says whether it is on, so a sentence
+             restating either was in front of the only decision on the screen.
 
-        <!-- SETTING UP: the QR, the key to type when there is no camera, and
-             the field that proves the app holds it. -->
-        <template v-else-if="secret">
-          <p class="text-sm">Scan this with your authenticator app, then enter the code it shows.</p>
+             IT SHOWS WHAT IS, NOT WHAT WAS CLICKED — `.prevent` stops the box
+             flipping on click, and the checked state follows the SERVER. A
+             toggle that moves before the server agrees is a toggle that lies
+             the moment a code is wrong. -->
+        <label class="tfa-toggle">
+          <input type="checkbox" :checked="isOn" :disabled="!!busy"
+                 @click.prevent="onToggle" />
+          <span>Require a code to sign in</span>
+        </label>
+
+        <!-- TURNING ON: the QR, the key for a device with no camera, and the
+             field that proves the app holds the secret. Unavoidable — nothing
+             else can establish that, and enabling without it is how somebody
+             is locked out by a QR they never finished scanning. -->
+        <template v-if="secret">
           <div style="display:flex;justify-content:center">
             <canvas ref="canvas"></canvas>
           </div>
@@ -226,20 +227,38 @@ function close() { emit('close') }
                    autocomplete="one-time-code" placeholder="000000"
                    @keyup.enter="confirm" />
           </div>
-          <button class="btn btn-primary" :disabled="!!busy" @click="confirm">
-            {{ busy === 'confirm' ? 'Working…' : 'Turn on' }}
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" :disabled="!!busy" @click="confirm">
+              {{ busy === 'confirm' ? 'Working…' : 'Turn on' }}
+            </button>
+            <button class="btn btn-ghost" :disabled="!!busy" @click="cancelSetup">Cancel</button>
+          </div>
         </template>
 
-        <!-- OFF. The line states what turning it on WOULD do, not what is
-             already true — the on-branch's wording here read as a fact about
-             an account that had no second factor at all. -->
-        <template v-else>
-          <p class="text-sm">Require a 6-digit code to open your wallet.</p>
-          <button class="btn btn-primary" :disabled="!!busy" @click="startSetup">
-            {{ busy === 'start' ? 'Working…' : 'Set up authenticator app' }}
-          </button>
+        <!-- TURNING OFF: one code. The dependency already requires a verified
+             session, but a session lasts twelve hours and a browser walked
+             away from is exactly when removing the factor must cost a code
+             rather than a click. -->
+        <template v-else-if="confirmOff">
+          <div class="field">
+            <label>Enter a current code to turn it off</label>
+            <input class="input" v-model="code" inputmode="numeric" maxlength="6"
+                   autocomplete="one-time-code" placeholder="000000"
+                   @keyup.enter="disable" />
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-warn" :disabled="!!busy" @click="disable">
+              {{ busy === 'disable' ? 'Working…' : 'Turn off' }}
+            </button>
+            <button v-if="status && status.email_available" class="btn btn-ghost"
+                    :disabled="!!busy" @click="emailCode">
+              {{ busy === 'email' ? 'Sending…' : 'Email me a code' }}
+            </button>
+            <button class="btn btn-ghost" :disabled="!!busy"
+                    @click="confirmOff = false; code = ''">Cancel</button>
+          </div>
         </template>
+
       </div>
     </div>
   </div>
@@ -247,4 +266,15 @@ function close() { emit('close') }
 
 <style scoped>
 .modal { max-width: 360px; }
+/* A plain checkbox and a label, the shape AdminView already uses for every
+   other switch in this app, rather than a bespoke widget. */
+.tfa-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  cursor: pointer;
+}
+.tfa-toggle input { width: 18px; height: 18px; cursor: pointer; }
+.tfa-toggle span { color: var(--text); }
 </style>

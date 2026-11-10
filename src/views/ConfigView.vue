@@ -281,12 +281,12 @@ onMounted(() => {
     <div class="card">
       <div class="card-header"><h2>Two-Factor</h2></div>
       <div class="card-body">
-        <p class="text-dim text-sm" style="margin:0 0 12px 0">
-          <span v-if="twofaOn">On — a code is required to open your wallet.</span>
-          <span v-else>Require a 6-digit code to open your wallet.</span>
-        </p>
+        <!-- No paragraph: the heading names it and the dialog is one switch
+             (2026-11-10, "drop text ... can you just have a toggle"). The
+             label carries the state, which is the only thing a sentence here
+             was adding. -->
         <button class="btn btn-primary" @click="showTwofa = true">
-          {{ twofaOn ? '⚙ Manage two-factor' : '⚙ Set up two-factor' }}
+          {{ twofaOn ? '⚙ Two-factor: on' : '⚙ Two-factor: off' }}
         </button>
       </div>
     </div>

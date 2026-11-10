@@ -2046,15 +2046,42 @@ until a code is presented. Say that plainly to anyone who asks what it buys;
 it is a real control over the surface a stolen password is actually spent on,
 and it is not an account-level boundary.
 
-**And it is scoped to the BROWSER**, by `requires_twofa(request)` reading an
-`Origin` header — the same rule and the same honest caveat as Turnstile's
-`enforce: "browser"`. The phone has no 2FA screen, so enforcing it there would
-put a wallet behind a prompt that cannot render. **Do not widen that scope
-until the phone implements the flow**: the result is somebody's own phone
-locked out of their coins. It also means the scope is a client-settable
-header, so this is not a boundary against a script holding the account's API
-key — the trusted-device gate has had exactly that property all along and the
-project accepted it.
+**And it is scoped to the WEB APP**, by `requires_twofa(request)` reading
+`X-Silnt-Web`, which the browser client sets in its own fetch wrapper on every
+request it makes. The phone does not set it and is out of scope, because it has
+no 2FA screen — **do not widen that until the phone implements the flow**, or
+the result is somebody's own phone locked out of their coins. The scope is a
+client-settable header, so this is not a boundary against a script holding the
+account's API key; the trusted-device gate has had exactly that property all
+along and the project accepted it.
+
+**IT READ `Origin` FOR ONE DAY AND THAT BROKE EVERYTHING** (2026-11-10: *"have
+setup new 2fa. clicking wallet or any other page shows blank screen. logged out
+with 2fa on and not prompted for code. turning it off doesn't work… errors:
+twofa-required"*). Three symptoms, one wrong signal.
+
+`Origin` was copied from `turnstile.py`, where it is correct: that guards ONE
+POST endpoint, and a browser sends `Origin` on every POST. This guards EVERY
+request — and **a browser does not send `Origin` on a same-origin GET**, which
+behind Caddy is almost all of them. Measured in Chromium rather than assumed:
+
+```
+GET  /api/get   → origin: null
+POST /api/post  → origin: http://127.0.0.1:8770
+```
+
+So the gate answered *not required* for every read and *required* for every
+write, and each symptom falls straight out of that. The sign-in status read is
+a GET, so a fresh sign-in was told its session was verified and never
+prompted. The first POST — the Turn off button — was refused. And the handler
+that re-checks before routing asked with a GET, was told "verified", declined
+to show the gate, and left a page of failed requests with nothing on it: the
+blank screen.
+
+The lesson generalises past this feature: **a per-request gate cannot be keyed
+on a header the browser only sends for some methods.** `check:twofa` pins the
+header on the shared request path rather than per call site, and
+`test_twofa_policy.py` pins that a GET is in scope exactly as a POST is.
 
 **The 6-digit email code already existed** and this reuses its shape rather
 than inventing a second one: hashed on the way in, ten-minute TTL, five-attempt
@@ -2117,6 +2144,18 @@ rather than a click.
 
 **Enabling leaves the session verified**, or switching 2FA on would lock the
 user out of the screen they switched it on from.
+
+**The screen is ONE TOGGLE** (2026-11-10: *"drop text A code is asked.. and Two
+factor is on.. can you just have a toggle for on/off for 2fa?"*). The heading
+names the feature and the switch says whether it is on, so every sentence
+restating either of those stood in front of the only decision on the screen —
+including the success lines, since the toggle moving is the confirmation. What
+survives is a QR and a code when turning ON (nothing else can prove the app
+holds the secret) and a code when turning OFF, and errors.
+
+**The switch shows what IS, not what was clicked.** `@click.prevent` stops the
+box flipping and `:checked` follows the server, because a toggle that moves
+before the server agrees lies the moment a code is wrong.
 
 **The secret is returned once and never read back out.** There is no endpoint
 that hands an existing one over — an API that could is a way to copy

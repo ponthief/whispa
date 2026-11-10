@@ -104,6 +104,31 @@ console.log('the second factor is asked once per sign-in');
     'a sign-out must not leave a token behind because a request failed');
 }
 
+console.log('\nthe web says which app it is, on every request');
+{
+  const api = strip(API);
+  // THE SIGNAL THE GATE READS. It was inferred from `Origin`, which a browser
+  // does NOT send on a same-origin GET — so the server answered "2FA not
+  // required" for every read and "required" for every write. A fresh sign-in
+  // was told it was verified and never prompted; the first POST was refused;
+  // and the screen that re-checks before routing asked with a GET, was told
+  // verified, and showed nothing. One wrong signal, three symptoms.
+  ok('the web marks every request as the web app',
+    /'X-Silnt-Web': '1'/.test(api),
+    'the gate cannot tell a browser from the phone without it');
+  // In the SHARED header block, so it rides on GETs too rather than being
+  // added per call site.
+  const block = api.slice(api.indexOf('const resp = await fetch('), api.indexOf('const resp = await fetch(') + 500);
+  ok('and does so in the one place every request passes through',
+    /'X-Silnt-Web': '1'/.test(block),
+    'a per-call-site header is one somebody forgets on the next endpoint');
+  // The phone must NOT claim to be the web app: it has no screen to render.
+  const phone = read('src/services/api.ts');
+  ok('the phone never claims to be the web app',
+    !!phone && !/X-Silnt-Web/.test(phone),
+    'that would put a wallet behind a prompt the phone cannot show');
+}
+
 console.log('\nthe refusal is not confused with an untrusted device');
 {
   const api = strip(API);
@@ -206,8 +231,22 @@ console.log('\nthe screens');
   // again on the screen that had just accepted one — half of the 2026-11-10
   // report. The field belongs to the turn-off decision.
   ok('the on state does not render a code field until asked',
-    /confirmOff/.test(modal) && /v-if="!confirmOff"/.test(modal),
+    /confirmOff/.test(modal) && /v-else-if="confirmOff"/.test(modal),
     'a management view must not look like a prompt');
+  // ONE TOGGLE, and it reports the SERVER's state rather than the click
+  // (2026-11-10: "can you just have a toggle for on/off for 2fa?"). A box that
+  // flips before the server agrees lies the moment a code is wrong.
+  ok('the control is a single toggle',
+    /@click\.prevent="onToggle"/.test(modal));
+  ok('and it is checked from the server state, not the click',
+    /:checked="isOn"/.test(modal) &&
+    /const isOn = computed\(\(\) => !!\(status\.value && status\.value\.enabled\)\)/.test(modal));
+  // The prose the toggle replaced must not grow back.
+  ok('and the sentences it replaced are gone',
+    !/A code is asked for when you sign in/.test(modal) &&
+    !/Two-factor is on\. A code/.test(modal) &&
+    !/Require a 6-digit code to open your wallet/.test(modal),
+    'the heading names it and the switch says whether it is on');
   ok('and the turn-off form can be cancelled',
     /confirmOff = false/.test(modal));
   ok('and the card is told to re-read the setting',

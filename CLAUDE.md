@@ -2180,6 +2180,29 @@ The lesson for anything else gated this way: **a client must not invalidate
 its own credential on the strength of one refusal**, because it cannot tell
 which request that refusal belongs to.
 
+**AND SIGN-OUT THREW, WHICH WAS WORSE THAN A 500** (2026-11-10, from the
+instance log): `TypeError: int() argument must be a string… not
+'CursorResult'`. `revoke_twofa_session` was written as `return await
+db.execute(...)` under an `-> int` annotation — and an annotation is a comment
+to Python, so nothing complained until a caller did arithmetic on it.
+
+**The consequence was not the error.** It fired *after*
+`clear_session_cookie`, so the Set-Cookie went out with the response the
+handler never returned, and the row was never deleted either. Signing out
+therefore left BOTH halves of the verified session alive server-side while the
+client cleared only its own copy — so the next sign-in in that browser found
+the cookie still valid and was never asked for a code. A sign-out that does
+not sign the second factor out is the whole of what that endpoint is for.
+
+The pattern it should have copied sits two hundred lines above it in the same
+file: `revoke_trusted_device` does `getattr(result, "rowcount", 0) or 0`.
+`tests/test_db_execute_rowcount.py` now bans the shape outright across `crud`,
+`views_api` and `helpers` — `db.execute` has nothing else worth returning, so
+there is no case where returning it is right — and pins that the function it
+names as the example still exists. On an instance that ran the broken build,
+`DELETE FROM silnt.twofa_sessions;` clears any session a failed sign-out left
+behind; otherwise they expire on their own twelve hours later.
+
 **The setup QR is under `check:qr`.** An authenticator's scanner is somebody
 else's code and decodes dark-on-light only — the inverted receive QR that cost
 six builds is the whole reason that check reads a QR call at all, and it read

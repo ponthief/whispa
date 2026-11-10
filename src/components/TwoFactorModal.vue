@@ -36,6 +36,10 @@ const say = (text, tone = 'info') => { message.value = text ? { text, tone } : n
 
 // What the switch shows: the SERVER's answer, never the click.
 const isOn = computed(() => !!(status.value && status.value.enabled))
+// An authenticator is already set up — true even while 2FA is off, which is
+// what lets the toggle ask for a code rather than start over.
+const hasApp = computed(() => !!(status.value && status.value.totp))
+const reenable = ref(false)
 
 // One control for both directions. Off → start setup (which needs the QR and a
 // code before anything is enabled). On → ask for a code to remove it.
@@ -44,6 +48,13 @@ function onToggle() {
   say('')
   if (isOn.value) { confirmOff.value = true; return }
   if (secret.value) { cancelSetup(); return }
+  // TURNING IT BACK ON USES THE APP ALREADY SET UP. Reported 2026-11-10:
+  // "turning 2fa off and then on prompts to install it again in the
+  // authenticator app, as the previous app's code is invalid". Off no longer
+  // discards the secret, so when one is already confirmed this asks for a code
+  // from that app instead of handing out a new QR and leaving a dead entry
+  // behind on the phone.
+  if (hasApp.value) { reenable.value = true; return }
   startSetup()
 }
 
@@ -51,6 +62,7 @@ function cancelSetup() {
   secret.value = ''
   uri.value = ''
   code.value = ''
+  reenable.value = false
   say('')
 }
 
@@ -76,6 +88,7 @@ watch(() => props.show, (open) => {
   code.value = ''
   busy.value = null
   confirmOff.value = false
+  reenable.value = false
   say('')
   if (open) load()
 })
@@ -130,6 +143,7 @@ async function confirm() {
     uri.value = ''
     code.value = ''
     confirmOff.value = false
+    reenable.value = false
     await load()
     emit('changed')
     // NO SUCCESS LINE. The toggle moved; saying so again is the prose this
@@ -209,11 +223,35 @@ function close() { emit('close') }
           <span>Require a code to sign in</span>
         </label>
 
-        <!-- TURNING ON: the QR, the key for a device with no camera, and the
-             field that proves the app holds the secret. Unavoidable — nothing
-             else can establish that, and enabling without it is how somebody
-             is locked out by a QR they never finished scanning. -->
-        <template v-if="secret">
+        <!-- TURNING IT BACK ON with the app already set up: a code, no QR.
+             Off keeps the secret (siLNt crud.disable_twofa), so re-scanning
+             would hand out a second entry and leave the first one dead. -->
+        <template v-if="reenable && !secret">
+          <div class="field">
+            <label>Code from your authenticator app</label>
+            <input class="input" v-model="code" inputmode="numeric" maxlength="6"
+                   autocomplete="one-time-code" placeholder="000000"
+                   @keyup.enter="confirm" />
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" :disabled="!!busy" @click="confirm">
+              {{ busy === 'confirm' ? 'Working…' : 'Turn on' }}
+            </button>
+            <!-- The only route to a fresh secret, for somebody who no longer
+                 has the app at all. -->
+            <button class="btn btn-ghost" :disabled="!!busy" @click="startSetup">
+              Use a different app
+            </button>
+            <button class="btn btn-ghost" :disabled="!!busy" @click="cancelSetup">Cancel</button>
+          </div>
+        </template>
+
+        <!-- SETTING ONE UP FOR THE FIRST TIME (or replacing it): the QR, the
+             key for a device with no camera, and the field that proves the app
+             holds the secret. Unavoidable — nothing else can establish that,
+             and enabling without it is how somebody is locked out by a QR they
+             never finished scanning. -->
+        <template v-else-if="secret">
           <div style="display:flex;justify-content:center">
             <canvas ref="canvas"></canvas>
           </div>

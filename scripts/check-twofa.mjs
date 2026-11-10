@@ -156,11 +156,33 @@ console.log('\nthe refusal is not confused with an untrusted device');
 
   const app = strip(APP);
   ok('App.vue routes the two refusals to different screens',
-    /handleTwofaRequired[\s\S]{0,400}name: 'two-factor'/.test(app) &&
+    /handleTwofaRequired[\s\S]{0,1200}name: 'two-factor'/.test(app) &&
     /handleDeviceNotTrusted[\s\S]{0,400}name: 'pending-device'/.test(app));
+  // A PERSISTENT DISAGREEMENT MUST NOT STRAND ANYBODY. One refusal against a
+  // verified session is the race the rule above exists for; several in a row
+  // mean the gate and the status read disagree, and the user is looking at a
+  // page whose every request failed with nothing on screen. The gate is
+  // recoverable; a blank page is not.
+  ok('repeated refusals against a "verified" session still reach the gate',
+    /_tfaDisagreements/.test(app) && /_tfaDisagreements >= 3/.test(app),
+    'otherwise a mismatch leaves the user with no screen at all');
   ok('and both listeners are removed on unmount',
     /removeEventListener\('twofa-required'/.test(app) &&
     /removeEventListener\('device-not-trusted'/.test(app));
+}
+
+console.log('\na crashed view says so, even on a bare route');
+{
+  const app = strip(APP);
+  // onErrorCaptured swallows a child's failure and returns false, so the view
+  // renders nothing. The banner that reports it lived ONLY inside the app-shell
+  // branch, so a failure on a public or `pending` route — the 2FA gate, the
+  // device gate, login — showed a completely empty page with no message. That
+  // is the one failure a user cannot report usefully.
+  ok('the error banner renders on bare routes too',
+    /<template v-if="isBare">[\s\S]{0,600}childError/.test(app),
+    'a blank screen is unreportable; a line of text is not');
+  ok('and still in the app shell', (app.match(/childError/g) || []).length >= 3);
 }
 
 console.log('\nthe gate is reachable, and nothing else is');
@@ -249,6 +271,15 @@ console.log('\nthe screens');
     'the heading names it and the switch says whether it is on');
   ok('and the turn-off form can be cancelled',
     /confirmOff = false/.test(modal));
+  // TURNING IT BACK ON USES THE APP ALREADY SET UP (2026-11-10: "turning 2fa
+  // off and then on prompts to install it again in the authenticator app").
+  // Off keeps the secret, so handing out a new QR would leave a dead entry on
+  // the phone and a second live one beside it.
+  ok('re-enabling asks for a code rather than a new QR',
+    /hasApp/.test(modal) && /reenable\.value = true/.test(modal),
+    'the secret survives being turned off; the QR must not be re-issued');
+  ok('and a fresh secret is still reachable for a lost app',
+    /Use a different app/.test(modal));
   ok('and the card is told to re-read the setting',
     /emit\('changed'\)/.test(modal));
 }

@@ -492,6 +492,8 @@ function stopSwapPolling() {
 // server's own answer about the session as it stands NOW, and only that sends
 // anybody to the gate; a late 403 against a verified session is dropped.
 let _tfaRedirecting = false
+// Consecutive refusals arriving while the server calls this session verified.
+let _tfaDisagreements = 0
 async function handleTwofaRequired() {
   if (_tfaRedirecting) return
   const p = route.path
@@ -500,10 +502,19 @@ async function handleTwofaRequired() {
   _tfaRedirecting = true
   try {
     const tf = await api.getTwofaStatus(auth.inkey)
-    // Still owed? Then it is real. Anything else — verified since, 2FA turned
-    // off, or a status read that failed — leaves the user where they are, and
-    // the next refused request raises this again if it was not.
-    if (tf && tf.enabled && !tf.verified) {
+    const owed = !!(tf && tf.enabled && !tf.verified)
+    // ONE REFUSAL AGAINST A VERIFIED SESSION IS A RACE; SEVERAL ARE A
+    // DISAGREEMENT. The stale-refusal rule above is why a single one is
+    // ignored — the pollers guarantee a few the moment 2FA is switched on. But
+    // if refusals keep arriving while the status read insists the session is
+    // verified, the two are not racing, they disagree, and the user is sitting
+    // in front of a page whose every request failed with nothing on screen.
+    // The gate is recoverable (type a code); a blank page is not. So after a
+    // few, go anyway.
+    if (tf && tf.enabled && tf.verified) _tfaDisagreements += 1
+    else _tfaDisagreements = 0
+    if (owed || _tfaDisagreements >= 3) {
+      _tfaDisagreements = 0
       await router.push({ name: 'two-factor' }).catch(() => {})
     }
   } catch (_) {
@@ -605,6 +616,16 @@ function logout() {
   </div>
 
   <template v-if="isBare">
+    <!-- THE ERROR BANNER BELONGS HERE TOO, and its absence is why a broken
+         gate reads as "no page opens" rather than as an error. onErrorCaptured
+         swallows a child's failure and returns false, so the view renders
+         nothing — and on a bare route there was no banner to say so. A blank
+         screen is the one failure a user cannot report usefully; this turns it
+         into a line of text. -->
+    <div v-if="childError" class="bare-error">
+      ⚠ {{ childError }}
+      <button @click="childError = null">dismiss</button>
+    </div>
     <router-view />
   </template>
 

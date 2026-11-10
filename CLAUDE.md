@@ -2161,6 +2161,36 @@ before the server agrees lies the moment a code is wrong.
 that hands an existing one over — an API that could is a way to copy
 somebody's authenticator. Losing the QR before confirming costs nothing.
 
+**TURNING IT OFF KEEPS THE AUTHENTICATOR** (2026-11-10: *"turning 2fa off and
+then on prompts to install it again in the authenticator app, as the previous
+app's code is invalid"*). `disable_twofa` deleted the whole row, secret
+included, on the reasoning that leaving it makes "off" mean "dormant". The rule
+was tidy and the user paid for it on every round trip: re-scan a QR, and leave
+a dead entry on the phone beside the new one. `enabled` is what a request reads
+now and the secret outlives the decision — the same shape the Tango payout
+address has, for the same reason: **a setting whose only way back on is redoing
+the setup is a one-way door.** Turning it back on still costs a code from that
+app, which is what proves the user still holds it; somebody who has lost it
+asks for a new secret explicitly ("Use a different app"), which is now the only
+route to one.
+
+**AND A CRASHED VIEW ON A BARE ROUTE SHOWED NOTHING AT ALL.** `onErrorCaptured`
+in `App.vue` swallows a child's failure and returns false, so the view renders
+empty — and the banner that reports it was inside the app-shell branch only. A
+failure on a `public` or `pending` route (the 2FA gate, the device gate, login)
+therefore produced a completely blank page with no message, which is the one
+failure a user cannot report usefully: three rounds of *"blank screen"* were
+spent guessing at a cause the screen could have named. It renders on bare
+routes now.
+
+**And a persistent disagreement no longer strands anybody.** One
+`twofa-required` refusal against a session the status read calls verified is
+the race the rule above exists for; several in a row mean the gate and the
+status endpoint disagree, and the user is in front of a page whose every
+request failed. The gate is recoverable — type a code — and a blank page is
+not, so after three it routes there anyway. Note which way that errs: toward
+showing a prompt that may be unnecessary, never toward showing nothing.
+
 **The email fallback is the lockout answer, and its cost is stated once:** the
 second factor is then only as strong as the mailbox. That was chosen
 deliberately over recovery codes, because a self-custodial wallet whose owner

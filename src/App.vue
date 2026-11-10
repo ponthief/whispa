@@ -479,6 +479,20 @@ function stopSwapPolling() {
   _swapSeen.clear()
 }
 
+// THE SECOND FACTOR EXPIRED MID-USE, which is a different refusal from the one
+// below and must not land on device enrollment: that screen's only action is
+// to email a DEVICE code, which is the wrong answer on a browser that is
+// already trusted. api/index.js raises this event off the `twofa-required`
+// prefix the backend sends for exactly this.
+let _tfaRedirecting = false
+function handleTwofaRequired() {
+  if (_tfaRedirecting) return
+  const p = route.path
+  if (p.startsWith('/two-factor') || p.startsWith('/login')) return
+  _tfaRedirecting = true
+  router.push({ name: 'two-factor' }).finally(() => { _tfaRedirecting = false })
+}
+
 let _redirecting = false
 function handleDeviceNotTrusted() {
   // Soft redirect once, via router (no full page reload → no state wipe)
@@ -528,6 +542,7 @@ onMounted(() => {
   // (replaces the old { immediate: true } on the auth watcher, which caused a TDZ).
   startLoggedInTasks()
   window.addEventListener('device-not-trusted', handleDeviceNotTrusted)
+  window.addEventListener('twofa-required', handleTwofaRequired)
   ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, onUserActivity, { passive: true }))
   // Check every 30s, and also immediately on mount (covers a tab left open then
   // returned to after the timeout while no events fired).
@@ -539,6 +554,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('device-not-trusted', handleDeviceNotTrusted)
+  window.removeEventListener('twofa-required', handleTwofaRequired)
   ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, onUserActivity))
   window.removeEventListener('focus', enforceIdleTimeout)
   document.removeEventListener('visibilitychange', enforceIdleTimeout)

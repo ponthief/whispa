@@ -3,11 +3,25 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
+import TwoFactorModal from '@/components/TwoFactorModal.vue'
 
 const BIP353_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
 const confirmForget = ref(false)
 const myWalletIds = ref([])
+
+// THE SECOND FACTOR'S state, read here so the card can say which it is rather
+// than offering "Set up" to somebody who already has it on. Best effort: a
+// failed read leaves the card offering setup, and the modal says what is
+// actually true the moment it opens.
+const showTwofa = ref(false)
+const twofaOn = ref(false)
+async function loadTwofa() {
+  try {
+    const s = await api.getTwofaStatus(auth.inkey)
+    twofaOn.value = !!(s && s.enabled)
+  } catch (_) { twofaOn.value = false }
+}
 
 async function loadMyWalletIds() {
   try {
@@ -218,6 +232,7 @@ async function saveCfConfig() {
 onMounted(() => {
   loading.value = false   // no admin config to fetch here anymore
   loadMyWalletIds()
+  loadTwofa()
 })
 </script>
 
@@ -257,6 +272,22 @@ onMounted(() => {
           Manage which devices can access this account.
         </p>
         <router-link to="/devices" class="btn btn-primary">⚙ Manage devices</router-link>
+      </div>
+    </div>
+
+    <!-- Two-Factor. Beside Trusted Devices because the two answer the same
+         question from different ends: which devices are known, and what a
+         known device still has to present. -->
+    <div class="card">
+      <div class="card-header"><h2>Two-Factor</h2></div>
+      <div class="card-body">
+        <p class="text-dim text-sm" style="margin:0 0 12px 0">
+          <span v-if="twofaOn">On — a code is required to open your wallet.</span>
+          <span v-else>Require a 6-digit code to open your wallet.</span>
+        </p>
+        <button class="btn btn-primary" @click="showTwofa = true">
+          {{ twofaOn ? '⚙ Manage two-factor' : '⚙ Set up two-factor' }}
+        </button>
       </div>
     </div>
 
@@ -384,6 +415,8 @@ onMounted(() => {
       </div>
     </div>
   </div>
+
+  <TwoFactorModal :show="showTwofa" @close="showTwofa = false" @changed="loadTwofa" />
 </template>
 
 <style scoped>

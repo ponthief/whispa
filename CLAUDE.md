@@ -99,6 +99,7 @@ npm run check:apksign       # which key signs a release, answered in one place
 npm run check:fdroid        # no proprietary scanner, and push can be left out
 npm run check:stealth       # one launcher icon always enabled, and a disguise says it stops alerts
 npm run check:device        # a server that cannot answer is not a device that was refused
+npm run check:twofa         # a code once per sign-in, and the two refusals told apart
 npm run check:seed          # the web keeps the words beside the keys, and shows them only to the account
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
@@ -2027,6 +2028,125 @@ comment explaining the fix, because that comment quotes the alert's subject
 line, so it strips comments (by `tokenize`, since a `#` inside an email body
 is not one) before asserting on source — the trap `check:stealth` hit with
 `DONT_KILL_APP` and `check:backup` with `Math.random()`.
+
+### Two-factor, and what it can actually defend
+
+Added 2026-11-10, asked for as *"for web app, I would like to add 2fa. can we
+add it so that user has to enter 6 digit code from a code generation in the app
+or via email?"* — both factors, and on the user's answer a code **on every
+sign-in** with **email always available as a fallback**.
+
+**IT DOES NOT GATE THE ACCOUNT'S SIGN-IN, and it cannot.** Signing in is
+LNbits core's `POST /api/v1/auth`, the same second public door this file
+already records for signup: the extension does not own it and cannot stand in
+front of it. So a password alone still reaches the ACCOUNT. What 2FA gates is
+the **wallet** — `require_trusted_device` is the single dependency every siLNt
+endpoint hangs off, and for a user who has it on there is nothing behind it
+until a code is presented. Say that plainly to anyone who asks what it buys;
+it is a real control over the surface a stolen password is actually spent on,
+and it is not an account-level boundary.
+
+**And it is scoped to the BROWSER**, by `requires_twofa(request)` reading an
+`Origin` header — the same rule and the same honest caveat as Turnstile's
+`enforce: "browser"`. The phone has no 2FA screen, so enforcing it there would
+put a wallet behind a prompt that cannot render. **Do not widen that scope
+until the phone implements the flow**: the result is somebody's own phone
+locked out of their coins. It also means the scope is a client-settable
+header, so this is not a boundary against a script holding the account's API
+key — the trusted-device gate has had exactly that property all along and the
+project accepted it.
+
+**The 6-digit email code already existed** and this reuses its shape rather
+than inventing a second one: hashed on the way in, ten-minute TTL, five-attempt
+cap, constant-time compare (`device_codes` → `twofa_codes`). A second
+implementation of a code table is a second set of bugs.
+
+**TOTP is forty lines of stdlib** (`helpers/totp.py`), not a dependency: an
+extension that ships with LNbits inherits everything it adds, and `pyotp` is
+not installed. What makes that safe is that RFC 6238 publishes its own test
+vectors — `tests/test_totp.py` runs all of them, so an implementation that is
+merely self-consistent (it verifies what it generates) cannot pass. That exact
+failure would scan cleanly into an authenticator app and never match.
+
+SHA-1, 6 digits, a 30-second step, ±1 window, and **none of them
+configurable**: every app ignores or rejects anything else, so offering a
+choice produces a secret that scans and then never verifies.
+
+**The replay guard is the non-obvious half** (RFC 6238 §5.2). A ±1 window
+makes a code good for up to 90 seconds, so one read over a shoulder, left on
+screen, or sitting in a proxy log is good for a *second* use. `verify()`
+returns **the counter it matched** rather than a bool for exactly this, and
+`twofa.last_counter` holds it; `note_twofa_counter` only ever moves forward,
+or two racing requests one step apart would leave the earlier value stored and
+re-open the later code.
+
+**Three tables, because they have three lifetimes** (`m045_two_factor`). The
+setting and secret; the sessions that have passed the factor; the emailed
+codes. `enabled` is separate from `totp_secret` existing — a secret nothing
+has proved the app holds must never become a login requirement, which is how
+somebody is locked out by a QR they never finished scanning.
+
+**A SESSION record, not a device one**, and that distinction is the whole
+feature. The trusted-device cookie already answers "is this browser known",
+and a second factor a known browser never presents again is not a second
+factor. So: a server session cookie with **no max_age** (it dies with the
+browser), a row with a 12-hour TTL, and **sign-out revokes it** — without that
+last part the cookie survives a sign-out in the same window and the next
+sign-in walks straight in. On the client the token sits in **sessionStorage,
+never localStorage**, for the same reason; `check:twofa` pins both halves.
+
+**THE REFUSAL HAS ITS OWN PREFIX, and that is not cosmetic.** Both clients
+fold a 403 from `require_trusted_device` into `untrusted`
+(`services/deviceCheckOutcome.ts`), and untrusted lands on device enrollment —
+whose only action is to email a **device** code. A bare 403 would therefore
+answer *"enter your two-factor code"* with *"we have emailed you a device
+confirmation"*, on a browser that is already trusted. `twofa-required:` is the
+prefix, and the web raises a separate event off it to a separate screen.
+
+**Which dependency each endpoint takes is the design.** `verify`,
+`email/send`, the status read and `session/revoke` hang off
+`require_invoice_key`, because they are the way OUT of the locked state — put
+any of them behind `require_trusted_device` and 2FA is a wallet nobody can
+open, since clearing the lock would need the lock cleared. Setup, confirm and
+disable hang off `require_trusted_device`, because setting the factor up or
+taking it off is exactly what somebody holding only the password would do.
+Disable **additionally** demands a current code: the dependency already
+requires a verified session, but a session lasts twelve hours and a browser
+walked away from is precisely when turning the factor off must cost a code
+rather than a click.
+
+**Enabling leaves the session verified**, or switching 2FA on would lock the
+user out of the screen they switched it on from.
+
+**The secret is returned once and never read back out.** There is no endpoint
+that hands an existing one over — an API that could is a way to copy
+somebody's authenticator. Losing the QR before confirming costs nothing.
+
+**The email fallback is the lockout answer, and its cost is stated once:** the
+second factor is then only as strong as the mailbox. That was chosen
+deliberately over recovery codes, because a self-custodial wallet whose owner
+is locked out by a dead handset is the worse failure. Both limits exist —
+ten verify attempts per five minutes per ACCOUNT (an IP limit is one proxy
+away from nothing when the attacker is authenticated as the user), and five
+mailed codes an hour so the verify screen cannot be turned into a way to flood
+an inbox.
+
+**The setup QR is under `check:qr`.** An authenticator's scanner is somebody
+else's code and decodes dark-on-light only — the inverted receive QR that cost
+six builds is the whole reason that check reads a QR call at all, and it read
+one file until this added the second.
+
+**Two things found by the existing controls** when this landed, both worth
+knowing. `updated_at` is a name that means a TIMESTAMP column across this
+schema (`tests/test_timestamp_columns.py` keys off it), so an INTEGER one here
+tripped a guard whose message is about a bug that fails only in production —
+the column is gone, since nothing read it. And
+`test_the_column_is_guaranteed_whatever_order_an_instance_arrived_in` asserted
+`max(migration numbers) == 44`, which reads as "no migration may ever follow"
+and broke on the first unrelated one. That was never the rule: LNbits runs
+migrations in order, so a LATER number cannot stop an instance reaching 044 —
+an EARLIER one is the hazard m039 fell into. The pin is on the numbers below
+it now.
 
 ## F-Droid, and the two proprietary blobs in the APK
 

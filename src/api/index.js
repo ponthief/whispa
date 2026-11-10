@@ -18,6 +18,26 @@ const SILNT = import.meta.env.VITE_SILNT_PREFIX || '/siLNt'
 // persist it. So we ALSO carry the device id in a header: verifyDeviceCode
 // stores it here and every request sends it. Web (same-origin) still uses the
 // cookie; the backend accepts either.
+// ── Two-factor session ───────────────────────────────────────────────────────
+// The verified-session token, carried in a header beside the cookie for the
+// same reason the device id is: in the packaged app and in any cross-site
+// deployment the cookie is third-party and may simply not be stored.
+//
+// sessionStorage, NOT localStorage, and that is the whole of "a code on every
+// sign-in" on this side: the server sets a session cookie that dies with the
+// browser, and a token kept in localStorage would outlive it and make the
+// factor something the browser remembers instead.
+const TWOFA_KEY = 'thrilla_2fa_session'
+export function setTwofaSession(token) {
+  try {
+    if (token) sessionStorage.setItem(TWOFA_KEY, token)
+    else sessionStorage.removeItem(TWOFA_KEY)
+  } catch (_) {}
+}
+export function getTwofaSession() {
+  try { return sessionStorage.getItem(TWOFA_KEY) || '' } catch (_) { return '' }
+}
+
 const DEVICE_ID_KEY = 'thrilla_device_id'
 export function setDeviceId(id) {
   try { if (id) localStorage.setItem(DEVICE_ID_KEY, id) } catch (_) {}
@@ -36,10 +56,12 @@ async function req(url, options = {}) {
   // without shipping the backend at the same moment turns device trust off.
   const devId = getDeviceId()
   const devHeader = devId ? { 'X-Silnt-Device': devId } : {}
+  const tfa = getTwofaSession()
+  const tfaHeader = tfa ? { 'X-Silnt-2FA': tfa } : {}
   const resp = await fetch(BASE + url, {
     credentials: 'include',
     ...options,
-    headers: { 'X-Thrilla-Client': '1', ...devHeader, ...(options.headers || {}) },
+    headers: { 'X-Thrilla-Client': '1', ...devHeader, ...tfaHeader, ...(options.headers || {}) },
   })
   if (resp.status === 204) return null
   const data = await resp.json().catch(() => ({ detail: resp.statusText }))
@@ -52,6 +74,21 @@ async function req(url, options = {}) {
       try {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('device-not-trusted'))
+        }
+      } catch (_) { /* ignore */ }
+    }
+    // AND THE SECOND FACTOR, which is a different 403 and must not be read as
+    // the one above. `device-not-trusted` lands on device enrollment, whose
+    // only action is to email a DEVICE code — the wrong answer to "your
+    // two-factor session has expired", on a browser that is already trusted.
+    // The backend prefixes the two differently for exactly this reason.
+    if (resp.status === 403 && typeof data.detail === 'string' &&
+        data.detail.startsWith('twofa-required')) {
+      // The session this token names is gone, so stop sending it.
+      setTwofaSession('')
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('twofa-required'))
         }
       } catch (_) { /* ignore */ }
     }
@@ -763,6 +800,84 @@ export async function verifyDeviceCode(inkey, code) {
   })
   try { if (res && res.device_id) setDeviceId(res.device_id) } catch (_) {}
   return res
+}
+
+// ── Two-factor authentication ────────────────────────────────────────────────
+// What the second factor gates is the WALLET, not the account sign-in: that is
+// LNbits core's own endpoint, which this extension cannot stand in front of.
+// See siLNt helpers/twofa.py for the full shape and its limits.
+
+// Status. Reachable while LOCKED — it is what tells the app to render the gate.
+export async function getTwofaStatus(inkey) {
+  return req(`${SILNT}/api/v1/auth/2fa`, { headers: keyHeaders(inkey) })
+}
+
+// Begin authenticator setup: returns the secret and the otpauth:// URI once.
+// There is no endpoint that reads an existing secret back out.
+export async function startTwofaTotp(inkey) {
+  return req(`${SILNT}/api/v1/auth/2fa/totp/start`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+  })
+}
+
+// A correct code proves the app holds the secret, and only then is 2FA on.
+// The same call leaves THIS session verified, or switching it on would lock
+// the user out of the screen they switched it on from.
+export async function confirmTwofaTotp(inkey, code) {
+  const res = await req(`${SILNT}/api/v1/auth/2fa/totp/confirm`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+    body: JSON.stringify({ code }),
+  })
+  try { if (res && res.session) setTwofaSession(res.session) } catch (_) {}
+  return res
+}
+
+export async function disableTwofa(inkey, code) {
+  const res = await req(`${SILNT}/api/v1/auth/2fa/disable`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+    body: JSON.stringify({ code }),
+  })
+  try { setTwofaSession('') } catch (_) {}
+  return res
+}
+
+// The fallback, so a lost phone is not a lost wallet.
+export async function sendTwofaEmail(inkey) {
+  return req(`${SILNT}/api/v1/auth/2fa/email/send`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+  })
+}
+
+// Present either factor. The backend tries the app code first and the emailed
+// one second, so the screen never asks which six digits are being held.
+export async function verifyTwofa(inkey, code) {
+  const res = await req(`${SILNT}/api/v1/auth/2fa/verify`, {
+    method: 'POST',
+    headers: keyHeaders(inkey),
+    body: JSON.stringify({ code }),
+  })
+  try { if (res && res.session) setTwofaSession(res.session) } catch (_) {}
+  return res
+}
+
+// Signing out drops the verified session, server-side and here. Without it the
+// next sign-in in the same browser window would not be asked for a code.
+export async function revokeTwofaSession(inkey, all = false) {
+  try {
+    return await req(`${SILNT}/api/v1/auth/2fa/session/revoke`, {
+      method: 'POST',
+      headers: keyHeaders(inkey),
+      body: JSON.stringify({ session: getTwofaSession(), all: all ? 'true' : '' }),
+    })
+  } finally {
+    // Cleared whatever the server said: a sign-out must not leave a token
+    // behind because the network was down.
+    try { setTwofaSession('') } catch (_) {}
+  }
 }
 
 export async function listDevices(inkey) {

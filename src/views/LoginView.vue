@@ -146,7 +146,25 @@ async function handleLogin() {
     const res = await api.deviceCheck(auth.inkey)
     const home = isAdminBuild ? 'admin' : 'wallets'
     if (res.status === 'trusted') {
-      router.push({ name: home })
+      // AND THEN THE SECOND FACTOR, if this account has one. Asked here rather
+      // than left to the first refused request, so the user meets a code
+      // prompt instead of a wallet that renders and then throws.
+      //
+      // ORDER MATTERS: after the device check, never before. An untrusted
+      // browser has a more basic thing to do first, and two code prompts
+      // back to back — one for the device, one for the factor — is the
+      // confusion the distinct refusal prefixes exist to avoid.
+      //
+      // BEST EFFORT. A status call that fails must not strand somebody at the
+      // login screen: the gate is enforced server-side on every endpoint, so
+      // the worst case is the wallet opening and the first request bouncing
+      // through `twofa-required` into the same screen.
+      let locked = false
+      try {
+        const tf = await api.getTwofaStatus(auth.inkey)
+        locked = !!(tf && tf.enabled && !tf.verified)
+      } catch (_) { locked = false }
+      router.push({ name: locked ? 'two-factor' : home })
     } else {
       router.push({ name: 'pending-device' })
     }

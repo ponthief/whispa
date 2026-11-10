@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, getLnbitsWallets, getAccount } from '@/api'
+import { login as apiLogin, getLnbitsWallets, getAccount,
+         revokeTwofaSession, setTwofaSession } from '@/api'
 import {
   vaultStore, vaultGet, vaultDelete,
   vaultStoreSeed, vaultGetSeed, vaultDeleteSeed, hasVaultSeed,
@@ -127,6 +128,16 @@ export const useAuthStore = defineStore('auth', () => {
     // forget login-scan session state so a fresh login re-evaluates wallets.
     // lazy import avoids any circular-init issue (composable imports this store).
     import('@/composables/useLoginScan').then(m => m._resetLoginScan?.()).catch(() => {})
+    // THE VERIFIED SECOND FACTOR GOES, and that is what makes "a code on every
+    // sign-in" true. The server's cookie is a session cookie, so it survives a
+    // sign-out inside the same browser window — without this the next sign-in
+    // would walk straight in. Fired before the keys are dropped, because the
+    // call needs the inkey to name the session; it is best-effort, and the
+    // local token is cleared either way inside revokeTwofaSession.
+    try {
+      if (inkey.value) revokeTwofaSession(inkey.value).catch(() => {})
+      else setTwofaSession('')
+    } catch (_) { /* never block a sign-out */ }
     // NOTE: We intentionally do NOT clear wallet keys here.
     // The encrypted blob in localStorage is tied to the user's adminkey+inkey,
     // so:

@@ -81,6 +81,13 @@ export const BACKUP_EXCLUDED = {
   thrilla_plain_sends_v1: 'same',
   thrilla_tango_commit_v1: 'a live round on THIS device; it cannot be moved to another',
 
+  // The verified two-factor session. It lives in sessionStorage rather than
+  // localStorage on purpose — it has to die with the browser — and restoring
+  // one would be a backup file that carries somebody past their own second
+  // factor, which is the one thing a second factor is for.
+  thrilla_2fa_session: 'a verified 2FA session — restoring one would carry a ' +
+    'file past the second factor',
+
   // The labels a restore on THIS device has not managed to place yet
   // (services/pendingLabels.ts). A work queue, not data: the labels in it are
   // already in whatever file they came from, and the moment they land they are

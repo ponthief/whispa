@@ -13,6 +13,11 @@ const publicRoutes = [
   { path: '/reset',  name: 'reset',  component: () => import('@/views/ResetPasswordView.vue'),  meta: { public: true } },
   { path: '/verify', name: 'verify', component: () => import('@/views/VerifyEmailView.vue'),    meta: { public: true } },
   { path: '/pending-device', name: 'pending-device', component: () => import('@/views/PendingDeviceView.vue'), meta: { pending: true } },
+  // The second factor. `pending`, like the device gate: signed in, with
+  // credentials, and nothing else reachable until it is answered. In BOTH
+  // builds, because require_trusted_device_admin enforces it too — an admin
+  // portal that walks around the account's own 2FA would be the hole.
+  { path: '/two-factor', name: 'two-factor', component: () => import('@/views/TwoFactorView.vue'), meta: { pending: true } },
 ]
 
 // SELF-SERVICE routes — the USER build only, and that is the whole point.

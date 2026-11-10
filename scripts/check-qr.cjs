@@ -80,7 +80,17 @@ function checkPair(where, darkHex, lightHex) {
 // that passes neither is already correct. What is checked is what is PASSED.
 console.log('the web app renders a readable QR');
 {
-  const files = ['src/components/QrModal.vue'];
+  // EVERY web QR site, not just the one that was wrong. The receive QR is
+  // what cost six builds; a second site rendering its own colours later would
+  // walk straight back into it, and a check that reads one file would be green
+  // over it — the one-sided-check mistake this repo has already made twice.
+  const files = [
+    'src/components/QrModal.vue',
+    // The authenticator setup QR. Scanned by somebody ELSE's code, which makes
+    // dark-on-light not a preference: an app that cannot read it leaves the
+    // user typing a 32-character key by hand.
+    'src/components/TwoFactorModal.vue',
+  ];
   let sites = 0;
   for (const rel of files) {
     const src = read(rel);

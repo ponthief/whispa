@@ -25,6 +25,10 @@ const secret  = ref('')
 const uri     = ref('')
 const code    = ref('')
 const busy    = ref(null)      // 'load' | 'start' | 'confirm' | 'disable'
+// Whether the turn-off form is showing. Separate from `busy` so the code field
+// belongs to the decision that needs it rather than standing open the moment
+// 2FA is on — see the template for the report that caused.
+const confirmOff = ref(false)
 const message = ref(null)      // { text, tone }
 const canvas  = ref(null)
 
@@ -51,6 +55,7 @@ watch(() => props.show, (open) => {
   uri.value = ''
   code.value = ''
   busy.value = null
+  confirmOff.value = false
   say('')
   if (open) load()
 })
@@ -104,6 +109,7 @@ async function confirm() {
     secret.value = ''
     uri.value = ''
     code.value = ''
+    confirmOff.value = false
     await load()
     emit('changed')
     say('Two-factor is on.', 'ok')
@@ -123,6 +129,7 @@ async function disable() {
   try {
     await api.disableTwofa(auth.inkey, c)
     code.value = ''
+    confirmOff.value = false
     await load()
     emit('changed')
     say('Two-factor is off.', 'ok')
@@ -165,26 +172,41 @@ function close() { emit('close') }
           {{ message.text }}
         </div>
 
-        <!-- ON. One line about what it covers, because that is the thing a
-             reader cannot work out from the screen: it gates the wallet, not
-             the sign-in. -->
+        <!-- ON.
+             NO CODE FIELD STANDING OPEN, and that is a fix rather than a
+             layout choice. This used to render "A code is required to open
+             your wallet" over a **Current code** box the moment 2FA was
+             switched on — which reads as being asked for a code again, on the
+             very screen that had just accepted one. Reported 2026-11-10: "I
+             enabled 2fa on web and entered the code. the popup was still there
+             asking to enter code again to access wallet or Turn Off."
+             The field now belongs to the decision that needs it. -->
         <template v-if="status && status.enabled">
-          <p class="text-sm">A code is required to open your wallet.</p>
-          <div class="field">
-            <label>Current code</label>
-            <input class="input" v-model="code" inputmode="numeric" maxlength="6"
-                   autocomplete="one-time-code" placeholder="000000"
-                   @keyup.enter="disable" />
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-warn" :disabled="!!busy" @click="disable">
-              {{ busy === 'disable' ? 'Working…' : 'Turn off' }}
+          <p class="text-sm">Two-factor is on. A code is asked for when you sign in.</p>
+          <template v-if="!confirmOff">
+            <button class="btn btn-warn" :disabled="!!busy" @click="confirmOff = true">
+              Turn off
             </button>
-            <button v-if="status.email_available" class="btn btn-ghost"
-                    :disabled="!!busy" @click="emailCode">
-              {{ busy === 'email' ? 'Sending…' : 'Email me a code' }}
-            </button>
-          </div>
+          </template>
+          <template v-else>
+            <div class="field">
+              <label>Enter a current code to turn it off</label>
+              <input class="input" v-model="code" inputmode="numeric" maxlength="6"
+                     autocomplete="one-time-code" placeholder="000000"
+                     @keyup.enter="disable" />
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-warn" :disabled="!!busy" @click="disable">
+                {{ busy === 'disable' ? 'Working…' : 'Turn off' }}
+              </button>
+              <button v-if="status.email_available" class="btn btn-ghost"
+                      :disabled="!!busy" @click="emailCode">
+                {{ busy === 'email' ? 'Sending…' : 'Email me a code' }}
+              </button>
+              <button class="btn btn-ghost" :disabled="!!busy"
+                      @click="confirmOff = false; code = ''">Cancel</button>
+            </div>
+          </template>
         </template>
 
         <!-- SETTING UP: the QR, the key to type when there is no camera, and

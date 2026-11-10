@@ -84,8 +84,25 @@ async function req(url, options = {}) {
     // The backend prefixes the two differently for exactly this reason.
     if (resp.status === 403 && typeof data.detail === 'string' &&
         data.detail.startsWith('twofa-required')) {
-      // The session this token names is gone, so stop sending it.
-      setTwofaSession('')
+      // THE TOKEN IS NOT CLEARED HERE, and clearing it is the bug that locked
+      // a user out of their own wallet within a minute of switching 2FA on
+      // (2026-11-10: "I enabled 2fa on web and entered the code. the popup was
+      // still there asking to enter code again… I closed the pop up and now no
+      // page opens").
+      //
+      // This app has pollers — the scan watcher every three seconds, the swap
+      // poll, the BitMail checks, the label-queue flush. The moment 2FA became
+      // enabled server-side, every request ALREADY IN FLIGHT came back 403,
+      // and each one deleted the session token the confirm had just stored. So
+      // the gate asked again, a correct code stored a new token, and the next
+      // stale refusal wiped that one too: a self-sustaining lockout built out
+      // of one line of cleanup.
+      //
+      // A refusal says THIS request was not verified. It says nothing about a
+      // token acquired since it was sent, and the server is the only thing
+      // that can tell a dead token from a late answer — so the token stays,
+      // and a verify overwrites it. The cost of keeping a genuinely dead one
+      // is a header the server ignores.
       try {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('twofa-required'))

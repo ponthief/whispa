@@ -484,13 +484,33 @@ function stopSwapPolling() {
 // to email a DEVICE code, which is the wrong answer on a browser that is
 // already trusted. api/index.js raises this event off the `twofa-required`
 // prefix the backend sends for exactly this.
+// AND IT ASKS THE SERVER BEFORE IT MOVES ANYBODY. A refusal is about the
+// request that carried it, which may have left before this session was ever
+// verified — the pollers above guarantee several of those the moment 2FA is
+// switched on. Routing on the refusal alone is what put a user on the gate
+// holding a code they had already entered correctly. `verified` is the
+// server's own answer about the session as it stands NOW, and only that sends
+// anybody to the gate; a late 403 against a verified session is dropped.
 let _tfaRedirecting = false
-function handleTwofaRequired() {
+async function handleTwofaRequired() {
   if (_tfaRedirecting) return
   const p = route.path
   if (p.startsWith('/two-factor') || p.startsWith('/login')) return
+  if (!auth.isLoggedIn || !auth.inkey) return
   _tfaRedirecting = true
-  router.push({ name: 'two-factor' }).finally(() => { _tfaRedirecting = false })
+  try {
+    const tf = await api.getTwofaStatus(auth.inkey)
+    // Still owed? Then it is real. Anything else — verified since, 2FA turned
+    // off, or a status read that failed — leaves the user where they are, and
+    // the next refused request raises this again if it was not.
+    if (tf && tf.enabled && !tf.verified) {
+      await router.push({ name: 'two-factor' }).catch(() => {})
+    }
+  } catch (_) {
+    /* could not ask — do not evict anybody on a guess */
+  } finally {
+    _tfaRedirecting = false
+  }
 }
 
 let _redirecting = false

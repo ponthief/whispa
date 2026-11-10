@@ -58,6 +58,43 @@ console.log('the second factor is asked once per sign-in');
   ok('and never in localStorage', !/localStorage\.(set|get)Item\(TWOFA_KEY/.test(api));
   ok('and it is read back from there', /sessionStorage\.getItem\(TWOFA_KEY/.test(api));
 
+  // A REFUSAL MUST NOT CLEAR IT, and this is the control for the bug that
+  // locked a user out of their own wallet a minute after switching 2FA on
+  // (2026-11-10: "the popup was still there asking to enter code again… I
+  // closed the pop up and now no page opens").
+  //
+  // The app polls — the scan watcher every three seconds, the swap poll, the
+  // BitMail checks, the label flush. The moment 2FA went on, every request
+  // already in flight came back 403 and each one deleted the token the confirm
+  // had just stored, so a correct code was undone by a stale refusal, over and
+  // over. A refusal is about the request that carried it and says nothing
+  // about a token acquired since.
+  {
+    const i = api.indexOf("startsWith('twofa-required')");
+    const block = api.slice(i, i + 700);
+    ok('a twofa refusal does not clear the session token',
+      !/setTwofaSession\(''\)/.test(block),
+      'clearing it guarantees the next request fails too — a lockout built from cleanup');
+    ok('it only raises the event', /CustomEvent\('twofa-required'\)/.test(block));
+  }
+
+  // AND THE HANDLER ASKS THE SERVER BEFORE MOVING ANYBODY. Even without the
+  // wipe, routing on the refusal alone drags a session that has since been
+  // verified back to the gate.
+  {
+    const app = strip(APP);
+    const body = app.slice(app.indexOf('async function handleTwofaRequired'));
+    const end = body.indexOf('function handleDeviceNotTrusted');
+    const fn = end > -1 ? body.slice(0, end) : body;
+    ok('the refusal is confirmed against the server before gating',
+      /getTwofaStatus\(/.test(fn),
+      'a late 403 against a verified session must be dropped');
+    ok('and only an unverified, enabled account is sent to the gate',
+      /tf\.enabled && !tf\.verified/.test(fn));
+    ok('a status read that fails evicts nobody',
+      /catch \(_\) \{/.test(fn), 'do not log somebody out on a guess');
+  }
+
   // SIGNING OUT REVOKES IT. Without this the cookie survives a sign-out inside
   // the same browser window and the next sign-in walks straight in.
   const auth = strip(AUTH);
@@ -82,9 +119,15 @@ console.log('\nthe refusal is not confused with an untrusted device');
     /data\.detail\.startsWith\('device-not-trusted'\)/.test(api));
   ok('they raise different events',
     /CustomEvent\('twofa-required'\)/.test(api) && /CustomEvent\('device-not-trusted'\)/.test(api));
-  ok('a refused request drops the dead token',
-    /startsWith\('twofa-required'\)[\s\S]{0,400}setTwofaSession\(''\)/.test(api),
-    'otherwise every later request keeps presenting a session the server has forgotten');
+  // WHAT USED TO BE PINNED HERE WAS THE BUG. This asserted that a refusal
+  // CLEARS the token — "otherwise every later request keeps presenting a
+  // session the server has forgotten" — and that reasoning is wrong in the one
+  // way that matters: the refusal may be answering a request that left before
+  // the token existed, which with four pollers running is the normal case at
+  // the moment 2FA is switched on. Clearing it then destroys a good token and
+  // guarantees the next request fails too. Keeping a genuinely dead one costs
+  // a header the server ignores; clearing a live one cost a user their wallet.
+  // The control for the correct rule is in the section below.
 
   const app = strip(APP);
   ok('App.vue routes the two refusals to different screens',
@@ -157,6 +200,16 @@ console.log('\nthe screens');
     'a secret left in a closed dialog is one still on screen next time');
   ok('turning it off demands a current code',
     /disableTwofa\(auth\.inkey, c\)/.test(modal));
+  // AND NO CODE FIELD STANDS OPEN WHILE 2FA IS SIMPLY ON. It used to render
+  // "A code is required to open your wallet" over a Current code box the
+  // moment the factor was switched on, which reads as being asked for a code
+  // again on the screen that had just accepted one — half of the 2026-11-10
+  // report. The field belongs to the turn-off decision.
+  ok('the on state does not render a code field until asked',
+    /confirmOff/.test(modal) && /v-if="!confirmOff"/.test(modal),
+    'a management view must not look like a prompt');
+  ok('and the turn-off form can be cancelled',
+    /confirmOff = false/.test(modal));
   ok('and the card is told to re-read the setting',
     /emit\('changed'\)/.test(modal));
 }

@@ -2131,6 +2131,55 @@ away from nothing when the attacker is authenticated as the user), and five
 mailed codes an hour so the verify screen cannot be turned into a way to flood
 an inbox.
 
+**AND IT LOCKED A USER OUT WITHIN A MINUTE OF SHIPPING** (2026-11-10: *"huge
+bug!! I enabled 2fa on web and entered the code. the popup was still there
+asking to enter code again to access wallet or Turn Off. I closed the pop up
+and now no page opens."*). Both halves of that are one line of cleanup and one
+piece of copy.
+
+**The line: a `twofa-required` 403 cleared the session token.** It looked
+obviously right — the server has forgotten this session, so stop presenting
+it. It is wrong in the one way that matters here. This app POLLS: the scan
+watcher every three seconds, the swap poll, the BitMail checks, the
+label-queue flush. The moment `confirm` enabled the factor server-side, every
+request **already in flight** came back refused, and each one deleted the
+token the confirm had just stored. So a correct code was undone by a stale
+answer to a question asked before the code existed — and the gate asked again,
+stored a new token, and the next stale refusal wiped that one too. A
+self-sustaining lockout, assembled out of a tidy-up.
+
+A refusal is about the request that CARRIED it. It says nothing about a token
+acquired since it was sent, and the server is the only thing that can tell a
+dead session from a late answer. So the token stays, a verify overwrites it,
+and the cost of keeping a genuinely dead one is a header the server ignores.
+
+**And the handler no longer routes on the refusal's word alone.** Even with
+the token kept, a late 403 would drag a session that had since been verified
+back to the gate. `handleTwofaRequired` asks `GET /auth/2fa` and moves
+somebody only when `enabled && !verified`; a status read that fails evicts
+nobody, because logging a user out on a guess is the failure being fixed.
+
+**The copy: the "on" state looked like a prompt.** Switching the factor on
+rendered *"A code is required to open your wallet"* over a **Current code**
+field and a Turn off button — which, on the screen that had just accepted a
+code, reads as being asked for one again. That is the *"still there asking to
+enter code again to access wallet or Turn Off"* in the report, exactly. The
+field now belongs to the turn-off decision and appears only when it is taken.
+
+Both are pinned (`check:twofa`), and the reproduction is worth keeping: drive
+the real api module against a fake gate with one wallet request in flight
+across the confirm. With the wipe restored the token reads WIPED, the wallet
+is unreachable and the server reports the session unverified; without it the
+token is held, the wallet answers, and `verified` is true. **The control that
+used to sit there asserted the bug** — it required the clear, with the
+"otherwise every later request keeps presenting a session the server has
+forgotten" reasoning written into it — and is replaced by its opposite, with
+that note kept so nobody re-derives it.
+
+The lesson for anything else gated this way: **a client must not invalidate
+its own credential on the strength of one refusal**, because it cannot tell
+which request that refusal belongs to.
+
 **The setup QR is under `check:qr`.** An authenticator's scanner is somebody
 else's code and decodes dark-on-light only — the inverted receive QR that cost
 six builds is the whole reason that check reads a QR call at all, and it read

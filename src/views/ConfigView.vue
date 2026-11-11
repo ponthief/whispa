@@ -414,9 +414,13 @@ onMounted(() => {
         </div>
       </div>
     </div>
-  </div>
 
-  <TwoFactorModal :show="showTwofa" @close="showTwofa = false" @changed="loadTwofa" />
+    <!-- INSIDE the root, never beside it. A view with two root nodes cannot be
+         left: App.vue wraps every page in <transition mode="out-in">, which
+         cannot animate a fragment, so the NEXT page never mounts — blank, no
+         error, no banner, cured by F5 (2026-11-10). check:vue refuses it. -->
+    <TwoFactorModal :show="showTwofa" @close="showTwofa = false" @changed="loadTwofa" />
+  </div>
 </template>
 
 <style scoped>

@@ -253,6 +253,35 @@ console.log('\nutility classes a .vue file uses are defined in style.css');
     report.length === 0, report.join('\n         '));
 }
 
+// A ROUTED VIEW HAS ONE ROOT NODE. App.vue wraps every page in
+// <transition mode="out-in">, which cannot animate a fragment: leaving a
+// two-root view never completes, so the next page never mounts — blank, no
+// error, no banner, cured only by F5. Shipped 2026-11-10 when a modal was
+// placed beside ConfigView's root instead of inside it; every page after
+// Account was blank. Nothing else notices: build, lint, tsc and check:vue's
+// import check were all green over it.
+{
+  const { parse } = require('@vue/compiler-sfc');
+  const { NodeTypes } = require('@vue/compiler-dom');
+  const report = [];
+  const viewsDir = path.join(ROOT, 'src', 'views');
+  for (const file of vueFiles(viewsDir)) {
+    const { descriptor } = parse(fs.readFileSync(file, 'utf8'), { filename: file });
+    const ast = descriptor.template && descriptor.template.ast;
+    if (!ast) continue;
+    // Comments are stripped from a production build, whitespace is not a node.
+    const roots = ast.children.filter((n) =>
+      n.type === NodeTypes.ELEMENT || n.type === NodeTypes.IF ||
+      n.type === NodeTypes.FOR || n.type === NodeTypes.INTERPOLATION ||
+      (n.type === NodeTypes.TEXT && n.content.trim()));
+    if (roots.length !== 1) {
+      report.push(`${path.relative(ROOT, file)}: ${roots.length} root nodes`);
+    }
+  }
+  ok('every view has exactly one root node (<transition mode="out-in"> cannot leave a fragment)',
+    report.length === 0, report.join('\n         '));
+}
+
 console.log('');
 if (failures) {
   console.log(`${failures} check(s) failed`);

@@ -2191,6 +2191,19 @@ request failed. The gate is recoverable — type a code — and a blank page is
 not, so after three it routes there anyway. Note which way that errs: toward
 showing a prompt that may be unnecessary, never toward showing nothing.
 
+**AND EVERY PAGE WENT BLANK AFTER VISITING ACCOUNT** (2026-11-10, four reports:
+*"pages still blank… in another tab where a different user… hasn't touched 2fa
+navigates to Wallet and it's blank"*, and *"F5 displays the page"*). It was
+never the gate. `ConfigView` gained `<TwoFactorModal>` as a SIBLING of its root
+`<div>`, which made it a two-root component, and `App.vue` wraps every page in
+`<transition mode="out-in">`. A fragment cannot be animated, so leaving it never
+completes and the next page never mounts: an empty page, no error, no banner
+(nothing threw), gone on reload. Three rounds went at the 2FA gate because the
+trigger was "enabled 2FA" — which is done on Account, the one page that did it.
+Reproduced in Chromium with a minimal router: fragment leaves `#wrap` empty,
+single root shows the page. The modal sits INSIDE the root now and `check:vue`
+refuses a view with more than one root node.
+
 **The email fallback is the lockout answer, and its cost is stated once:** the
 second factor is then only as strong as the mailbox. That was chosen
 deliberately over recovery codes, because a self-custodial wallet whose owner

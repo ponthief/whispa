@@ -82,17 +82,22 @@ export default function ContactsModal({
                       {c.kind === 'bitmail' ? '  ✉' : ''}
                     </Text>
                     <Text style={styles.value} numberOfLines={1}>
-                      {truncMid(c.value)}
+                      {c.unreadable ? 'Address cannot be read' : truncMid(c.value)}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    style={styles.useBtn}
-                    onPress={() => {
-                      onPick(c.value);
-                      onClose();
-                    }}>
-                    <Text style={styles.useText}>Use</Text>
-                  </TouchableOpacity>
+                  {/* Nothing to use: an unreadable contact has no address, and
+                      a Use button over an empty one would put nothing in the
+                      recipient field and look like it did something. */}
+                  {c.unreadable ? null : (
+                    <TouchableOpacity
+                      style={styles.useBtn}
+                      onPress={() => {
+                        onPick(c.value);
+                        onClose();
+                      }}>
+                      <Text style={styles.useText}>Use</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     style={styles.removeBtn}
                     onPress={() => onDelete(c.id)}>
@@ -103,7 +108,11 @@ export default function ContactsModal({
                 {/* What the server can honestly say about this address, in the
                     words the web app uses too — services/sendWarnings.ts has
                     the reasoning behind the wording. */}
-                {c.kind === 'sp' && c.whispa === true ? (
+                {c.unreadable ? (
+                  <Text style={styles.warnNote}>
+                    This address cannot be read. Tap “Change address” to enter it again.
+                  </Text>
+                ) : c.kind === 'sp' && c.whispa === true ? (
                   <Text style={styles.okNote}>{CONTACT_VERIFIED}</Text>
                 ) : c.kind === 'sp' && c.whispa === false ? (
                   <Text style={styles.warnNote}>{CONTACT_UNVERIFIED}</Text>

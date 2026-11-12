@@ -1022,7 +1022,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
               <div v-if="!isSwapFunding && contacts.length" class="flex gap-2 items-center" style="flex-wrap:wrap;margin-bottom:4px">
                 <select class="input sc-pick" @change="pickContact($event)">
                   <option value="">— Saved contacts —</option>
-                  <option v-for="c in contacts" :key="c.id" :value="c.value">{{ c.label }}{{ c.kind === 'bitmail' ? ' ✉' : '' }}</option>
+                  <option v-for="c in contacts.filter(x => !x.unreadable)" :key="c.id" :value="c.value">{{ c.label }}{{ c.kind === 'bitmail' ? ' ✉' : '' }}</option>
                 </select>
                 <a href="#" class="text-xs text-dim" @click.prevent="showContacts = !showContacts">Manage</a>
               </div>
@@ -1310,7 +1310,10 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
             <div class="sc-row">
               <div class="sc-main">
                 <div class="text-sm"><b>{{ c.label }}</b> <span class="text-dim text-xs">{{ c.kind === 'bitmail' ? '✉ BitMail' : 'SP' }}</span></div>
-                <div class="mono text-xs text-dim sc-value">{{ c.value }}</div>
+                <div v-if="c.unreadable" class="text-xs text-amber sc-value">
+                  This address cannot be read. Use Change address to enter it again.
+                </div>
+                <div v-else class="mono text-xs text-dim sc-value">{{ c.value }}</div>
                 <!-- What the server can honestly say. It cannot tell a wallet
                      that is gone from a recipient who never used WhiSPa, so
                      neither does this. -->
@@ -1322,7 +1325,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
                 </div>
               </div>
               <div class="sc-actions">
-                <button class="btn btn-ghost btn-sm" @click="recipient = c.value; showContacts = false">Use</button>
+                <button v-if="!c.unreadable" class="btn btn-ghost btn-sm" @click="recipient = c.value; showContacts = false">Use</button>
                 <button class="btn btn-ghost btn-sm" @click="deleteContact(c)">Remove</button>
               </div>
             </div>

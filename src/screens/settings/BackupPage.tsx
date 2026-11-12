@@ -135,11 +135,8 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       const withSeeds = refs.map((w) =>
         seeds[w.id] ? { ...w, mnemonic: seeds[w.id] } : w);
       if (!Object.keys(seeds).length && refs.length) {
-        say(
-          'That passphrase does not open any of your wallets, so none would ' +
-            'be in the file. Check it and try again.',
-          true,
-        );
+        // The user's own wording (2026-11-12): "Incorrect passphrase."
+        say('Incorrect passphrase.', true);
         return;
       }
       // The SERVER-side coin labels too (2026-11-08). silnt.utxos.label is

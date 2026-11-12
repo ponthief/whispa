@@ -1309,6 +1309,34 @@ reason argon2id stays readable.
 enforced on write; refusing an older file for failing today's policy would
 strand it.
 
+### A saved contact showed as `U2FsdGVk…`, and the backup was not why
+
+Reported 2026-11-12 from the phone's Send screen, with the suspicion that
+*"they are in the encrypted format… probably due to way they are stored in the
+backup file, as I restored from it"*. **The backup holds no contacts** (see
+"It holds no contacts" above) — they are rows in `silnt.sp_contacts`, which the
+server encrypts at rest and the clients only ever read back through
+`GET /contacts`. A restore has no way to write one, so the restore was not the
+route; the server returned ciphertext as the address.
+
+`U2FsdGVk` is base64 of `Salted__`, the header `AESCipher` writes, and
+`_decrypt_sp_contact_row` ended in `except Exception: pass  # legacy/plaintext
+tolerance`. Any decrypt failure — the instance's `auth_secret_key` differing
+from the one the row was written under is the likeliest — therefore handed the
+stored ciphertext to the client as if it were the address, where it could be
+shown, picked as a recipient, and re-saved (which encrypts the ciphertext a
+second time).
+
+Plaintext is still tolerated, but by **looking at the value** instead of
+swallowing the error: no recipient starts with the cipher's header. A value
+that does is decrypted, and peeled again if the result is more ciphertext; one
+that cannot be opened comes back EMPTY with `unreadable: true` and a warning in
+the instance log naming the contact id. Both clients show "cannot be read",
+withhold **Use**, and leave **Change address** — which repoints the row and is
+the way back. **If it recurs, the log line is the first diagnostic**, and the
+thing to compare is the instance's `auth_secret_key` before and after whatever
+changed.
+
 ### The web's Settings page is Account, and the dust threshold is not on it
 
 Renamed 2026-11-08, on the user's instruction: *"we should probably rename it

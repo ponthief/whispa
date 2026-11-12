@@ -188,8 +188,11 @@ async function doSave() {
     // cap, which is the only reason it is not written as a single compare.
     const failedOnPassphrase = noSeed.filter(w => w.reason === 'passphrase')
     if (!Object.keys(seeds).length && failedOnPassphrase.length) {
-      say('That passphrase does not open any of your wallets, so none would ' +
-          'be in the file. Check it and try again.', 'error')
+      // THE USER'S OWN WORDING (2026-11-12): "Incorrect passphrase." and
+      // nothing after it. The longer sentence explained that no wallet would
+      // be in the file, which is the reason for the refusal and not what
+      // somebody who mistyped needs to be told. check:backup pins the text.
+      say('Incorrect passphrase.', 'error')
       return
     }
     const withKeys = refs.map(w => ({

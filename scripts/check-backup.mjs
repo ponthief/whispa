@@ -1334,8 +1334,15 @@ console.log('a passphrase that opens nothing refuses the save');
   // encryptBackup would be a message over a file already written.
   for (const [who, src, call] of [['the web', WEB, 'encryptBackup('],
                                   ['the phone', PHONE, 'encryptBackup(']]) {
-    const guard = src.indexOf('does not open any of your wallets');
+    // The refusal's TEXT is the user's own: "Incorrect passphrase." — nothing
+    // after it (2026-11-12). Found by the text, so the guard cannot move
+    // without the order check below moving with it.
+    const guard = src.indexOf("'Incorrect passphrase.'");
     ok(`${who} refuses a passphrase that opens nothing`, guard >= 0);
+    ok(`${who} says only "Incorrect passphrase."`,
+      !/does not open any of your wallets/.test(src) &&
+      !/Check it and try again/.test(src),
+      'the long explanation grew back');
     ok(`${who} refuses it BEFORE writing anything`,
       guard >= 0 && guard < src.indexOf(call),
       'a warning after the download is not a refusal');

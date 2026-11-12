@@ -953,6 +953,11 @@ export interface SpContact {
   // BitMail contact, resolved through DNS at send time and never stale.
   // Absent when the server predates the check.
   whispa?: boolean | null;
+  // The server could not decrypt the stored address (its key differs from the
+  // one the row was written with). `value` is then EMPTY — never ciphertext —
+  // and the contact must not be offered for sending; "Change address" repoints
+  // it, which is the way back.
+  unreadable?: boolean;
 }
 
 // The address book is per-network; the backend requires an explicit `network`,

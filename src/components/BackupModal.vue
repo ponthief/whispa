@@ -42,11 +42,12 @@ const fileInput = ref(null)
 // which matters for one made before 2026-11-08 and sealed with the seed
 // phrase.
 const pending = ref(null)   // { text, info } once a file has been chosen
-// The file's secret is masked; saving is not. See the field for why the two
-// halves differ. `showFilePass` is the eye, and it is reset with the password
-// itself — a revealed secret must not still be on screen for the next file.
+// The passphrase is masked for BOTH saving and opening (2026-11-12 — saving
+// used to be visible, see the field). `showFilePass` is the eye, and it is
+// reset with the password itself — a revealed secret must not still be on
+// screen for the next operation.
 const showFilePass = ref(false)
-const masked = computed(() => !!pending.value && !showFilePass.value)
+const masked = computed(() => !showFilePass.value)
 
 // Three tones, because two were not enough once the screen started ASKING
 // for things. "This backup is encrypted, enter its password" is an
@@ -529,10 +530,15 @@ async function openPending() {
 
         <!-- ONE FIELD. The confirmation box went on 2026-11-08 ("drop confirm
              password field, one field is sufficient"). It was the checksum a
-             password does not have; what is left in its place is that when
-             SAVING this field is not masked, so what was typed can be read
-             back before pressing Save — a typo there seals a file nobody can
-             ever open, and nothing finds out until a restore.
+             password does not have.
+
+             SAVING WAS UNMASKED UNTIL 2026-11-12, on the 2026-11-08
+             reasoning below: with no checksum, reading it back was the only
+             check on a typo that seals a file nobody can ever open. It is
+             masked now, reported from both clients ("while saving backup file
+             entered passphrase is not masked and stays visible"), and the eye
+             is what keeps that reasoning alive — look when you want to check
+             what you typed, rather than leaving it on screen by default.
 
              OPENING A FILE IS MASKED (2026-11-09: "passphrase needs to be
              masked when opening backup file as it gets visible for too
@@ -553,7 +559,7 @@ async function openPending() {
                    :placeholder="pending ? pending.info.asksFor : 'Wallet passphrase'"
                    autocomplete="off" autocapitalize="off" spellcheck="false"
                    @keyup.enter="pending ? openPending() : doSave()" />
-            <button v-if="pending" type="button" class="btn btn-ghost btn-sm"
+            <button type="button" class="btn btn-ghost btn-sm"
                     :title="showFilePass ? 'Hide' : 'Show'"
                     @click="showFilePass = !showFilePass">{{ showFilePass ? '🙈' : '👁' }}</button>
           </div>

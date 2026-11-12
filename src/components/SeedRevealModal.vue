@@ -50,6 +50,10 @@ const phrase = ref('')
 const busy = ref(false)
 const error = ref('')
 const copied = ref(false)
+// The monkey: hides the words on screen without forgetting them. The words are
+// not in the DOM while hidden, so a screenshot or a glance over the shoulder
+// gets bullets, and Copy still works. Reset with everything else on open.
+const hidden = ref(false)
 const entry = ref('')
 const entryPass = ref('')
 
@@ -59,6 +63,7 @@ function reset() {
   error.value = ''
   busy.value = false
   copied.value = false
+  hidden.value = false
   entry.value = ''
   entryPass.value = ''
 }
@@ -284,7 +289,8 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
           <ol class="seed-words">
             <li v-for="(w, i) in words()" :key="`${i}-${w}`">
               <span class="seed-index">{{ i + 1 }}</span>
-              <span class="seed-word">{{ w }}</span>
+              <span v-if="hidden" class="seed-word">••••••</span>
+              <span v-else class="seed-word">{{ w }}</span>
             </li>
           </ol>
 
@@ -295,10 +301,14 @@ const words = () => (phrase.value ? phrase.value.trim().split(/\s+/) : [])
                they have a backup finds out at recovery. -->
           <p class="text-dim text-xs" style="margin:0">
             These words alone will not recover your wallet — you also need the
-            passphrase, which is stored nowhere.
+            passphrase.
           </p>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" @click="hidden = !hidden"
+                    :title="hidden ? 'Show words' : 'Hide words'">
+              {{ hidden ? '👁 Show' : '🙈 Hide' }}
+            </button>
             <button class="btn btn-ghost btn-sm" @click="copy">
               {{ copied ? '✓ Copied' : 'Copy' }}
             </button>

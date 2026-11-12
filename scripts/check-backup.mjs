@@ -808,31 +808,28 @@ console.log('the two backup screens say the same simple thing');
   // THE TWO HALVES OF THE FIELD ARE MASKED DIFFERENTLY, and the split is the
   // whole rule.
   //
-  // SAVING is not masked (2026-11-08, on the user's instruction): a per-file
-  // secret with no checksum, typed once, where a typo seals a file nobody can
-  // ever open and nothing says so until a restore — seeing it is the only
-  // check that remains.
+  // THE SECRET IS MASKED FOR SAVING AND OPENING ALIKE, with an eye.
   //
-  // OPENING is masked (2026-11-09: "passphrase needs to be masked when
-  // opening backup file as it gets visible for too long"). An open answers in
-  // seconds, so the secret has no reason to sit on screen for the whole of a
-  // restore. The eye is what pays for it, because the original argument —
-  // a refused open is often a good file and bad typing — is still true.
+  // Saving was visible from 2026-11-08 (a per-file secret with no checksum,
+  // where a typo seals a file nobody can open and nothing says so until a
+  // restore — seeing it was the only check). Opening was masked on 2026-11-09,
+  // and saving followed on 2026-11-12 ("while saving backup file entered
+  // passphrase is not masked and stays visible"), on both clients.
   //
-  // Pinned as the CONDITION rather than as the presence of a mask, because
-  // either half drifting is a different bug: a hard-coded mask takes the save
-  // path's only check away, and dropping the condition leaves the secret on
-  // screen again.
-  ok('the web masks the file secret only while a file is waiting',
+  // Pinned as the CONDITION on the eye rather than as the presence of a mask:
+  // a hard-coded mask takes the typo check away entirely, and no eye is a
+  // secret that cannot be read back before it seals a file.
+  ok('the web masks the secret unless the eye is on, for a save as for an open',
     /:type="masked \? 'password' : 'text'"/.test(V) &&
-    /const masked = computed\(\(\) => !!pending\.value && !showFilePass\.value\)/.test(V),
-    'masked for an open, visible for a save');
+    /const masked = computed\(\(\) => !showFilePass\.value\)/.test(V),
+    'masked by default, whichever operation is typed for');
   ok('the web never hard-codes the mask',
     !/type="password"/.test(V),
-    'that would take the save path\'s only check away');
-  ok('and offers to reveal it',
-    /showFilePass = !showFilePass/.test(V),
-    'a refused open is often a good file and bad typing');
+    'that would take the typo check away');
+  ok('and offers to reveal it, with no file waiting too',
+    /showFilePass = !showFilePass/.test(V) &&
+    !/<button v-if="pending" type="button"[^>]*\n[^>]*showFilePass/.test(V),
+    'the eye was only there for an open, which is how a save stayed visible');
   ok('and the reveal does not outlive the password',
     (V.match(/showFilePass\.value = false/g) || []).length ===
     (V.match(/password\.value = ''/g) || []).length,
@@ -849,12 +846,13 @@ console.log('the two backup screens say the same simple thing');
   ok('the phone leaves LineInput itself unmasked',
     !!lineInput && !/secureTextEntry/.test(lineInput),
     'the component is shared; the backup screen states its own rule');
-  ok('the phone masks the file secret only while a file is waiting',
-    /secureTextEntry=\{!!pending && !showPass\}/.test(copy(P)),
-    'masked for an open, visible for a save');
-  ok('and offers to reveal it',
-    /setShowPass\(\(v\) => !v\)/.test(copy(P)),
-    'a refused open is often a good file and bad typing');
+  ok('the phone masks the secret unless the eye is on, for a save as for an open',
+    /secureTextEntry=\{!showPass\}/.test(copy(P)),
+    'masked by default, whichever operation is typed for');
+  ok('and offers to reveal it, with no file waiting too',
+    /setShowPass\(\(v\) => !v\)/.test(copy(P)) &&
+    !/\{pending \? \(\s*<Pressable\s+onPress=\{\(\) => setShowPass/.test(copy(P)),
+    'a typo with no checksum is only catchable by looking');
   ok('and the reveal does not outlive the password',
     (copy(P).match(/setShowPass\(false\)/g) || []).length ===
     (copy(P).match(/setPassword\(''\)/g) || []).length,

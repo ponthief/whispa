@@ -489,19 +489,14 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
 
       {backupFileAvailable() ? (
         <Group title="Backup file">
-          {/* SAVING IS NOT MASKED (2026-11-08, on the user's instruction, and
-              the web modal matches). A per-file secret with no checksum,
-              typed once — seeing it is the only way to tell you are typing
-              what you typed before, and a typo seals a file nobody can ever
-              open with nothing finding out until a restore.
-
-              OPENING ONE IS MASKED (2026-11-09: "passphrase needs to be
-              masked when opening backup file as it gets visible for too
-              long"). The halves differ because the feedback does: an open
-              answers within seconds where a mistyped save is silent for ever.
-              The eye gives back what masking costs — a refused open is often
-              a good file and bad typing — without leaving the secret on
-              screen for the whole of a restore. */}
+          {/* MASKED FOR SAVING AND OPENING ALIKE, with an eye (2026-11-12:
+              "while saving backup file entered passphrase is not masked and
+              stays visible"; the web modal matches). Saving was visible from
+              2026-11-08 because a per-file secret with no checksum, typed
+              once, seals a file nobody can ever open if it is mistyped, and
+              seeing it was the only check. The eye keeps that check — look
+              when you want to — without leaving the secret on screen by
+              default, which is what opening already did (2026-11-09). */}
           {/* ONE FIELD. The confirmation box went on 2026-11-08 ("drop
               confirm password field, one field is sufficient"). It was the
               checksum a password does not have. */}
@@ -511,17 +506,15 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
                 style={{ flex: 1 }}
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry={!!pending && !showPass}
+                secureTextEntry={!showPass}
                 placeholder={pending ? pending.info.asksFor : 'Wallet passphrase'}
               />
-              {pending ? (
-                <Pressable
-                  onPress={() => setShowPass((v) => !v)}
-                  hitSlop={10}
-                  accessibilityLabel={showPass ? 'Hide passphrase' : 'Show passphrase'}>
-                  <Text style={{ fontSize: 18 }}>{showPass ? '🙈' : '👁'}</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                onPress={() => setShowPass((v) => !v)}
+                hitSlop={10}
+                accessibilityLabel={showPass ? 'Hide passphrase' : 'Show passphrase'}>
+                <Text style={{ fontSize: 18 }}>{showPass ? '🙈' : '👁'}</Text>
+              </Pressable>
             </View>
             <Help>
               {pending

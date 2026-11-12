@@ -41,13 +41,14 @@ const isOn = computed(() => !!(status.value && status.value.enabled))
 const hasApp = computed(() => !!(status.value && status.value.totp))
 const reenable = ref(false)
 
-// One control for both directions. Off → start setup (which needs the QR and a
-// code before anything is enabled). On → ask for a code to remove it.
-function onToggle() {
+// The switch on the Account card opens this dialog, and the dialog goes
+// straight to the step that switch would take. Off → start setup (which needs
+// the QR and a code before anything is enabled). On → ask for a code to remove
+// it.
+function begin() {
   if (busy.value) return
   say('')
   if (isOn.value) { confirmOff.value = true; return }
-  if (secret.value) { cancelSetup(); return }
   // TURNING IT BACK ON USES THE APP ALREADY SET UP. Reported 2026-11-10:
   // "turning 2fa off and then on prompts to install it again in the
   // authenticator app, as the previous app's code is invalid". Off no longer
@@ -66,16 +67,20 @@ function cancelSetup() {
   say('')
 }
 
-async function load() {
+async function load(opening = false) {
   busy.value = 'load'
   say('')
   try {
     status.value = await api.getTwofaStatus(auth.inkey)
   } catch (e) {
     say(e.detail || e.message || 'Could not read the two-factor setting.', 'error')
-  } finally {
     busy.value = null
+    return
   }
+  busy.value = null
+  // Only on open — a reload after confirm or disable must not start another
+  // setup behind the switch that just moved.
+  if (opening) begin()
 }
 
 // Nothing survives the modal being opened or shut — a secret left in a closed
@@ -90,7 +95,7 @@ watch(() => props.show, (open) => {
   confirmOff.value = false
   reenable.value = false
   say('')
-  if (open) load()
+  if (open) load(true)
 })
 
 async function startSetup() {
@@ -207,22 +212,6 @@ function close() { emit('close') }
           {{ message.text }}
         </div>
 
-        <!-- ONE TOGGLE, which is what was asked for (2026-11-10: "drop text A
-             code is asked.. and Two factor is on.. can you just have a toggle
-             for on/off for 2fa?"). The prose went with it: the heading says
-             Two-Factor and the switch says whether it is on, so a sentence
-             restating either was in front of the only decision on the screen.
-
-             IT SHOWS WHAT IS, NOT WHAT WAS CLICKED — `.prevent` stops the box
-             flipping on click, and the checked state follows the SERVER. A
-             toggle that moves before the server agrees is a toggle that lies
-             the moment a code is wrong. -->
-        <label class="tfa-toggle">
-          <input type="checkbox" :checked="isOn" :disabled="!!busy"
-                 @click.prevent="onToggle" />
-          <span>Require a code to sign in</span>
-        </label>
-
         <!-- TURNING IT BACK ON with the app already set up: a code, no QR.
              Off keeps the secret (siLNt crud.disable_twofa), so re-scanning
              would hand out a second entry and leave the first one dead. -->
@@ -242,7 +231,7 @@ function close() { emit('close') }
             <button class="btn btn-ghost" :disabled="!!busy" @click="startSetup">
               Use a different app
             </button>
-            <button class="btn btn-ghost" :disabled="!!busy" @click="cancelSetup">Cancel</button>
+            <button class="btn btn-ghost" :disabled="!!busy" @click="close">Cancel</button>
           </div>
         </template>
 
@@ -269,7 +258,7 @@ function close() { emit('close') }
             <button class="btn btn-primary" :disabled="!!busy" @click="confirm">
               {{ busy === 'confirm' ? 'Working…' : 'Turn on' }}
             </button>
-            <button class="btn btn-ghost" :disabled="!!busy" @click="cancelSetup">Cancel</button>
+            <button class="btn btn-ghost" :disabled="!!busy" @click="close">Cancel</button>
           </div>
         </template>
 
@@ -293,7 +282,7 @@ function close() { emit('close') }
               {{ busy === 'email' ? 'Sending…' : 'Email me a code' }}
             </button>
             <button class="btn btn-ghost" :disabled="!!busy"
-                    @click="confirmOff = false; code = ''">Cancel</button>
+                    @click="close">Cancel</button>
           </div>
         </template>
 
@@ -304,15 +293,4 @@ function close() { emit('close') }
 
 <style scoped>
 .modal { max-width: 360px; }
-/* A plain checkbox and a label, the shape AdminView already uses for every
-   other switch in this app, rather than a bespoke widget. */
-.tfa-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  cursor: pointer;
-}
-.tfa-toggle input { width: 18px; height: 18px; cursor: pointer; }
-.tfa-toggle span { color: var(--text); }
 </style>

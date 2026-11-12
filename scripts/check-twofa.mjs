@@ -255,22 +255,31 @@ console.log('\nthe screens');
   ok('the on state does not render a code field until asked',
     /confirmOff/.test(modal) && /v-else-if="confirmOff"/.test(modal),
     'a management view must not look like a prompt');
-  // ONE TOGGLE, and it reports the SERVER's state rather than the click
-  // (2026-11-10: "can you just have a toggle for on/off for 2fa?"). A box that
-  // flips before the server agrees lies the moment a code is wrong.
-  ok('the control is a single toggle',
-    /@click\.prevent="onToggle"/.test(modal));
-  ok('and it is checked from the server state, not the click',
-    /:checked="isOn"/.test(modal) &&
+  // A SWITCH, and it reports the SERVER's state rather than the click
+  // (2026-11-10: "can you just have a toggle for on/off for 2fa?", and on
+  // 2026-11-12 "not a checkbox that looks poor"). The first version was a
+  // checkbox; the control is a role="switch" button on the Account card, and
+  // neither file may go back to a checkbox. A box that flips before the server
+  // agrees lies the moment a code is wrong, so it is bound to the answer.
+  const cfg = strip(read('src/views/ConfigView.vue'));
+  ok('the control is a switch on the Account card, not a checkbox',
+    /role="switch"/.test(cfg) && /class="switch"/.test(cfg) &&
+    !/type="checkbox"/.test(cfg) && !/type="checkbox"/.test(modal));
+  ok('and it is bound to the server state, not the click',
+    /:aria-checked="twofaOn"/.test(cfg) &&
+    /twofaOn\.value = !!\(s && s\.enabled\)/.test(cfg) &&
     /const isOn = computed\(\(\) => !!\(status\.value && status\.value\.enabled\)\)/.test(modal));
+  ok('pressing it opens the dialog on the step it would take',
+    /@click="showTwofa = true"/.test(cfg) && /function begin\(\)/.test(modal) &&
+    /load\(true\)/.test(modal));
   // The prose the toggle replaced must not grow back.
   ok('and the sentences it replaced are gone',
     !/A code is asked for when you sign in/.test(modal) &&
     !/Two-factor is on\. A code/.test(modal) &&
     !/Require a 6-digit code to open your wallet/.test(modal),
     'the heading names it and the switch says whether it is on');
-  ok('and the turn-off form can be cancelled',
-    /confirmOff = false/.test(modal));
+  ok('and every step can be cancelled',
+    (modal.match(/@click="close">Cancel/g) || []).length >= 3);
   // TURNING IT BACK ON USES THE APP ALREADY SET UP (2026-11-10: "turning 2fa
   // off and then on prompts to install it again in the authenticator app").
   // Off keeps the secret, so handing out a new QR would leave a dead entry on

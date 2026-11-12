@@ -2172,6 +2172,21 @@ holds the secret) and a code when turning OFF, and errors.
 box flipping and `:checked` follows the server, because a toggle that moves
 before the server agrees lies the moment a code is wrong.
 
+**AND IT IS A SWITCH, NOT A CHECKBOX** (2026-11-12: *"I asked you to have a
+on/off toggle, not a checkbox that looks poor"*). The first answer to "a
+toggle" was a native checkbox inside the dialog, and a checkbox is not a
+toggle to anybody who asked for one. The control is a `role="switch"` button
+on the Account card (`.switch` in `style.css`: track, knob, orange when on),
+bound to the server's answer; pressing it opens the dialog **straight on the
+step it would take** — setup, a code from the existing app, or a code to turn
+off — and the dialog has no second control of its own. `check:twofa` refuses a
+`type="checkbox"` in either file.
+
+**Local Keys & Seed Phrase**: the Account card was titled and worded for keys
+only after the same day's change made Forget also remove the words
+(`removeWalletKeys` → `vaultDelete` takes both records). Title, paragraph,
+button and empty line all name the seed phrase now.
+
 **The secret is returned once and never read back out.** There is no endpoint
 that hands an existing one over — an API that could is a way to copy
 somebody's authenticator. Losing the QR before confirming costs nothing.

@@ -415,3 +415,21 @@ tbody tr:hover td { background: var(--surface-2); }
 @media (max-width: 640px) {
   .toast-stack { left: 18px; right: 18px; top: 12px; max-width: none; }
 }
+
+/* An on/off SWITCH — a track and a knob, not a checkbox. A <button>, so it
+   needs its own colours: the UA's buttontext would otherwise be black on the
+   card. State is aria-checked + .on, and the caller shows the SERVER's answer. */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); }
+.switch {
+  position: relative; flex: none; width: 46px; height: 26px; padding: 0;
+  border: 1px solid var(--border-hi); border-radius: 13px;
+  background: var(--surface-2); cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+  border-radius: 50%; background: #c9d1d9; transition: transform .15s, background .15s;
+}
+.switch.on { background: var(--orange); border-color: var(--orange); }
+.switch.on .switch-knob { transform: translateX(20px); background: #fff; }
+.switch:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }

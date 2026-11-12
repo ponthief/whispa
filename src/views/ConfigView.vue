@@ -285,9 +285,19 @@ onMounted(() => {
              (2026-11-10, "drop text ... can you just have a toggle"). The
              label carries the state, which is the only thing a sentence here
              was adding. -->
-        <button class="btn btn-primary" @click="showTwofa = true">
-          {{ twofaOn ? '⚙ Two-factor: on' : '⚙ Two-factor: off' }}
-        </button>
+        <!-- A SWITCH, not a checkbox (2026-11-12: "I asked you to have a on/off
+             toggle, not a checkbox that looks poor"). It shows what the
+             server says; pressing it opens the dialog for the direction it
+             would move, because both directions need a code. -->
+        <div class="switch-row">
+          <span>Require a code to sign in</span>
+          <button type="button" class="switch" role="switch"
+                  :aria-checked="twofaOn" :class="{ on: twofaOn }"
+                  aria-label="Two-factor authentication"
+                  @click="showTwofa = true">
+            <span class="switch-knob"></span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -343,21 +353,21 @@ onMounted(() => {
          to undo. -->
     <!-- Local key storage controls -->
     <div class="card">
-      <div class="card-header"><h2>Local Wallet Keys</h2></div>
+      <div class="card-header"><h2>Local Keys &amp; Seed Phrase</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
         <!-- The user's own wording (2026-11-09). It was two paragraphs: what
              the keys are and that they are never sent to the server, then
              when to wipe them. What is left says what the button DOES and
              what it costs, which is the decision in front of the reader. -->
         <p class="text-dim text-sm" style="margin:0">
-          Delete keys to disable spending and scanning for payment for the
-          wallet in this session. Removing them will require reimporting seed
-          + passphrase.
+          Delete keys and seed phrase to disable spending and scanning for
+          payment for the wallet in this session. Removing them will require
+          reimporting seed + passphrase.
         </p>
         <template v-if="hasAnyLocalKeys">
           <div v-if="!confirmForget">
             <button class="btn btn-danger btn-sm" @click="confirmForget = true">
-              🗑 Forget Keys on This Device
+              🗑 Forget Keys &amp; Seed Phrase on This Device
             </button>
           </div>
           <div v-else style="display:flex;gap:8px;align-items:center">
@@ -367,7 +377,7 @@ onMounted(() => {
           </div>
         </template>
         <p v-else class="text-sm text-dim" style="margin:0">
-          No wallet keys are stored on this device.
+          No wallet keys or seed phrase are stored on this device.
         </p>
       </div>
     </div>

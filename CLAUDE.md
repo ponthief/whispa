@@ -1337,6 +1337,31 @@ the way back. **If it recurs, the log line is the first diagnostic**, and the
 thing to compare is the instance's `auth_secret_key` before and after whatever
 changed.
 
+**It was the key** (2026-11-12, from the instance log: *"could not decrypt
+contact… ValueError"*). LNbits takes `auth_secret_key` from the
+`AUTH_SECRET_KEY` environment variable and, when that is empty, from
+`<data folder>/.lnbits_auth_key_v1`, generated once. Setting the variable after
+rows were written, removing it, or recreating the data folder changes which of
+the two answers, and every row written under the other stops decrypting — with
+nothing saying so. `_pj_decrypt` serves **everything** this extension encrypts
+at rest (contacts, the background-scan secret, PayJoin descriptors, Lightning
+addresses), so the contacts were only where it showed first.
+
+`_pj_decrypt` now tries the current key and then every other place a key could
+have come from (`_payjoin_enc_key_candidates`: the other settings names, the
+key file as written and trimmed, the environment variables), accepting a result
+only if it is printable text, because about one wrong key in 256 passes the
+padding check and yields garbage. When an older key opens a row it says so once
+per source in the log, naming both **fingerprints** (`_key_fingerprint`: eight
+hex of a domain-separated hash — never the key). If no candidate opens it the
+row is `unreadable` as above.
+
+What it cannot do is recover a key that is gone: a row written under a secret
+that exists nowhere any more is lost, and the remedy for a contact is Change
+address. **Before touching `AUTH_SECRET_KEY` on a live instance, copy
+`.lnbits_auth_key_v1` aside** — it is the key everything here was written under
+unless the variable was set from the start.
+
 ### The web's Settings page is Account, and the dust threshold is not on it
 
 Renamed 2026-11-08, on the user's instruction: *"we should probably rename it

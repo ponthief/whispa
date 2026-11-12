@@ -1362,6 +1362,46 @@ address. **Before touching `AUTH_SECRET_KEY` on a live instance, copy
 `.lnbits_auth_key_v1` aside** — it is the key everything here was written under
 unless the variable was set from the start.
 
+**A rotated secret is the likelier reading, and it is unrecoverable by
+design** (2026-11-12: *"PayJoin descriptors have the same error… likely key
+rotation introduced with the lnbits upgrade due to the security incident"*).
+LNbits 1.7.0's guidance after the 8 November attacks includes rotating "other
+secrets stored in settings"; if `auth_secret_key` was one of them, the old
+value was discarded on purpose, and **no code here can read what was written
+under it**. What can be done: look for the old key where it might survive (a
+pre-upgrade snapshot of the data folder, an old `.env`, the container's
+environment history) and name it in **`SILNT_LEGACY_AUTH_KEYS`**
+(comma-separated), which `_payjoin_enc_key_candidates` tries; the log says when
+an older key opened a row.
+
+**What a rotation breaks in this extension, audited 2026-11-12**, because
+contacts were only where it showed first:
+
+- **Contacts, PayJoin descriptors and xpubs, the background-scan secret, Tango
+  payout Lightning addresses** — all `_pj_encrypt`. Contacts show "cannot be
+  read" and are repointed with Change address; a descriptor is re-imported
+  (its error says so); background scan returns no secret and is silently off
+  until re-enabled; **an owed Tango payout whose `ln_address` cannot be read
+  has nowhere to go** — check the payout ledger for stuck rows.
+- **Boltz refund keys** (`swap_crypto.py`, LNbits `encrypt_internal_message`,
+  keyed on the same secret). **The highest-stakes item here**: a refund key
+  for a swap whose funds are still locked cannot be rebuilt, and the refund is
+  that key. Check for swaps in a failed or timed-out state first.
+- **Device cookies and registration-code HMACs** (`helpers/device_auth.py`,
+  `hash_registration_code`) — keyed on it too, so every trusted device has to
+  be confirmed again. Harmless, and it is the symptom that says the secret
+  changed.
+- **Not affected**: TOTP secrets (stored as-is, so two-factor survives),
+  2FA sessions and emailed codes (hashed), and wallet keys, which are never
+  server-side.
+
+The structural fix, **not made here and wanting a decision**, is a key of this
+extension's own (`SILNT_ENC_KEY` or a file beside LNbits' that nothing else
+rotates) with a version prefix on what it writes, so the next rotation of
+LNbits' secret cannot take this data with it. It needs a migration pass for the
+rows that are still readable, which is why it is a question rather than a
+consequence.
+
 ### The web's Settings page is Account, and the dust threshold is not on it
 
 Renamed 2026-11-08, on the user's instruction: *"we should probably rename it

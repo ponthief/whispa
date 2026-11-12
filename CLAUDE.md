@@ -1402,6 +1402,50 @@ LNbits' secret cannot take this data with it. It needs a migration pass for the
 rows that are still readable, which is why it is a question rather than a
 consequence.
 
+**The extension has a key of its own now** (2026-11-12, asked as *"how do we
+setup auth key that we can control?"*, with descriptors, contacts and swaps
+written off). New rows are encrypted under a key LNbits cannot rotate and are
+prefixed `v2:`, so a reader knows which key without trying them all:
+
+1. **`SILNT_ENC_KEY`** in the LNbits environment, at least 32 characters
+   (`openssl rand -hex 32`), kept wherever the deployment keeps secrets **and
+   copied somewhere offline**; or
+2. when that is unset, **`<data folder>/.silnt_enc_key_v1`**, generated once at
+   mode 0600 (`O_EXCL`, so two workers cannot each make one).
+
+If neither can be had — a data folder that cannot be written, a too-short
+variable — `_pj_encrypt` falls back to the old scheme and logs an error saying
+so, rather than refusing to save somebody's data: a loud degradation, never a
+silent one. A `v2:` row is read with the extension's key only; asking LNbits'
+keys would be asking the wrong ones.
+
+**Rows written before this are moved across by `reencrypt_legacy_rows`**, 30
+seconds after start and hourly (it is idempotent): scan secret, Tango
+addresses, payout addresses, contacts, PayJoin descriptors. Four rules, each a
+way to lose data — a row is rewritten **only if it decrypts**; the new value is
+**read back and compared** before anything is written; the UPDATE is
+**conditional on the column still holding what was read**; plaintext legacy
+rows and doubly-encrypted ones are left alone. An unreadable row is counted in
+the log and left untouched, because it may yet open if someone finds the old
+key and names it in `SILNT_LEGACY_AUTH_KEYS`.
+
+**What it does not do.** Rows already lost stay lost. Boltz refund keys
+(`swap_crypto.py`) are still under LNbits' secret — swaps are off while Boltz
+is down, so that is deliberate rather than overlooked, and it is the first
+thing to move before they come back. **Device cookies and registration-code
+HMACs** still key on `auth_secret_key`; a rotation there costs a re-confirm of
+each device and nothing else. **Do not rotate `SILNT_ENC_KEY`**: there is no
+fallback to an older one of its own, so changing it makes every `v2:` row
+unreadable by the same mechanism it exists to end — a rotation needs a
+migration written for it first. If the key file is lost the log says so on the
+next start, once.
+
+`tests/test_sp_contacts.py` runs the real key and migration code against a fake
+cipher and a fake database: a row survives LNbits' secret changing, the env key
+wins over the file, a short one degrades loudly, a `v2:` row is never tried
+against LNbits' keys, and the migration writes one readable row and leaves the
+unreadable, plaintext, doubly-encrypted and already-migrated ones alone.
+
 ### The web's Settings page is Account, and the dust threshold is not on it
 
 Renamed 2026-11-08, on the user's instruction: *"we should probably rename it

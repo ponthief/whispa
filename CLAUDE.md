@@ -1387,10 +1387,16 @@ contacts were only where it showed first:
   keyed on the same secret). **The highest-stakes item here**: a refund key
   for a swap whose funds are still locked cannot be rebuilt, and the refund is
   that key. Check for swaps in a failed or timed-out state first.
-- **Device cookies and registration-code HMACs** (`helpers/device_auth.py`,
-  `hash_registration_code`) — keyed on it too, so every trusted device has to
-  be confirmed again. Harmless, and it is the symptom that says the secret
-  changed.
+- **The emailed device-confirmation link and registration-code HMACs**
+  (`helpers/device_auth.py::_hmac_sign`, `hash_registration_code`) — keyed on
+  it, so a link or code issued before a rotation stops working and the user
+  asks for another. **A trusted device itself is NOT affected**: the cookie is a
+  device id looked up in the database, never verified against the secret, so
+  already-trusted browsers carry on through a rotation. (This note said they had
+  to be re-confirmed, and called that "the symptom that says the secret
+  changed" — wrong on both counts, corrected 2026-11-12 when the user saw
+  trusted devices survive. Their surviving says nothing either way about
+  whether the secret changed.)
 - **Not affected**: TOTP secrets (stored as-is, so two-factor survives),
   2FA sessions and emailed codes (hashed), and wallet keys, which are never
   server-side.
@@ -1432,9 +1438,9 @@ key and names it in `SILNT_LEGACY_AUTH_KEYS`.
 **What it does not do.** Rows already lost stay lost. Boltz refund keys
 (`swap_crypto.py`) are still under LNbits' secret — swaps are off while Boltz
 is down, so that is deliberate rather than overlooked, and it is the first
-thing to move before they come back. **Device cookies and registration-code
-HMACs** still key on `auth_secret_key`; a rotation there costs a re-confirm of
-each device and nothing else. **Do not rotate `SILNT_ENC_KEY`**: there is no
+thing to move before they come back. **The emailed device-confirmation link and
+registration-code HMACs** still key on `auth_secret_key`; a rotation there kills
+only the links and codes in flight. **Do not rotate `SILNT_ENC_KEY`**: there is no
 fallback to an older one of its own, so changing it makes every `v2:` row
 unreadable by the same mechanism it exists to end — a rotation needs a
 migration written for it first. If the key file is lost the log says so on the

@@ -470,6 +470,11 @@ async function confirmDelete() {
       }
     }
     await api.deleteSilntWallet(auth.adminkey, deleteTarget.value.id)
+    // AFTER the server has agreed, so a refused delete leaves the keys in
+    // place — and then the local copy goes, phrase included. The phone has
+    // always done this (WalletPage.doRemoveWallet); the browser left the keys
+    // and the words in its vault for a wallet that no longer existed.
+    await auth.removeWalletKeys(deleteTarget.value.id)
     resetLoginScanFor(deleteTarget.value.id)
     deleteTarget.value = null
     await loadWallets()

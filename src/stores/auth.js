@@ -312,8 +312,12 @@ export const useAuthStore = defineStore('auth', () => {
       keysVersion.value += 1
       return
     }
+    // vaultDelete takes the seed:<id> record with the wkey:<id> one. Forgetting
+    // keys on this device must forget the words too — they rebuild every key
+    // being removed — and the phrase's own readers (hasSeed) have to hear it.
     await vaultDelete(walletId)
     markVault(walletId, false)
+    seedsVersion.value += 1
     _keyIndex.value = vaultIndexList()
     // Keys going away matters to readers as much as keys arriving: a panel
     // holding an account key for a wallet whose keys were just removed should

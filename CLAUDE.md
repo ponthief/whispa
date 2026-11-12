@@ -714,6 +714,21 @@ nothing else — code running in the page can read the vault without asking
 anybody anything, which is equally true of the spend key sitting beside the
 phrase. See the note at the top of `keyvault.js`.
 
+**Forgetting keys, and deleting a wallet, forget the words too** (2026-11-12,
+asked as *"does forget keys on this device also remove the seed phrase… also
+check that deleting wallet also removes them"*). The answer was half yes. On
+the phone `removeWalletKeys` has always called `forgetSeed`, and so does the
+duress wipe. On the web `vaultDelete` takes both `wkey:` and `seed:` records,
+so **Delete keys** did remove the words from IndexedDB — but left the in-memory
+seed index listing them, so the wallet card offered a reveal for a phrase that
+was gone until the page was reloaded. And **deleting a wallet in the browser
+never touched the vault at all**: the server row went and the spend key and
+phrase stayed, for a wallet the user believed they had taken off the machine.
+`WalletsView.confirmDelete` now calls `auth.removeWalletKeys` AFTER the server
+agrees (a refused delete must leave the keys), `vaultDelete` updates both
+indexes, and Account's forget button also shows for a browser holding only a
+phrase. `check:seed` pins each, phone and web.
+
 **And the passphrase is stored NOWHERE, which had no control until now**
 (2026-11-09: *"wallet passphrase should never be stored anywhere!!"*). It is
 the one factor that is not on the device, which is what keeps a stolen vault

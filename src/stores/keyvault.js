@@ -139,6 +139,12 @@ export async function vaultGet(walletId, keyMaterial) {
 export async function vaultDelete(walletId) {
   try { await _idbDelete('wkey:' + walletId) } catch { /* ignore */ }
   try { await _idbDelete('seed:' + walletId) } catch { /* ignore */ }
+  // BOTH in-memory indexes, now. They answer the wallet card's questions with
+  // no decrypt, so a record deleted from IndexedDB and still listed here is a
+  // wallet offering to reveal a phrase that is no longer there until the page
+  // is reloaded (check:seed).
+  _index.delete(walletId)
+  _seedIndex.delete(walletId)
 }
 
 // ── The seed phrase, in its OWN namespace ────────────────────────────────────

@@ -39,7 +39,7 @@ async function loadMyWalletIds() {
 // True only when at least one of the user's wallets has keys stored locally on
 // this device. When false, there's nothing to forget, so we hide the control.
 const hasAnyLocalKeys = computed(() =>
-  myWalletIds.value.some(id => auth.hasWalletKeys(id))
+  myWalletIds.value.some(id => auth.hasWalletKeys(id) || auth.hasSeed(id))
 )
 
 function doForgetKeys() {

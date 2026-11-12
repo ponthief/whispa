@@ -162,6 +162,46 @@ console.log('forgetting the phrase keeps the wallet spendable');
     (await vault.vaultGet('w-1', KM)) === null);
 }
 
+console.log('forgetting keys, and deleting a wallet, forget the words too');
+{
+  await vault.vaultStore('w-2', { scanSecret: 'aa', spendKey: 'bb' }, KM);
+  await vault.vaultStoreSeed('w-2', PHRASE, KM);
+  await vault.refreshVaultIndex();
+  ok('set-up: both records present and indexed',
+    vault.hasVaultEntry('w-2') && vault.hasVaultSeed('w-2'));
+
+  // What "Delete keys on this device" and wallet removal both reach.
+  await vault.vaultDelete('w-2');
+  ok('no phrase record is left behind',
+    !idb.has('seed:w-2') && !idb.has('wkey:w-2'));
+  ok('and the in-memory indexes agree at once, with no refresh',
+    !vault.hasVaultSeed('w-2') && !vault.hasVaultEntry('w-2'),
+    'a stale index offers a reveal for words that are gone until reload');
+
+  const A = strip(read('src/stores/auth.js'));
+  const rm = A.match(/async function removeWalletKeys[\s\S]*?\n  }\n/)[0];
+  ok('the web store removes keys through the call that takes the phrase',
+    /await vaultDelete\(walletId\)/.test(rm) && /seedsVersion\.value \+= 1/.test(rm),
+    'and tells hasSeed, which reads seedsVersion');
+
+  const W = strip(read('src/views/WalletsView.vue'));
+  const del = W.slice(W.indexOf('async function confirmDelete'));
+  ok('deleting a wallet in the browser removes its local keys, after the server agrees',
+    del.indexOf('api.deleteSilntWallet') > -1 &&
+    del.indexOf('auth.removeWalletKeys') > del.indexOf('api.deleteSilntWallet'),
+    'the vault kept the spend key and the phrase of a wallet that no longer existed');
+
+  const K = strip(read('src/services/secureKeys.ts'));
+  const rmk = K.match(/export async function removeWalletKeys[\s\S]*?\n}\n/)[0];
+  ok('on the phone removing a wallet forgets its stored phrase',
+    /forgetSeed\(walletId\)/.test(rmk));
+  const P = strip(read('src/screens/settings/WalletPage.tsx'));
+  ok('and the phone\'s wallet removal goes through it',
+    /await removeWalletKeys\(wallet\.id\)/.test(P));
+  ok('the duress wipe forgets every phrase as well',
+    /forgetSeed\(id\)/.test(K.slice(K.indexOf('wipeAllWalletKeys'))));
+}
+
 console.log('the reveal asks for the wallet passphrase, and asks nobody else');
 {
   const M = strip(read('src/components/SeedRevealModal.vue'));

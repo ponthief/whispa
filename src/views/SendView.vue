@@ -26,12 +26,13 @@ import {
 } from '@/services/sendWarnings'
 import { pushToast } from '@/stores/toasts'
 import { addPendingSend } from '@/stores/pendingsends'
-import { getSendDraft, setSendDraft, clearSendDraft } from '@/stores/senddraft'
+import { getSendDraft, setSendDraft } from '@/stores/senddraft'
 import QrScanModal from '@/components/QrScanModal.vue'
 import {
   isOwnSpAddress,
   keyMapForIndices,
   loadPlainChain,
+  nextReceiveAddress,
   plainAddressTotals,
 } from '@/services/plainChain'
 import {
@@ -75,8 +76,53 @@ const segwitChain   = ref(null)
 const segwitTotals  = ref([])
 const segwitLoading = ref(false)
 const segwitBuilt   = ref(null)
+// The change address the built SegWit transaction pays, so another tab's build
+// can step past it. See `changeAddress` in buildSegwitTransaction.
+const segwitChange  = ref(null)
 const selectedSegwit = ref([])   // derivation indices
 const isSegwit = computed(() => source.value === 'segwit')
+
+// ── SEVERAL TRANSACTIONS AT ONCE ──────────────────────────────────────────
+// Reported 2026-11-13: flipping the chain picker threw away a half-built
+// SegWit send, and somebody paying two people wants both ready before pressing
+// either Broadcast.
+//
+// The form below stays ONE form. Its refs are the ACTIVE tab's working state;
+// every other tab is a snapshot of the same fields (`snap`), swapped in and out
+// by switchTab. That is why none of the build, estimate or review code knows
+// tabs exist.
+//
+// A coin picked in one tab is HELD by it: the other tabs do not list it, do not
+// count it in their totals and cannot select it. The hold is derived from the
+// tabs themselves (reservedSp / reservedSegwit below), never stored, so closing
+// a tab releases its coins and nothing can leak a hold.
+//
+// Declared up here, above the wallet watcher, because that watcher is
+// `immediate` and resets the tabs when the wallet changes.
+const MAX_TABS = 6
+let tabSeq = 0
+function emptySnap(src, rate) {
+  return {
+    source: src,
+    recipient: '', amount: null,
+    feeChoice: 'halfHourFee', feeRate: rate || 1,
+    selected: [], selectedSegwit: [],
+    // Per-tab results. Never persisted: see stores/senddraft.js.
+    txResult: null, segwitBuilt: null, changeAddress: null,
+    buildError: null, broadcastError: null, broadcastDone: null,
+    resolvedSp: '', planSelfSend: false,
+    bitmailWarning: '', bitmailInvalid: false, tangoAck: false,
+  }
+}
+function newTabRecord(src = 'sp', rate = 1, n = 1) {
+  tabSeq += 1
+  return { id: tabSeq, n, snap: emptySnap(src, rate) }
+}
+const tabs = ref([newTabRecord()])
+const activeTabId = ref(tabs.value[0].id)
+// Held while a tab is being swapped in: the swap awaits a tick, and a second
+// click in that gap would capture a half-applied form as the other tab's.
+const tabBusy = ref(false)
 
 // AFTER the refs it writes, and that is not a style preference: `immediate:
 // true` runs this callback synchronously during setup, so placed above
@@ -93,6 +139,9 @@ watch(selectedWallet, async (id) => {
   // left on 'segwit' would show the new wallet's coins under a choice made
   // about the old one's.
   source.value = 'sp'
+  // Another wallet's coins mean nothing to these transactions.
+  tabs.value = [newTabRecord()]
+  activeTabId.value = tabs.value[0].id
   if (!id) return
   try {
     const keys = await auth.getWalletKeys(id)
@@ -228,7 +277,39 @@ const showConfirm    = ref(false)
 const resolvedSp     = ref('')
 const planSelfSend   = ref(false)
 
-const selectedUtxos = computed(() => utxos.value.filter(u => u.selected && u.utxo_state === 'unspent'))
+// COINS HELD BY THE OTHER TABS. Derived from their snapshots, so a closed tab
+// releases its coins by no longer existing. A tab that has been BROADCAST keeps
+// its hold: its coins are spent, but the SegWit chain index can lag the
+// mempool, and a coin offered again for one more send is a double-spend
+// waiting for the network to say so.
+const otherTabs = computed(() => tabs.value.filter((t) => t.id !== activeTabId.value))
+const reservedSp = computed(() => {
+  const out = new Set()
+  for (const t of otherTabs.value) for (const k of t.snap.selected) out.add(k)
+  return out
+})
+const reservedSegwit = computed(() => {
+  const out = new Set()
+  for (const t of otherTabs.value) for (const i of t.snap.selectedSegwit) out.add(i)
+  return out
+})
+// What THIS tab may choose from. Everything below that used to read `utxos` or
+// `segwitTotals` reads these instead — the lists, the totals the slider runs
+// over, and the selection itself.
+const availableUtxos = computed(() =>
+  utxos.value.filter((u) => !reservedSp.value.has(`${u.txid}:${u.vout}`)),
+)
+const availableSegwit = computed(() =>
+  segwitTotals.value.filter((t) => !reservedSegwit.value.has(t.index)),
+)
+const heldElsewhere = computed(() =>
+  isSegwit.value
+    ? segwitTotals.value.length - availableSegwit.value.length
+    : utxos.value.length - availableUtxos.value.length,
+)
+const selectedUtxos = computed(() =>
+  availableUtxos.value.filter(u => u.selected && u.utxo_state === 'unspent'),
+)
 
 // Privacy: detect when user has selected UTXOs with different labels
 const mixedLabels = computed(() => {
@@ -275,7 +356,7 @@ const multiInputSelected = computed(
 // between those two numbers is the fee being wrong, and the coin-merging
 // warning being skipped for the case that most needs it.
 const selectedSegwitRows = computed(() =>
-  segwitTotals.value.filter((t) => selectedSegwit.value.includes(t.index)),
+  availableSegwit.value.filter((t) => selectedSegwit.value.includes(t.index)),
 )
 const selectedInputCount = computed(() =>
   isSegwit.value
@@ -337,8 +418,8 @@ const maxSendable = computed(() =>
 // unfrozen and not held by a live Tango.
 const spendableTotal = computed(() =>
   isSegwit.value
-    ? segwitTotals.value.reduce((s, t) => s + t.sats, 0)
-    : utxos.value.reduce((s, u) => s + u.amount, 0),
+    ? availableSegwit.value.reduce((s, t) => s + t.sats, 0)
+    : availableUtxos.value.reduce((s, u) => s + u.amount, 0),
 )
 // The slider's top. The wallet's spendable total, and it does NOT tighten as
 // coins are picked — see services/sendAmount.ts::sliderTop for why a range
@@ -434,14 +515,14 @@ async function loadUtxos() {
 // broadcast. That is the whole of what the chain picker changes.
 async function buildSegwitTransaction() {
   building.value = true; buildError.value = null; txResult.value = null
-  segwitBuilt.value = null
+  segwitBuilt.value = null; segwitChange.value = null
   try {
     const w = wallets.value.find((x) => x.id === selectedWallet.value)
     if (!w || !segwitXprv.value || !segwitChain.value) {
       buildError.value = 'SegWit addresses are not set up for this wallet.'
       return
     }
-    const keys = keyMapForIndices(segwitXprv.value, w.network, selectedSegwit.value)
+    const keys = keyMapForIndices(segwitXprv.value, w.network, selectedSegwitRows.value.map((t) => t.index))
 
     // A BITMAIL HAS TO BECOME AN ADDRESS BEFORE ANYTHING BELOW SEES IT.
     // Reported 2026-11-13: sending from the SegWit side with a BitMail in the
@@ -463,7 +544,18 @@ async function buildSegwitTransaction() {
     // put the remainder back on one that has now been seen spending.
     const amt = Number(amount.value) || 0
     const sendingAll = amt >= selectedTotal.value - estimatedFee.value
-    const changeAddress = sendingAll ? null : segwitChain.value.receiveAddress
+    // Another tab may already have built (or sent) a transaction whose change
+    // goes to the first unused address. Reusing it is valid and is exactly what
+    // "use each address once" is about, so step past any that is taken.
+    let changeAddress = null
+    if (!sendingAll) {
+      const taken = new Set(otherTabs.value.map((t) => t.snap.changeAddress).filter(Boolean))
+      let ahead = 0
+      for (; ahead < 20; ahead++) {
+        changeAddress = nextReceiveAddress(segwitXprv.value, w.network, segwitChain.value, ahead).address
+        if (!taken.has(changeAddress)) break
+      }
+    }
 
     const plan = await api.preparePlainSpend(
       auth.adminkey,
@@ -497,6 +589,7 @@ async function buildSegwitTransaction() {
       )
     }
     segwitBuilt.value = res
+    segwitChange.value = changeAddress
     // The review step reads one shape whichever side built it, and the two
     // builders already produce the same one except for a single name:
     // plainSign calls it `destination`, spSign calls it `recipient`.
@@ -676,7 +769,10 @@ function reset() {
   broadcastError.value = null; recipient.value = ''; amount.value = null
   feeChoice.value = 'halfHourFee'; if (feeTiers.value?.halfHourFee) feeRate.value = feeTiers.value.halfHourFee
   utxos.value.forEach(u => u.selected = false)
-  clearSendDraft(selectedWallet.value)
+  selectedSegwit.value = []; segwitBuilt.value = null; segwitChange.value = null
+  // This tab only. The others still hold what they hold, so the draft is
+  // rewritten from what is left rather than cleared.
+  persistDraft()
 }
 
 function copyText(t) { navigator.clipboard.writeText(t).catch(() => {}) }
@@ -708,7 +804,7 @@ const isSelfSend = computed(() => {
 // Invalidate a built transaction when any input that affects it changes, so the
 // stale hex/Broadcast can't be used and the Build button reappears for a rebuild.
 watch(
-  [recipient, amount, feeRate, selectedWallet, selectedUtxos],
+  [recipient, amount, feeRate, selectedWallet, selectedUtxos, selectedSegwit],
   () => { if (txResult.value) { txResult.value = null; broadcastError.value = null } },
 )
 
@@ -876,29 +972,189 @@ async function deleteContact(c) {
   } catch (e) { pushToast(e.detail || e.message || 'Could not remove.', { type: 'error' }) }
 }
 
+// ── Tabs: swapping the form in and out ────────────────────────────────────
+// What the form holds right now, as a snapshot. The persisted subset is the
+// first seven fields; the rest is per-tab RESULT and is never written to the
+// draft store (a built transaction is signed against a coin set that may have
+// moved).
+function liveSnap() {
+  return {
+    source: source.value,
+    recipient: recipient.value,
+    amount: amount.value,
+    feeChoice: feeChoice.value,
+    feeRate: feeRate.value,
+    selected: utxos.value.filter((u) => u.selected).map((u) => `${u.txid}:${u.vout}`),
+    selectedSegwit: [...selectedSegwit.value],
+    txResult: txResult.value,
+    segwitBuilt: segwitBuilt.value,
+    changeAddress: segwitChange.value,
+    buildError: buildError.value,
+    broadcastError: broadcastError.value,
+    broadcastDone: broadcastDone.value,
+    resolvedSp: resolvedSp.value,
+    planSelfSend: planSelfSend.value,
+    bitmailWarning: bitmailWarning.value,
+    bitmailInvalid: bitmailInvalid.value,
+    tangoAck: tangoAck.value,
+  }
+}
+const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value))
+function saveActiveTab() {
+  const t = activeTab.value
+  if (t) t.snap = liveSnap()
+}
+
+// Put a snapshot on the form. ORDER IS THE WHOLE JOB, because the form is full
+// of watchers that clear things when their input changes: the build is dropped
+// when the recipient, amount, fee or coins move; a BitMail verdict when the
+// recipient does; the Tango acknowledgement when the pairing does; and the
+// chain picker wipes the selection when it flips. So the INPUTS go in first,
+// a tick lets every one of those fire (the picker's is told to stand down),
+// and only then do the RESULTS go in — otherwise a tab comes back with its
+// fields and none of the transaction it had built.
+async function applySnap(s, { reloadSegwit = false } = {}) {
+  restoringDraft = true
+  source.value = s.source
+  const want = new Set(s.selected)
+  utxos.value.forEach((u) => { u.selected = want.has(`${u.txid}:${u.vout}`) })
+  selectedSegwit.value = [...s.selectedSegwit]
+  recipient.value = s.recipient
+  amount.value = s.amount
+  if (s.feeChoice === 'custom') { feeChoice.value = 'custom'; feeRate.value = s.feeRate }
+  else { feeRate.value = s.feeRate; selectFeeTier(s.feeChoice) }
+  txResult.value = null; segwitBuilt.value = null; segwitChange.value = null
+  buildError.value = null; broadcastError.value = null; broadcastDone.value = null
+  showConfirm.value = false
+  await nextTick()
+  restoringDraft = false
+  if (isSegwit.value && (reloadSegwit || !segwitChain.value)) await loadSegwitChain()
+  if (isSegwit.value) {
+    // Only indices that still exist: a tab cannot resurrect a coin.
+    const have = new Set(segwitTotals.value.map((t) => t.index))
+    selectedSegwit.value = selectedSegwit.value.filter((i) => have.has(i))
+  }
+  await nextTick()
+  txResult.value = s.txResult; segwitBuilt.value = s.segwitBuilt
+  segwitChange.value = s.changeAddress
+  buildError.value = s.buildError; broadcastError.value = s.broadcastError
+  broadcastDone.value = s.broadcastDone
+  resolvedSp.value = s.resolvedSp; planSelfSend.value = s.planSelfSend
+  bitmailWarning.value = s.bitmailWarning; bitmailInvalid.value = s.bitmailInvalid
+  tangoAck.value = s.tangoAck
+}
+
+// Not while a build or broadcast is running: its result lands on whatever the
+// form holds when it finishes, which by then would be another tab's.
+const tabsLocked = computed(() => tabBusy.value || building.value || broadcasting.value)
+
+async function switchTab(id) {
+  if (id === activeTabId.value || tabsLocked.value) return
+  const target = tabs.value.find((t) => t.id === id)
+  if (!target) return
+  tabBusy.value = true
+  try {
+    saveActiveTab()
+    activeTabId.value = id
+    await applySnap(target.snap)
+  } finally { tabBusy.value = false }
+}
+
+async function newTab(src = 'sp') {
+  if (tabsLocked.value || tabs.value.length >= MAX_TABS || isSwapFunding.value) return
+  tabBusy.value = true
+  try {
+    saveActiveTab()
+    const n = Math.max(0, ...tabs.value.map((t) => t.n)) + 1
+    const rec = newTabRecord(src, feeTiers.value?.halfHourFee || 1, n)
+    tabs.value.push(rec)
+    activeTabId.value = rec.id
+    await applySnap(rec.snap, { reloadSegwit: src === 'segwit' })
+  } finally { tabBusy.value = false }
+}
+
+async function closeTab(id) {
+  if (tabsLocked.value || tabs.value.length < 2) return
+  const at = tabs.value.findIndex((t) => t.id === id)
+  if (at < 0) return
+  if (id !== activeTabId.value) {
+    tabs.value = tabs.value.filter((t) => t.id !== id)
+    return
+  }
+  // Closing the one in front: its snapshot is dropped, not saved, and its coins
+  // are released by the tab no longer existing.
+  tabBusy.value = true
+  try {
+    const rest = tabs.value.filter((t) => t.id !== id)
+    const next = rest[Math.min(at, rest.length - 1)]
+    tabs.value = rest
+    activeTabId.value = next.id
+    await applySnap(next.snap)
+  } finally { tabBusy.value = false }
+}
+
+// Does this tab hold anything worth keeping? An empty one is changed in place
+// when the chain picker is used; one with a recipient, an amount, coins or a
+// built transaction is KEPT, and the picker opens a new tab instead.
+const tabHasContent = computed(() =>
+  !!recipient.value.trim() ||
+  (amount.value !== null && amount.value !== undefined && amount.value !== '') ||
+  selectedInputCount.value > 0 ||
+  !!txResult.value || !!broadcastDone.value,
+)
+function pickSource(s) {
+  if (source.value === s || tabsLocked.value) return
+  if (tabHasContent.value) return newTab(s)
+  source.value = s
+}
+
+// What each tab looks like in the strip. Read off the live form for the one in
+// front, and off the snapshot for the rest.
+const tabStrip = computed(() =>
+  tabs.value.map((t) => {
+    const snap = t.id === activeTabId.value ? liveSnap() : t.snap
+    const sats = Number(snap.amount) || 0
+    return {
+      id: t.id,
+      n: t.n,
+      chain: snap.source === 'segwit' ? 'SegWit' : 'SP',
+      amount: sats > 0 ? sats : null,
+      done: !!snap.broadcastDone,
+      built: !!snap.txResult && !snap.broadcastDone,
+    }
+  }),
+)
+
 // ── The draft (stores/senddraft.js) ───────────────────────────────────────
-// Saved as the form changes, put back when the page is entered again.
+// Saved as the form changes, put back when the page is entered again — every
+// tab, with the one that was in front.
 //
 // `draftReady` is what keeps the first, empty state of the form from
 // overwriting the draft it is about to restore: nothing is saved until the
 // restore has run.
 let draftReady = false
-const draftSnapshot = computed(() => ({
-  source: source.value,
-  recipient: recipient.value,
-  amount: amount.value,
-  feeChoice: feeChoice.value,
-  feeRate: feeRate.value,
-  selected: utxos.value.filter((u) => u.selected).map((u) => `${u.txid}:${u.vout}`),
-  selectedSegwit: [...selectedSegwit.value],
-}))
-watch(draftSnapshot, (d) => {
-  // After a broadcast the form still holds what was sent; saving that would
-  // bring the same payment back next time.
-  if (!draftReady || !selectedWallet.value || broadcastDone.value) return
-  setSendDraft(selectedWallet.value, d)
+const PERSISTED = ['source', 'recipient', 'amount', 'feeChoice', 'feeRate', 'selected', 'selectedSegwit']
+const pickPersisted = (snap) => Object.fromEntries(PERSISTED.map((k) => [k, snap[k]]))
+const draftSnapshot = computed(() => {
+  const live = liveSnap()
+  const list = tabs.value.map((t) => ({
+    id: t.id,
+    snap: t.id === activeTabId.value ? live : t.snap,
+  }))
+  // A tab that has been broadcast is not a draft: saving it would bring the
+  // same payment back next time, and its coins are spent.
+  const kept = list.filter((t) => !t.snap.broadcastDone)
+  return {
+    tabs: kept.map((t) => pickPersisted(t.snap)),
+    active: Math.max(0, kept.findIndex((t) => t.id === activeTabId.value)),
+  }
 })
-watch(broadcastDone, (txid) => { if (txid) clearSendDraft(selectedWallet.value) })
+function persistDraft() {
+  if (!draftReady || !selectedWallet.value) return
+  setSendDraft(selectedWallet.value, draftSnapshot.value)
+}
+watch(draftSnapshot, persistDraft)
+watch(broadcastDone, persistDraft)
 
 async function restoreDraft() {
   try {
@@ -907,28 +1163,28 @@ async function restoreDraft() {
     // send and wins over whatever was half-typed before.
     if (!id || isSwapFunding.value || route.query.address || route.query.amount) return
     const d = getSendDraft(id)
-    if (!d) return
-    if (d.source === 'segwit') {
-      const keys = await auth.getWalletKeys(id)
-      if (!keys?.sweepAccount) return
-      restoringDraft = true
-      source.value = 'segwit'
-      await nextTick()          // the watcher above runs here, and skips
-      restoringDraft = false
-      await loadSegwitChain()
-      // Only indices that still exist: a draft cannot resurrect a coin.
-      const have = new Set(segwitTotals.value.map((t) => t.index))
-      selectedSegwit.value = (d.selectedSegwit || []).filter((i) => have.has(i))
-    } else {
-      // Keys, not coin objects: a coin spent or frozen while away is simply not
-      // in the list now, so it cannot come back selected.
-      const want = new Set(d.selected || [])
-      utxos.value.forEach((u) => { u.selected = want.has(`${u.txid}:${u.vout}`) })
-    }
-    recipient.value = d.recipient || ''
-    amount.value = d.amount ?? null
-    if (d.feeChoice === 'custom') { feeChoice.value = 'custom'; feeRate.value = d.feeRate }
-    else if (d.feeChoice) selectFeeTier(d.feeChoice)
+    if (!d || !d.tabs.length) return
+    const keys = await auth.getWalletKeys(id)
+    const canSegwit = !!keys?.sweepAccount
+    const rate = feeTiers.value?.halfHourFee || 1
+    const records = d.tabs.map((t, i) => {
+      const rec = newTabRecord('sp', rate, i + 1)
+      const segwit = t.source === 'segwit' && canSegwit
+      rec.snap = {
+        ...rec.snap,
+        ...t,
+        source: segwit ? 'segwit' : 'sp',
+        selectedSegwit: segwit ? t.selectedSegwit : [],
+      }
+      return rec
+    })
+    tabs.value = records
+    const front = records[Math.min(d.active, records.length - 1)]
+    activeTabId.value = front.id
+    await applySnap(front.snap)
+    // Keys, not coin objects: a coin spent or frozen while away is simply not
+    // in the list now, so it cannot come back selected. (applySnap does that
+    // for both sides.)
     if (recipient.value.includes('@')) validateBitmail(recipient.value)
   } finally {
     restoringDraft = false
@@ -989,11 +1245,36 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
          cannot share a transaction, so the choice has to be made before
          anything else on the form means something: a recipient and an amount
          read differently depending on which chain pays them. -->
+    <!-- ONE TAB PER TRANSACTION. Build several, broadcast each when ready; a
+         coin picked in one is not offered in the others. -->
+    <div v-if="!isSwapFunding" class="tx-tabs" role="tablist">
+      <div v-for="t in tabStrip" :key="t.id" class="tx-tab"
+           :class="{ active: t.id === activeTabId, done: t.done }">
+        <button type="button" role="tab" class="tx-tab-main"
+                :aria-selected="t.id === activeTabId" :disabled="tabsLocked"
+                @click="switchTab(t.id)">
+          <span>Tx {{ t.n }}</span>
+          <span class="tx-tab-chain">{{ t.chain }}</span>
+          <span v-if="t.amount" class="mono tx-tab-amt">{{ fmt(t.amount) }}</span>
+          <span v-if="t.done" class="text-green" title="Broadcast">✓</span>
+          <span v-else-if="t.built" class="text-orange" title="Built, not yet broadcast">●</span>
+        </button>
+        <button v-if="tabStrip.length > 1" type="button" class="tx-tab-close"
+                title="Close this transaction" :disabled="tabsLocked"
+                @click="closeTab(t.id)">✕</button>
+      </div>
+      <button v-if="tabStrip.length < MAX_TABS" type="button" class="tx-tab-new"
+              title="Start another transaction" :disabled="tabsLocked"
+              @click="newTab(source)">＋ New</button>
+    </div>
+
+    <!-- WHICH POCKET. Choosing the other one while this tab holds something
+         opens a new tab rather than throwing it away. -->
     <div v-if="segwitAvailable || source === 'segwit'" class="flex gap-2" style="margin-bottom:20px">
       <button class="btn btn-sm" :class="source === 'sp' ? 'btn-primary' : 'btn-ghost'"
-              @click="source = 'sp'">Silent Payments</button>
+              :disabled="tabsLocked" @click="pickSource('sp')">Silent Payments</button>
       <button class="btn btn-sm" :class="source === 'segwit' ? 'btn-primary' : 'btn-ghost'"
-              @click="source = 'segwit'">SegWit</button>
+              :disabled="tabsLocked" @click="pickSource('segwit')">SegWit</button>
     </div>
 
 
@@ -1306,6 +1587,9 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
           <h2>Select coins</h2>
           <span v-if="selectedInputCount" class="text-orange text-sm mono">{{ fmt(selectedTotal) }}</span>
         </div>
+        <div v-if="heldElsewhere > 0" class="text-dim text-xs" style="padding:8px 16px 0">
+          {{ heldElsewhere }} {{ heldElsewhere === 1 ? 'coin is' : 'coins are' }} in other transactions and not shown here.
+        </div>
         <!-- THE ONE PART THAT DIFFERS. Everything else on this page — the
              recipient, the amount and its slider, the fee tiers, the summary,
              Build and the review — is the same control whichever side is
@@ -1320,8 +1604,9 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
             This wallet predates SegWit addresses. Set them up from its card on Wallets.
           </div>
           <div v-else-if="isSegwit && !segwitTotals.length" class="text-dim text-sm" style="padding:24px">No coins on the SegWit chain yet.</div>
+          <div v-else-if="isSegwit && !availableSegwit.length" class="text-dim text-sm" style="padding:24px">Every SegWit coin is in another transaction.</div>
           <div v-else-if="isSegwit" class="utxo-list">
-            <label v-for="t in segwitTotals" :key="t.address" class="utxo-item"
+            <label v-for="t in availableSegwit" :key="t.address" class="utxo-item"
                    :class="{ selected: selectedSegwit.includes(t.index) }">
               <input type="checkbox" :checked="selectedSegwit.includes(t.index)"
                      @change="toggleSegwit(t.index)" />
@@ -1337,8 +1622,9 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
             </label>
           </div>
           <div v-else-if="!utxos.length" class="text-dim text-sm" style="padding:24px">No unspent coins. Scan the blockchain first.</div>
+          <div v-else-if="!availableUtxos.length" class="text-dim text-sm" style="padding:24px">Every coin is in another transaction.</div>
           <div v-else class="utxo-list">
-            <label v-for="u in utxos" :key="u.txid+':'+u.vout" class="utxo-item" :class="{ selected: u.selected }">
+            <label v-for="u in availableUtxos" :key="u.txid+':'+u.vout" class="utxo-item" :class="{ selected: u.selected }">
               <input type="checkbox" v-model="u.selected" />
               <div class="utxo-info">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1493,6 +1779,20 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
   background: rgba(255,255,255,.02); cursor: pointer; text-align: left;
   transition: border-color .15s, background .15s;
 }
+/* One tab per transaction. A <button> does not inherit the page's text colour
+   (it defaults to buttontext, black), so each states `color` itself. */
+.tx-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.tx-tab { display: inline-flex; align-items: stretch; border: 1px solid var(--border, #1f2d29); border-radius: var(--radius, 8px); background: var(--bg-card, transparent); }
+.tx-tab.active { border-color: var(--orange, #f7931a); background: rgba(247,147,26,.08); }
+.tx-tab-main, .tx-tab-close, .tx-tab-new { background: none; border: 0; color: var(--text, inherit); font: inherit; cursor: pointer; }
+.tx-tab-main { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; }
+.tx-tab-chain { font-size: 10px; font-weight: 500; color: var(--dim, #8a9b94); }
+.tx-tab-amt { font-size: 11px; font-weight: 500; color: var(--orange, #f7931a); }
+.tx-tab-close { padding: 0 10px 0 2px; font-size: 11px; color: var(--dim, #8a9b94); }
+.tx-tab-close:hover:not(:disabled) { color: var(--text, inherit); }
+.tx-tab-new { padding: 7px 12px; font-size: 13px; color: var(--dim, #8a9b94); border: 1px dashed var(--border, #1f2d29); border-radius: var(--radius, 8px); }
+.tx-tab-new:hover:not(:disabled) { color: var(--text, inherit); }
+.tx-tab-main:disabled, .tx-tab-close:disabled, .tx-tab-new:disabled { opacity: .5; cursor: not-allowed; }
 .fee-tier:hover:not(:disabled) { border-color: var(--border-bright, #2c3d38); }
 .fee-tier.active { border-color: var(--orange, #f7931a); background: rgba(247,147,26,.08); }
 .fee-tier:disabled { opacity: .4; cursor: not-allowed; }

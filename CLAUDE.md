@@ -1493,6 +1493,67 @@ Chromium first — real built app, stubbed backend, real router — and the SegW
 one fails against the old code with the exact request body
 (`"destination":"name@example.com"` reaching `/plain/prepare`).
 
+**Then the draft was not enough, and the Send page became tabs** (2026-11-13,
+same day: *"switching to sp from segwit tnx build loses everything. can we build
+tnx in a different tab.. user might want to broadcast multiple tnxs at once..
+should track which utxos are taken by tnx1 so it doesn't display in tnx2"*).
+The draft kept the FIELDS; flipping the chain picker still wiped a built
+transaction, and one form can only hold one transaction.
+
+`SendView.vue` is still ONE form. Its refs are the **active** tab's working
+state and every other tab is a snapshot of the same fields (`snap`), swapped in
+by `switchTab`/`applySnap`, so the build, fee-estimate and review code does not
+know tabs exist. Four things in it are each a bug if they go:
+
+- **A coin is held by the tab that picked it, and the hold is DERIVED**
+  (`reservedSp`/`reservedSegwit`, from the other tabs' snapshots), never stored.
+  The lists, the slider's total (`spendableTotal`) and `selectedUtxos` all read
+  `availableUtxos`/`availableSegwit`, so a coin tab 1 has picked is not listed,
+  not counted and not selectable in tab 2; closing tab 1 releases it by tab 1 no
+  longer existing. **A tab that has been broadcast keeps its hold** — its coins
+  are spent, but the SegWit chain index can lag the mempool and offering one
+  again is a double-spend waiting for the network to say so.
+- **`applySnap` puts INPUTS on the form, waits a tick, then puts the RESULTS
+  on.** The form is full of watchers that clear things when an input moves
+  (the built tx on recipient/amount/fee/coins, the BitMail verdict on the
+  recipient, the Tango tick on the pairing, the chain picker's own wipe). Set
+  the built transaction first and a tab comes back with its fields and none of
+  the transaction it had built. The negative control for this passes every
+  other check and fails exactly that one.
+- **The chain picker keeps a tab that has something in it** and opens a new one
+  with the other chain (`pickSource`); only an empty tab flips in place. That is
+  the literal fix for the report.
+- **No switching while a build or broadcast runs** (`tabsLocked`): the result
+  lands on whatever the form holds when it finishes, which would be another
+  tab's.
+
+A second SegWit build steps its **change address** past any another tab already
+uses (`nextReceiveAddress(..., ahead)`): both pointing at the first unused
+address is valid and is exactly the reuse "use each address once" is about. It
+stays inside the gap limit, so a later walk still finds it.
+
+The draft is a **list of tabs** now (`stores/senddraft.js`) with the one in
+front, fields and selections only, and a broadcast tab is not saved — its coins
+are spent and it would bring the same payment back. Swap funding stays a single
+transaction: the destination and amount are Boltz's and not a choice. Up to six
+tabs.
+
+**Toggling a SegWit coin after a build now drops the build**, which it did not:
+the invalidation watcher listed `selectedUtxos` and not `selectedSegwit`, so the
+built transaction stayed on screen for coins no longer selected.
+
+**Web only.** The phone's `SendScreen.tsx` still has one form and its chain
+picker still wipes it; the usual rule ("a rule enforced in one client usually
+belongs in the other") is deliberately not followed yet.
+
+Driven in Chromium against the real build with a stubbed backend (a built
+SegWit tx survives switching away and back; coin A held by tab 1 is absent from
+a new SP tab and the slider's "All" drops to what is left; a sent tab keeps its
+hold; closing a tab releases it; two SegWit builds pay change to different
+addresses). Each of the first, the picker rule, the tick ordering and the change
+stepping fails its own control when mutated. `check:send` pins the same
+properties source-side.
+
 ### The web's Settings page is Account, and the dust threshold is not on it
 
 Renamed 2026-11-08, on the user's instruction: *"we should probably rename it

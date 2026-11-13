@@ -26,12 +26,15 @@
  */
 const _drafts = {}
 
-function _isEmpty(d) {
-  const noAmount = d.amount === null || d.amount === undefined || d.amount === ''
-  return !(d.recipient || '').trim()
+// A draft is a LIST OF TABS (the Send page builds several transactions at once)
+// and which one was in front. Each tab keeps only its fields and coin
+// selection — never a built transaction, never a result.
+function _tabIsEmpty(t) {
+  const noAmount = t.amount === null || t.amount === undefined || t.amount === ''
+  return !(t.recipient || '').trim()
     && noAmount
-    && !(d.selected && d.selected.length)
-    && !(d.selectedSegwit && d.selectedSegwit.length)
+    && !(t.selected && t.selected.length)
+    && !(t.selectedSegwit && t.selectedSegwit.length)
 }
 
 export function getSendDraft(walletId) {
@@ -40,15 +43,20 @@ export function getSendDraft(walletId) {
 
 export function setSendDraft(walletId, draft) {
   if (!walletId) return
-  if (_isEmpty(draft)) { delete _drafts[walletId]; return }
+  const tabs = (draft && draft.tabs) || []
+  // One empty tab is just a fresh page; nothing to put back.
+  if (tabs.every(_tabIsEmpty)) { delete _drafts[walletId]; return }
   _drafts[walletId] = {
-    source: draft.source,
-    recipient: draft.recipient,
-    amount: draft.amount,
-    feeChoice: draft.feeChoice,
-    feeRate: draft.feeRate,
-    selected: [...(draft.selected || [])],
-    selectedSegwit: [...(draft.selectedSegwit || [])],
+    tabs: tabs.map((t) => ({
+      source: t.source,
+      recipient: t.recipient,
+      amount: t.amount,
+      feeChoice: t.feeChoice,
+      feeRate: t.feeRate,
+      selected: [...(t.selected || [])],
+      selectedSegwit: [...(t.selectedSegwit || [])],
+    })),
+    active: Math.min(Math.max(0, Number(draft.active) || 0), tabs.length - 1),
   }
 }
 

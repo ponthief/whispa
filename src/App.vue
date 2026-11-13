@@ -10,7 +10,7 @@ import { getPendingSends, removePendingSend, sendKind } from '@/stores/pendingse
 import { verifyBitmailTamper } from '@/stores/bitmailpins'
 import { setBitmailTamper, bitmailTampered } from '@/stores/bitmailalert'
 import { startPayjoinWatch, stopPayjoinWatch, payjoinPending } from '@/stores/payjoinwatch'
-import { startTangoWatch, stopTangoWatch, tangoPending } from '@/stores/tangowatch'
+import { startTangoWatch, stopTangoWatch, tangoPending, tangoRequests } from '@/stores/tangowatch'
 import { scanWatchWallets, scanStartedAt, clearScanWatch, notifyScanStarted } from '@/stores/scanwatch'
 import * as api from '@/api'
 import { onMounted, onBeforeUnmount, onErrorCaptured, ref, watch } from 'vue'
@@ -648,7 +648,7 @@ function logout() {
             <span>{{ item.label }}</span>
             <span v-if="item.name === 'bitmail' && bitmailTampered" class="nav-alert-badge" title="BitMail tampering detected — open BitMail">⛔</span>
             <span v-if="item.name === 'payjoin' && payjoinPending > 0" class="nav-count-badge" :title="payjoinPending + ' PayJoin request(s) need your attention'">{{ payjoinPending }}</span>
-            <span v-if="item.name === 'tango' && tangoPending > 0" class="nav-count-badge" :title="tangoPending + ' Tango(s) waiting on you'">{{ tangoPending }}</span>
+            <span v-if="item.name === 'tango' && (tangoPending + tangoRequests) > 0" class="nav-count-badge" :title="(tangoPending + tangoRequests) + ' waiting on you in Tango'">{{ tangoPending + tangoRequests }}</span>
           </router-link>
         </div>
         <button v-if="!IS_ADMIN_BUILD" class="unit-toggle" @click="units.toggleUnit()" :title="units.haveRate ? 'Switch sats / USD' : 'USD rate unavailable'">
@@ -714,6 +714,23 @@ function logout() {
           <span class="tango-nudge-go">Open →</span>
         </router-link>
 
+        <!-- A CONNECTION REQUEST is a different thing from a round and says so.
+             It used to be told only by a badge on the Partners tab inside the
+             Tango page (2026-11-13: "there is no way to know about it"), which
+             is the one place somebody who has not yet been asked is not
+             looking. Links straight to that tab. -->
+        <router-link
+          v-if="tangoRequests > 0 && route.name !== 'tango'"
+          :to="{ name: 'tango', query: { tab: 'connections' } }"
+          class="tango-nudge">
+          <span class="tango-nudge-dot">●</span>
+          <span>
+            {{ tangoRequests }} Tango connection request{{ tangoRequests === 1 ? '' : 's' }}
+            waiting for your answer.
+          </span>
+          <span class="tango-nudge-go">Open →</span>
+        </router-link>
+
         <div class="page-wrap">
           <router-view v-slot="{ Component }">
             <transition name="page" mode="out-in">
@@ -726,7 +743,7 @@ function logout() {
       <nav class="bottom-nav">
         <router-link v-for="item in nav" :key="item.name" :to="{ name: item.name }"
           class="bottom-nav-item" :class="{ active: route.name === item.name }">
-          <span class="bottom-nav-icon">{{ item.icon }}<span v-if="item.name === 'bitmail' && bitmailTampered" class="bottom-nav-alert-dot"></span><span v-if="item.name === 'payjoin' && payjoinPending > 0" class="bottom-nav-count">{{ payjoinPending }}</span><span v-if="item.name === 'tango' && tangoPending > 0" class="bottom-nav-count">{{ tangoPending }}</span></span>
+          <span class="bottom-nav-icon">{{ item.icon }}<span v-if="item.name === 'bitmail' && bitmailTampered" class="bottom-nav-alert-dot"></span><span v-if="item.name === 'payjoin' && payjoinPending > 0" class="bottom-nav-count">{{ payjoinPending }}</span><span v-if="item.name === 'tango' && (tangoPending + tangoRequests) > 0" class="bottom-nav-count">{{ tangoPending + tangoRequests }}</span></span>
           <span class="bottom-nav-label">{{ item.label }}</span>
         </router-link>
         <button class="bottom-nav-item bottom-nav-logout" @click="logout">

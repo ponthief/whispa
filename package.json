@@ -40,6 +40,7 @@
     "check:signing:chains": "node --experimental-strip-types scripts/check-chain-guard.mjs",
     "check:signing:change": "node --experimental-strip-types scripts/check-tango-change.mjs",
     "check:contacts": "node scripts/check-contact-staleness.cjs",
+    "check:send": "node scripts/check-send.mjs",
     "check:payout": "node scripts/check-tango-payout.cjs",
     "check:slider": "node scripts/check-send-slider.mjs",
     "check:plain": "node scripts/check-plain-receive.mjs",

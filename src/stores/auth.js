@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { clearAllSendDrafts } from '@/stores/senddraft'
 import { login as apiLogin, getLnbitsWallets, getAccount,
          revokeTwofaSession, setTwofaSession } from '@/api'
 import {
@@ -134,6 +135,9 @@ export const useAuthStore = defineStore('auth', () => {
     // would walk straight in. Fired before the keys are dropped, because the
     // call needs the inkey to name the session; it is best-effort, and the
     // local token is cleared either way inside revokeTwofaSession.
+    // A half-typed Send names coins and a recipient; it does not outlive the
+    // session it was typed in (stores/senddraft.js).
+    try { clearAllSendDrafts() } catch (_) { /* never block a sign-out */ }
     try {
       if (inkey.value) revokeTwofaSession(inkey.value).catch(() => {})
       else setTwofaSession('')

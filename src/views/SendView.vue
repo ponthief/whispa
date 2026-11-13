@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
@@ -26,6 +26,7 @@ import {
 } from '@/services/sendWarnings'
 import { pushToast } from '@/stores/toasts'
 import { addPendingSend } from '@/stores/pendingsends'
+import { getSendDraft, setSendDraft, clearSendDraft } from '@/stores/senddraft'
 import QrScanModal from '@/components/QrScanModal.vue'
 import {
   isOwnSpAddress,
@@ -139,7 +140,11 @@ async function loadSegwitChain() {
 //
 // A selection made on one side means nothing on the other, so flipping clears
 // both it and the amount.
+// Not while a saved draft is being put back: restoring is the one flip that
+// must NOT wipe the selection and amount it is about to set.
+let restoringDraft = false
 watch(source, () => {
+  if (restoringDraft) return
   selectedSegwit.value = []
   utxos.value.forEach((u) => { u.selected = false })
   amount.value = ''
@@ -437,6 +442,23 @@ async function buildSegwitTransaction() {
       return
     }
     const keys = keyMapForIndices(segwitXprv.value, w.network, selectedSegwit.value)
+
+    // A BITMAIL HAS TO BECOME AN ADDRESS BEFORE ANYTHING BELOW SEES IT.
+    // Reported 2026-11-13: sending from the SegWit side with a BitMail in the
+    // recipient field failed with an "invalid bech32" error while the same
+    // BitMail worked from the Silent Payments side. That side hands the typed
+    // text to /tx/prepare, which resolves it; /plain/prepare and the builder
+    // take an ADDRESS, so the raw `name@domain` went in as though it were one.
+    // A BitMail here resolves to a Silent Payments address, which the SegWit
+    // builder already pays (spOutputScript over P2WPKH inputs).
+    let destination = recipient.value.trim()
+    if (destination.includes('@')) {
+      const sp = api.spFromResolve(await api.resolveBip353(auth.inkey, destination))
+      if (!sp) throw new Error(`${destination} did not resolve to an address.`)
+      destination = sp
+      resolvedSp.value = sp   // so a BitMail that resolves HERE is seen as a self-send
+    }
+
     // Change goes to the chain's next unused address, so paying out does not
     // put the remainder back on one that has now been seen spending.
     const amt = Number(amount.value) || 0
@@ -447,14 +469,14 @@ async function buildSegwitTransaction() {
       auth.adminkey,
       selectedWallet.value,
       Object.keys(keys),
-      recipient.value.trim(),
+      destination,
       amt,
       changeAddress,
       Number(feeRate.value),
     )
 
     const res = buildSignedPlainTx({
-      destination: recipient.value.trim(),
+      destination,
       utxos: plan.utxos,
       keys,
       amount: amt,
@@ -571,8 +593,10 @@ async function broadcastTransaction() {
   if (isSegwit.value && segwitBuilt.value) {
     try {
       const w = wallets.value.find((x) => x.id === selectedWallet.value)
+      // `to` stays what was TYPED (a BitMail is what Activity should show);
+      // whether it is a self-send is decided on what it RESOLVED to.
       const to = recipient.value.trim()
-      const self = !!w?.sp_address && isOwnSpAddress(to, w.sp_address)
+      const self = !!w?.sp_address && isOwnSpAddress(segwitBuilt.value.destination, w.sp_address)
       const res = await api.broadcastPlainTx(
         auth.adminkey,
         selectedWallet.value,
@@ -652,6 +676,7 @@ function reset() {
   broadcastError.value = null; recipient.value = ''; amount.value = null
   feeChoice.value = 'halfHourFee'; if (feeTiers.value?.halfHourFee) feeRate.value = feeTiers.value.halfHourFee
   utxos.value.forEach(u => u.selected = false)
+  clearSendDraft(selectedWallet.value)
 }
 
 function copyText(t) { navigator.clipboard.writeText(t).catch(() => {}) }
@@ -851,6 +876,66 @@ async function deleteContact(c) {
   } catch (e) { pushToast(e.detail || e.message || 'Could not remove.', { type: 'error' }) }
 }
 
+// ── The draft (stores/senddraft.js) ───────────────────────────────────────
+// Saved as the form changes, put back when the page is entered again.
+//
+// `draftReady` is what keeps the first, empty state of the form from
+// overwriting the draft it is about to restore: nothing is saved until the
+// restore has run.
+let draftReady = false
+const draftSnapshot = computed(() => ({
+  source: source.value,
+  recipient: recipient.value,
+  amount: amount.value,
+  feeChoice: feeChoice.value,
+  feeRate: feeRate.value,
+  selected: utxos.value.filter((u) => u.selected).map((u) => `${u.txid}:${u.vout}`),
+  selectedSegwit: [...selectedSegwit.value],
+}))
+watch(draftSnapshot, (d) => {
+  // After a broadcast the form still holds what was sent; saving that would
+  // bring the same payment back next time.
+  if (!draftReady || !selectedWallet.value || broadcastDone.value) return
+  setSendDraft(selectedWallet.value, d)
+})
+watch(broadcastDone, (txid) => { if (txid) clearSendDraft(selectedWallet.value) })
+
+async function restoreDraft() {
+  try {
+    const id = selectedWallet.value
+    // A prefilled link (a payment request, a swap's funding step) says what to
+    // send and wins over whatever was half-typed before.
+    if (!id || isSwapFunding.value || route.query.address || route.query.amount) return
+    const d = getSendDraft(id)
+    if (!d) return
+    if (d.source === 'segwit') {
+      const keys = await auth.getWalletKeys(id)
+      if (!keys?.sweepAccount) return
+      restoringDraft = true
+      source.value = 'segwit'
+      await nextTick()          // the watcher above runs here, and skips
+      restoringDraft = false
+      await loadSegwitChain()
+      // Only indices that still exist: a draft cannot resurrect a coin.
+      const have = new Set(segwitTotals.value.map((t) => t.index))
+      selectedSegwit.value = (d.selectedSegwit || []).filter((i) => have.has(i))
+    } else {
+      // Keys, not coin objects: a coin spent or frozen while away is simply not
+      // in the list now, so it cannot come back selected.
+      const want = new Set(d.selected || [])
+      utxos.value.forEach((u) => { u.selected = want.has(`${u.txid}:${u.vout}`) })
+    }
+    recipient.value = d.recipient || ''
+    amount.value = d.amount ?? null
+    if (d.feeChoice === 'custom') { feeChoice.value = 'custom'; feeRate.value = d.feeRate }
+    else if (d.feeChoice) selectFeeTier(d.feeChoice)
+    if (recipient.value.includes('@')) validateBitmail(recipient.value)
+  } finally {
+    restoringDraft = false
+    draftReady = true
+  }
+}
+
 onMounted(async () => {
   await loadMempoolUrl()
   await loadFeeRates()
@@ -858,6 +943,10 @@ onMounted(async () => {
   if (selectedWallet.value) await loadUtxos()
   loadContacts()
   startScanWatch()
+  // After the wallet's own watcher has settled (it resets the chain picker when
+  // the wallet is first set), so the restored choice is the one that stands.
+  await nextTick()
+  await restoreDraft()
 })
 
 // ── Scan-in-progress notice ───────────────────────────────────────────────

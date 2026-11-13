@@ -24,6 +24,7 @@
 // chain moments later.
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
@@ -43,6 +44,7 @@ import {
 } from '@/stores/tangocommit'
 
 const auth = useAuthStore()
+const route = useRoute()
 const tab = ref('mix')   // 'mix' | 'connections' | 'rounds' | 'history'
 const error = ref('')
 const loading = ref(true)
@@ -164,12 +166,14 @@ async function approveContact(c) {
     await api.payjoinContactApprove(auth.inkey, c.id)
     pushToast('Connected.', { type: 'success' })
     await loadContacts(); await loadPartners()
+    refreshTangoWatch()   // the nav badge and banner count requests too
   } catch (e) { pushToast(e.detail || e.message || 'Failed.', { type: 'error' }) }
 }
 async function declineContact(c) {
   try {
     await api.payjoinContactDecline(auth.inkey, c.id)
     pushToast('Declined.', { type: 'success' }); await loadContacts()
+    refreshTangoWatch()
   } catch (e) { pushToast(e.detail || e.message || 'Failed.', { type: 'error' }) }
 }
 async function removeContact(c) {
@@ -349,6 +353,8 @@ async function refreshAll() {
 }
 
 onMounted(async () => {
+  // The banner for a waiting connection request lands here with ?tab=connections.
+  if (route.query.tab === 'connections') tab.value = 'connections'
   await load()
   loadMempoolUrl()
   loadContacts()

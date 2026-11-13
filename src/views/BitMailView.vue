@@ -502,56 +502,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
-        <div class="field">
-          <label>BitMail address</label>
-          <input
-            class="input"
-            v-model="address"
-            placeholder="satoshi@bitcoin.org"
-            @keydown.enter="resolve"
-            spellcheck="false"
-          />
-        </div>
-
-        <div v-if="error" class="alert alert-error">⚠ {{ error }}</div>
-
-        <button class="btn btn-primary" :disabled="!address.trim() || loading" @click="resolve">
-          <span v-if="loading" class="spinner" style="border-top-color:#000"></span>
-          {{ loading ? 'Resolving…' : '⌖ Resolve Address' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Result -->
-    <div v-if="result" class="card" style="margin-top:20px">
-      <div class="card-header">
-        <h2>Resolved</h2>
-        <span class="badge badge-green">✓ Found</span>
-      </div>
-      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-        <div>
-          <div class="text-dim text-xs" style="margin-bottom:6px">Silent Payment Address</div>
-          <div class="result-box">
-            <span class="mono text-orange" style="word-break:break-all;font-size:12px">
-              {{ extractSpAddress(result) || result.result }}
-            </span>
-          </div>
-          <div class="flex gap-2" style="margin-top:8px">
-            <button class="btn btn-ghost btn-sm" @click="copyText(extractSpAddress(result) || result.result)">⎘ Copy</button>
-          </div>
-        </div>
-
-        <div v-if="result.dns_record">
-          <div class="text-dim text-xs" style="margin-bottom:6px">DNS Record</div>
-          <div class="result-box">
-            <span class="mono text-dim" style="word-break:break-all;font-size:11px">{{ result.dns_record }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Info box -->
     <div class="card" style="margin-top:20px">
       <div class="card-body">
@@ -671,6 +621,61 @@ onBeforeUnmount(() => {
             {{ removingId === r.id ? 'Removing…' : 'Remove' }}
           </button>
           <span v-else-if="r.status === 'approved'" class="text-dim text-xs" title="This BitMail was removed; the slot stays used.">removed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESOLVE AN ADDRESS, last on the page (2026-11-13: "move card for bitmail
+         resolve address to the bottom"). Asking what somebody else's BitMail
+         points at is the occasional use; requesting and managing your own is
+         what the page is for, so that comes first. The result card stays with
+         the card that produces it. -->
+    <div class="card" style="margin-top:20px">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+        <div class="field">
+          <label>BitMail address</label>
+          <input
+            class="input"
+            v-model="address"
+            placeholder="satoshi@bitcoin.org"
+            @keydown.enter="resolve"
+            spellcheck="false"
+          />
+        </div>
+
+        <div v-if="error" class="alert alert-error">⚠ {{ error }}</div>
+
+        <button class="btn btn-primary" :disabled="!address.trim() || loading" @click="resolve">
+          <span v-if="loading" class="spinner" style="border-top-color:#000"></span>
+          {{ loading ? 'Resolving…' : '⌖ Resolve Address' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div v-if="result" class="card" style="margin-top:20px">
+      <div class="card-header">
+        <h2>Resolved</h2>
+        <span class="badge badge-green">✓ Found</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div class="text-dim text-xs" style="margin-bottom:6px">Silent Payment Address</div>
+          <div class="result-box">
+            <span class="mono text-orange" style="word-break:break-all;font-size:12px">
+              {{ extractSpAddress(result) || result.result }}
+            </span>
+          </div>
+          <div class="flex gap-2" style="margin-top:8px">
+            <button class="btn btn-ghost btn-sm" @click="copyText(extractSpAddress(result) || result.result)">⎘ Copy</button>
+          </div>
+        </div>
+
+        <div v-if="result.dns_record">
+          <div class="text-dim text-xs" style="margin-bottom:6px">DNS Record</div>
+          <div class="result-box">
+            <span class="mono text-dim" style="word-break:break-all;font-size:11px">{{ result.dns_record }}</span>
+          </div>
         </div>
       </div>
     </div>

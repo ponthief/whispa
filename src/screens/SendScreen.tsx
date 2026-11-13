@@ -769,11 +769,26 @@ export default function SendScreen() {
   const buildSegwit = useCallback(async () => {
     Keyboard.dismiss();
     setError(null);
-    if (!wallet || !adminkey || !segwitXprv || !segwitChain) return;
+    if (!wallet || !adminkey || !inkey || !segwitXprv || !segwitChain) return;
     setBusy(true);
     try {
       const indices = selectedSegwit.map((t) => t.index);
       const keys = keyMapForIndices(segwitXprv, wallet.network, indices);
+
+      // A BITMAIL HAS TO BECOME AN ADDRESS BEFORE ANYTHING BELOW SEES IT
+      // (reported 2026-11-13 on the web: an "invalid bech32" error from the
+      // SegWit side for a BitMail that works from Silent Payments). That side
+      // hands the typed text to /tx/prepare, which resolves it; /plain/prepare
+      // and the builder take an ADDRESS. A BitMail resolves to a Silent
+      // Payments address, which buildSignedPlainTx already pays.
+      let destination = recipient.trim();
+      if (destination.includes('@')) {
+        const sp = api.spFromResolve(await api.resolveBip353(inkey, destination));
+        if (!sp) throw new Error(`${destination} did not resolve to an address.`);
+        destination = sp;
+        setResolvedSp(sp);
+      }
+
       // Change goes to the chain's next unused address, so paying out does not
       // put the remainder back on one that has now been seen spending.
       const sendingAll = amountSats >= selectedTotal - estFee;
@@ -783,14 +798,14 @@ export default function SendScreen() {
         adminkey,
         wallet.id,
         Object.keys(keys),
-        recipient.trim(),
+        destination,
         amountSats,
         changeAddress,
         feeRate,
       );
 
       const res = buildSignedPlainTx({
-        destination: recipient.trim(),
+        destination,
         utxos: plan.utxos,
         keys,
         amount: amountSats,
@@ -820,6 +835,7 @@ export default function SendScreen() {
   }, [
     wallet,
     adminkey,
+    inkey,
     segwitXprv,
     segwitChain,
     selectedSegwit,
@@ -936,7 +952,11 @@ export default function SendScreen() {
       setBusy(true);
       try {
         const to = recipient.trim();
-        const self = !!wallet.sp_address && isOwnSpAddress(to, wallet.sp_address);
+        // Typed text is what Activity shows; a self-send is decided on what it
+        // RESOLVED to.
+        const self =
+          !!wallet.sp_address &&
+          isOwnSpAddress(segwitBuilt?.destination || to, wallet.sp_address);
         const res = await api.broadcastPlainTx(
           adminkey,
           wallet.id,

@@ -34,11 +34,21 @@ import { isMyTurn } from '@/services/tangoTurns'
 
 export const tangoPending = ref(0)
 export const tangoRounds = ref([])
+/**
+ * CONNECTION REQUESTS waiting on this user's answer, the other thing a Tango
+ * needs from somebody. Reported 2026-11-13: a request arrived and the only sign
+ * of it was a badge on the Partners tab INSIDE the Tango page, so nobody who was
+ * not already on that page ever learned they had been asked. It is counted here
+ * so the nav badge and the banner (App.vue) can say so from any page, and a
+ * toast announces each new one — the same three ways a waiting round is told.
+ */
+export const tangoRequests = ref(0)
 /** Bumped on every completed poll, so a view can react without re-fetching. */
 export const tangoVersion = ref(0)
 
 let _timer = null
 let _knownTurns = new Set()
+let _knownRequests = new Set()
 let _primed = false   // no toasts on the first poll: those rounds already existed
 
 async function _poll() {
@@ -75,6 +85,27 @@ async function _poll() {
     }
   }
   _knownTurns = currentTurns
+
+  // Connection requests. Fetched on its own so a failure here cannot cost the
+  // rounds above their update, and the other way round.
+  try {
+    const res = await api.payjoinListContacts(auth.inkey)
+    const incoming = (res && res.incoming) || []
+    tangoRequests.value = incoming.length
+    const ids = new Set(incoming.map((c) => c.id))
+    if (_primed) {
+      for (const c of incoming) {
+        if (_knownRequests.has(c.id)) continue
+        pushToast(
+          `${c.counterparty_username || 'Someone'} wants to connect on Tango — ` +
+            'open Tango → Partners to approve or decline.',
+          { type: 'info', timeout: 9000 },
+        )
+      }
+    }
+    _knownRequests = ids
+  } catch { /* transient; the next tick tries again */ }
+
   _primed = true
   tangoVersion.value++
 }
@@ -91,8 +122,10 @@ export function startTangoWatch() {
 export function stopTangoWatch() {
   if (_timer) { clearInterval(_timer); _timer = null }
   _knownTurns = new Set()
+  _knownRequests = new Set()
   _primed = false
   tangoPending.value = 0
+  tangoRequests.value = 0
   tangoRounds.value = []
 }
 

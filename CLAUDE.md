@@ -84,6 +84,7 @@ npm run build:signet        # web app
 npm run check:signing       # both on-device signers vs the Python
 npm run check:update        # what the update path offers, vs a real release
 npm run check:contacts      # a stale saved address is visible and fixable
+npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a Tango request shows anywhere
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
@@ -1451,6 +1452,46 @@ cipher and a fake database: a row survives LNbits' secret changing, the env key
 wins over the file, a short one degrades loudly, a `v2:` row is never tried
 against LNbits' keys, and the migration writes one readable row and leaves the
 unreadable, plaintext, doubly-encrypted and already-migrated ones alone.
+
+### Send, BitMail and Tango requests: four web reports (2026-11-13)
+
+**A BitMail from the SegWit side failed with "invalid bech32"** while the same
+one worked from Silent Payments. The SP side hands the typed text to
+`/tx/prepare`, which resolves a BitMail; the SegWit side calls `/plain/prepare`
+and `buildSignedPlainTx`, which take an **address**, and was passing
+`name@domain` straight through. A BitMail here resolves to a Silent Payments
+address, and the SegWit builder already pays one (`spOutputScript` over P2WPKH
+inputs), so the fix is to resolve first and hand both calls the result. The
+phone had the identical bug and has the identical fix. What Activity shows is
+still the typed BitMail; whether it is a self-send is decided on what it
+resolved to, because a BitMail that resolves to this wallet is a self-send the
+typed text hides.
+
+**A half-built Send was lost on leaving the page.** `stores/senddraft.js` is
+the browser's half of what the phone's `draftStore.ts` does, with the same
+rules: **in memory only** (which coins and who to pay is not for a profile
+directory), keyed by wallet, cleared on broadcast, on Send Another and on
+logout. It keeps the fields and the coin SELECTION (as keys, so a coin spent
+meanwhile cannot come back selected) and **not the built transaction**, which
+is signed against a coin set that may have moved. Two ordering traps, both
+found by driving it: the chain picker's own watcher wipes amount and selection
+when it flips, so a restore sets a flag that makes it skip; and nothing is
+saved until the restore has run, or the form's first empty state overwrites the
+draft it is about to read. A prefilled link or swap funding wins over a draft.
+
+**A Tango connection request was announced only by a badge inside the Tango
+page.** The watcher now counts incoming requests too (`tangoRequests`), toasts a
+new one, adds to the nav badge, and App shows a banner linking straight to
+Partners (`/tango?tab=connections`) from any other page — the same three ways a
+waiting *round* is already told.
+
+**The BitMail "resolve an address" card is the last on its page**, with its
+result card; requesting and managing your own address is what the page is for.
+
+`check:send` is the source-side tripwire for all four. Each was reproduced in
+Chromium first — real built app, stubbed backend, real router — and the SegWit
+one fails against the old code with the exact request body
+(`"destination":"name@example.com"` reaching `/plain/prepare`).
 
 ### The web's Settings page is Account, and the dust threshold is not on it
 

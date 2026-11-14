@@ -897,6 +897,21 @@ would look like it worked:
   appear — a ghost wallet, which is the same class of silent success this
   whole section exists to refuse.
 
+**The birth height is a number on the wire and text on the server, and
+pydantic v2 will not convert one to the other** (2026-11-14: *"on web trying to
+import a wallet and got error: last_height, msg: Input should be valid
+string"*). `CreateWallet.last_height` in siLNt `models.py` was declared `str`
+because the legacy server-derive path uses `str(height)` as the mnemonic's
+key; both clients, and `restoreWallets`, send a JSON number. Pydantic v1
+coerced it silently, so nothing ever noticed the mismatch, and the LNbits
+upgrade to v2 turned every import and restore - web and phone - into a 422.
+The model now takes a number or plain digits through a `before` validator and
+refuses everything else (a bool, a negative, a float, text) as a validation
+error. **Nothing client-side changed**, on purpose: the server is the
+authority on its own types. The same upgrade is the likeliest source of any
+other *"Input should be valid string"* report - look for a `str` field a client
+fills with a number.
+
 **Wallets are restored BEFORE labels**, and `live` is re-read in between, so
 the labels land on the wallets this restore just made instead of being remapped
 to nothing.

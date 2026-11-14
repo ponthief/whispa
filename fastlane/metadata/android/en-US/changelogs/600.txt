@@ -1,0 +1,9 @@
+Backup & Restore: an encrypted file with your wallets and labels, from the phone or the browser, restorable into either.
+
+Show your seed phrase in the browser, or add it to a wallet that has none.
+
+Stealth mode: a Calculator or Notes icon instead of WhiSPa.
+
+Two-factor sign-in on the web.
+
+Several transactions at once, in tabs, on the web.

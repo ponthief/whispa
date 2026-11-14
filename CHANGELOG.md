@@ -13,32 +13,84 @@ first line of the body, where a reader looks anyway.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
+Released as **WhiSPa 0.3.0-beta**.
+
 ### Added
 
+- **Backup & Restore.** One encrypted file, sealed with the wallet's own
+  passphrase, from either the phone or the browser — and either file restores
+  into either app. It carries each wallet (so a lost or replaced phone comes
+  back from the file, with its birth height) and your labels: transaction
+  labels, SegWit address labels and Silent Payments coin labels. Restore is
+  also offered from Recover Keys. A passphrase that opens nothing refuses the
+  save and says so. Labels whose coins have not been scanned yet are kept and
+  placed when a scan finds them.
+- **Your seed phrase can be shown in the browser**, behind the wallet
+  passphrase, and either app can take the words for a wallet that has none —
+  checked against the wallet before anything is stored. "Recovery phrase" is
+  now "seed phrase" everywhere.
+- **Stealth mode (Android).** Show a Calculator or Notes icon on the home
+  screen instead of WhiSPa. Turning a disguise on turns alerts off.
+- **Two-factor sign-in on the web**, from an authenticator app or an emailed
+  code, as a switch on Account. It guards the wallet, not the account sign-in.
+- **Send several transactions at once, in tabs (web).** A coin one tab has
+  picked is not offered in the others, each tab builds and broadcasts on its
+  own, and a half-built Send survives leaving the page.
+- **A BitMail works from the SegWit side of Send**, which failed with an
+  invalid-address error before.
+- **A Tango connection request is announced from any page**, not only as a badge
+  inside Tango.
+- **The wallet card in the browser** shows Silent Payments and SegWit as tabs,
+  with the secondary actions behind a menu. The privacy dust threshold moved to
+  that menu.
+- **Android scans QR codes with ZXing**, so the APK carries no proprietary
+  scanner blob. The web's receive QR is now dark-on-light with a proper quiet
+  zone, which ZXing needs.
 - **A real bot check on the web sign-up form.** Cloudflare Turnstile, verified
-  on the server in `helpers/turnstile.py`, replacing an arithmetic question
-  that was checked in the browser and nowhere else — anything that skipped the
-  page skipped the check. The check runs before the uniqueness lookups, so a
-  bot cannot use "username already in use" as a membership oracle either. Keys
-  are set from the admin portal and fetched by the form at load, so rotating
-  one needs no redeploy; the secret is never returned to the page.
-- **Terms of Use at `/terms`**, with a tick box on the sign-up form. The page
-  carries a version, the backend publishes the same one, and a registration
-  naming a different version is refused — so an account is tied to the text
-  that was on screen when it was made. `npm run check:terms` fails when the two
-  repos disagree, or when the page loses the MIT licence, the recovery-phrase
-  warning or the Signet disclaimer.
-- The sign-up page itself was rebuilt: field-level guidance, the recovery-phrase
-  consequence stated at the point of consent, and a note that WhiSPa is MIT
-  software anyone can read or self-host.
+  on the server, replacing an arithmetic question that was checked in the
+  browser and nowhere else. The check runs before the uniqueness lookups, so a
+  bot cannot use "username already in use" as a membership oracle either.
+- **Terms of Use at `/terms`**, with a tick box on the sign-up form and a
+  version the server checks, so an account is tied to the text that was on
+  screen when it was made.
+
+### Changed
+
+- A server that is down is no longer mistaken for an untrusted device: the app
+  says it cannot reach the server and offers Try again, instead of asking for an
+  emailed device code that cannot be sent.
+- Confirming a device sends one email, not two.
+- "Catching up" is "scanning" everywhere a person reads it.
+- Trusted Devices has a way back to Account.
+
+### Fixed
+
+- **A saved contact could show as unreadable ciphertext** (`U2FsdGVk…`) and be
+  picked as a recipient. It is now shown as "cannot be read", cannot be used,
+  and **Change address** repairs it.
+- **The scan cooldown ran during the scan**, so a long scan left no cooldown at
+  all; it now starts when the scan ends. A rescan of an earlier range no longer
+  leaves From above To.
+- **The catch-up banner scanned the same blocks twice** when the gap had been
+  closed from another screen.
+- Leaving Account blanked every page afterwards.
 
 ### Notes
 
+- **This release needs the matching backend.** It adds the two-factor tables,
+  the Turnstile and terms endpoints, and the extension's own at-rest
+  encryption key (`SILNT_ENC_KEY`, or a key file beside
+  LNbits' own), with a migration for rows written under the old one. See the
+  backend notes before upgrading an instance.
+- Push notifications are unchanged in this build. The F-Droid build
+  (`npm run apk:fdroid`) is the one without them.
 - An instance with no Turnstile secret keeps the arithmetic question and is
   otherwise unchanged. With a secret configured and Cloudflare unreachable,
-  registration is refused rather than waved through.
-- The mobile app registers through the same endpoint and renders no widget, so
-  the default `enforce: browser` leaves it working. It has no terms screen yet.
+  registration is refused rather than waved through. The mobile app registers
+  through the same endpoint and renders no widget, so the default
+  `enforce: browser` leaves it working; it has no terms screen yet.
 
 ## [0.5.0] - 2026-10-16
 

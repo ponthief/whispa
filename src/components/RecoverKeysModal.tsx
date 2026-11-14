@@ -252,11 +252,21 @@ export default function RecoverKeysModal({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.heading}>Recover wallet keys</Text>
+            {/* NO WALLET (2026-11-14: "restoring wallet via backup file should
+                be available when user has no wallet"): the same sheet, opened
+                from the empty Wallet screen with nothing to recover keys FOR.
+                A backup file is a way to HAVE a wallet, so it is offered where
+                somebody with none is looking. The seed-phrase route needs a
+                wallet to check the phrase against, and for a phrase with no
+                wallet the answer is Import in the New Wallet sheet. */}
+            <Text style={styles.heading}>
+              {wallet ? 'Recover wallet keys' : 'Restore from backup'}
+            </Text>
             <Text style={styles.sub}>
-              Restore this wallet from a backup file, or enter its 12-word
-              seed phrase. Keys stay on-device — they're never sent to the
-              server.
+              {wallet
+                ? 'Restore this wallet from a backup file, or enter its 12-word seed phrase. '
+                : 'Restore your wallet from a backup file. '}
+              Keys stay on-device — they're never sent to the server.
             </Text>
 
             {file ? (
@@ -324,19 +334,21 @@ export default function RecoverKeysModal({
                   disabled={busy}>
                   <Text style={styles.linkBtnText}>Choose a different file</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.linkBtn}
-                  onPress={() => {
-                    setFile(null);
-                    setFilePass('');
-                    setNote(null);
-                    setError(null);
-                  }}
-                  disabled={busy}>
-                  <Text style={styles.linkBtnText}>
-                    Use a seed phrase instead
-                  </Text>
-                </TouchableOpacity>
+                {wallet ? (
+                  <TouchableOpacity
+                    style={styles.linkBtn}
+                    onPress={() => {
+                      setFile(null);
+                      setFilePass('');
+                      setNote(null);
+                      setError(null);
+                    }}
+                    disabled={busy}>
+                    <Text style={styles.linkBtnText}>
+                      Use a seed phrase instead
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
                   <Text style={styles.linkBtnText}>Cancel</Text>
                 </TouchableOpacity>
@@ -361,6 +373,8 @@ export default function RecoverKeysModal({
                   )}
                 </TouchableOpacity>
 
+                {wallet ? (
+                <>
                 <Text style={[styles.hint, { textAlign: 'center', marginTop: 10 }]}>
                   or
                 </Text>
@@ -400,6 +414,9 @@ export default function RecoverKeysModal({
                     <Text style={styles.primaryBtnText}>Recover Keys</Text>
                   )}
                 </TouchableOpacity>
+                </>
+                ) : null}
+                {!wallet && error ? <Text style={styles.error}>{error}</Text> : null}
                 <TouchableOpacity style={styles.linkBtn} onPress={onClose} disabled={busy}>
                   <Text style={styles.linkBtnText}>Cancel</Text>
                 </TouchableOpacity>

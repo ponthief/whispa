@@ -781,7 +781,15 @@ watch(swapCompletedAt, () => {
       <div class="card-body" style="text-align:center;padding:48px 24px">
         <div style="font-size:32px;margin-bottom:12px;opacity:.3">◈</div>
         <p class="text-dim">No wallet yet. Create your WhiSPa wallet to get started.</p>
-        <button v-if="!atWalletLimit" class="btn btn-primary" style="margin-top:20px" @click="showCreate = true; loadTipHeight()">＋ New Wallet</button>
+        <div class="flex gap-2" style="margin-top:20px;justify-content:center;flex-wrap:wrap">
+          <button v-if="!atWalletLimit" class="btn btn-primary" @click="showCreate = true; loadTipHeight()">＋ New Wallet</button>
+          <!-- A BACKUP FILE IS A WAY TO HAVE A WALLET, not only a way to repair
+               one (2026-11-14: "restoring wallet via backup file should be
+               available when user has no wallet"). Recover Keys and the card's
+               menu both need a wallet to exist first, which is exactly what
+               somebody on a new browser does not have. -->
+          <button v-if="!atWalletLimit" class="btn btn-ghost" @click="showBackup = true">💾 Restore from backup file</button>
+        </div>
       </div>
     </div>
 
@@ -1055,6 +1063,18 @@ watch(swapCompletedAt, () => {
                 >
                   📥 Import existing
                 </button>
+                <!-- Not a third MODE of this form — a backup brings its own
+                     title, phrase and birth height — so it leaves the form for
+                     the Backup & Restore dialog, which already asks for the
+                     file first and its secret second. -->
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  style="flex:1"
+                  @click="showCreate = false; createError = null; showBackup = true"
+                >
+                  💾 From backup file
+                </button>
               </div>
               <span class="text-dim text-xs" v-if="createForm.mode === 'generate'">
                 A fresh 12-word seed will be generated. You'll see it once after creation — save it carefully.
@@ -1317,7 +1337,7 @@ watch(swapCompletedAt, () => {
     </div>
 
     <!-- QR modal -->
-    <BackupModal :show="showBackup" @close="showBackup = false" />
+    <BackupModal :show="showBackup" @close="showBackup = false" @restored="loadWallets" />
     <DustThresholdModal :show="showDust" @close="showDust = false" />
     <SeedRevealModal :show="showSeed" :wallet="seedTarget" @close="showSeed = false" />
 

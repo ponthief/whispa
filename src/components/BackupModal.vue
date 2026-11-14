@@ -24,7 +24,10 @@ import { resetLoginScanFor } from '@/composables/useLoginScan'
 // across two different operations is a field nobody is prompted by.
 
 const props = defineProps({ show: { type: Boolean, default: false } })
-const emit = defineEmits(['close'])
+// `restored` tells the page behind that wallets may have appeared or gained keys.
+// A restore from an account with NO wallet is the case it is for: that list is
+// empty and nothing else would make it look again.
+const emit = defineEmits(['close', 'restored'])
 
 const auth = useAuthStore()
 
@@ -483,6 +486,7 @@ async function openPending() {
       // section this client cannot store is a fact about the FILE, not about
       // whether the restore worked, and it was being read as the latter.
     ].filter(Boolean).join(' '))
+    if (madeWallets || gotKeys) emit('restored')
     // Done with: the Open button goes, and a second press cannot re-apply a
     // file the user has finished with. A FAILURE keeps it, so a wrong
     // password is retyped against the file already in hand rather than

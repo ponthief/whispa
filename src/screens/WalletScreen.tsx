@@ -511,6 +511,14 @@ export default function WalletScreen() {
               onPress={() => setShowCreate(true)}>
               <Text style={styles.createBtnText}>＋ New Wallet</Text>
             </TouchableOpacity>
+            {/* A backup file is a way to HAVE a wallet (2026-11-14), so it is
+                offered here and not only behind Recover Keys, which needs a
+                wallet to exist first. Opens that same sheet with no wallet. */}
+            <TouchableOpacity
+              style={styles.restoreBtn}
+              onPress={() => setShowRecover(true)}>
+              <Text style={styles.restoreBtnText}>↑ Restore from backup file</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
@@ -1007,4 +1015,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   createBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: '600' },
+  restoreBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  restoreBtnText: { color: colors.muted, fontSize: 15, fontWeight: '600' },
 });

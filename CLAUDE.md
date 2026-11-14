@@ -912,6 +912,27 @@ authority on its own types. The same upgrade is the likeliest source of any
 other *"Input should be valid string"* report - look for a `str` field a client
 fills with a number.
 
+**A backup file is a way to HAVE a wallet, and was offered only to somebody who
+already had one** (2026-11-14: *"restoring wallet via backup file should be
+available when user has no wallet and wants to create it either via import or
+backup file"*). Recover Keys renders only for a wallet whose keys are missing
+and the card's menu needs a card, so a new browser or a freshly installed phone
+with an empty account - the very case the backup exists for - could not reach
+Restore at all. The restore itself never needed a wallet to exist (`live` is
+simply empty and `restoreWallets` creates). What was missing was a door:
+
+- **Web**: the empty Wallet page has a *Restore from backup file* button beside
+  *New Wallet*, and the New Wallet dialog has *From backup file* beside Generate
+  and Import. It is not a third mode of that form - a backup brings its own
+  title, phrase and birth height - so it closes the form and opens the Backup &
+  Restore dialog. `BackupModal` emits `restored` when a wallet was created or
+  given keys, and `WalletsView` reloads its list on it; **without that the page
+  behind kept saying "No wallet yet" over a wallet that had just been made.**
+- **Phone**: the empty Wallet screen opens `RecoverKeysModal` with
+  `wallet = null`. In that state the sheet is only the file route - the
+  seed-phrase form checks a phrase against a wallet's address, and with no
+  wallet the answer for a phrase is Import in the New Wallet sheet.
+
 **Wallets are restored BEFORE labels**, and `live` is re-read in between, so
 the labels land on the wallets this restore just made instead of being remapped
 to nothing.

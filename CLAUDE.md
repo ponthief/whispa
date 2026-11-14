@@ -1453,6 +1453,53 @@ wins over the file, a short one degrades loudly, a `v2:` row is never tried
 against LNbits' keys, and the migration writes one readable row and leaves the
 unreadable, plaintext, doubly-encrypted and already-migrated ones alone.
 
+**`SILNT_ENC_KEY` in `.env` was never seen, and a second key appeared**
+(2026-11-14: *"I have set silnt_enc_key in .env, but none of the
+.lnbits_auth files has that value. There is .silnt_enc_key_v1 there but not
+matching"*). Two separate things, and the first is a misreading worth stating:
+the env key is **never written to any file**. The key file is only generated
+when no usable env key is found, so its existence means some start did not find
+one.
+
+That start was the real bug. LNbits reads `.env` through its settings model,
+which keeps the fields it declares and does **not** export the rest to the
+process environment, so `os.environ.get("SILNT_ENC_KEY")` was empty for a key
+that was sitting in `.env`. `_silnt_env_key` now reads the variable and then
+`.env` in the working directory (the same file LNbits reads), a real variable
+winning, and `_note_active_key` writes one log line saying which key is active
+and its fingerprint — look for `[crypto] extension key:` rather than the data
+folder.
+
+The hazard behind it is what mattered. Every row written while the variable was
+invisible is `v2:` **and under the file key**, and once the env key took over
+those rows would have stopped decrypting — the loss this key exists to end,
+produced by it. So:
+
+- **A `v2:` row is read with the active key, then the extension's other key**
+  (`_silnt_key_alternates`: the file key and the env key, whichever is not
+  active). Still never LNbits' secrets, and a result is accepted only if it is
+  text, because about one wrong key in 256 passes the padding check.
+- **`reencrypt_legacy_rows` moves those rows under the active key** — a second
+  pass over `v2:` rows that open only through the other key, with the same three
+  rules (decrypts, read back and compared, conditional UPDATE). It reports
+  `rekeyed`.
+- **When two keys exist the log says so, naming both by fingerprint**, and says
+  to keep both until a pass has nothing left to move.
+
+**Do not delete `.silnt_enc_key_v1` the moment the env key works.** Delete it
+only after a pass has run with no `moved N row(s)` line, and after copying it
+aside regardless — a row that opens only through it is a row nothing else can
+read. With neither key able to open a `v2:` row it is counted as unreadable and
+left exactly as it is.
+
+`tests/test_sp_contacts.py` covers each of these against the real key code and
+a fake cipher and database: a key set only in `.env` is the active one; a real
+variable beats it; the parser handles quotes, `export`, comments and a last
+assignment; a row under the generated file key still opens after the env key
+takes over; a row under neither still raises; the migration moves exactly the
+file-key row and a second pass finds nothing. Reverting any one of the three
+fixes fails its own tests.
+
 ### Send, BitMail and Tango requests: four web reports (2026-11-13)
 
 **A BitMail from the SegWit side failed with "invalid bech32"** while the same

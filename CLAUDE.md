@@ -3292,6 +3292,53 @@ reports ten failures, including the reported symptom by name. Nothing in the
 build, `lint` or `check:vue` could see any of it — stale state in a module
 scope is not a syntax error, an undefined identifier, or visibly wrong.
 
+### Matching can run out of process, and the service never gets the last word
+
+Added 2026-11-14, on the user's request to try it on signet. The curve work that
+decides which outputs are ours can be done by **whispa-matcher**, a separate
+Rust service (its own repo), instead of the in-process Python matchers.
+`helpers/rust_matcher.py` is the siLNt side; `scan.py` dispatches through
+`_match_jobs`. **Off unless `SILNT_RUST_MATCHER_NETWORKS` names a network**, and
+a network not named is untouched — the intended order is signet, then mainnet.
+
+Why it exists is a measurement, not a hunch: the in-process pool is
+`max_workers=1`, and widening it made matching about **4x slower** (GIL
+contention), so the only way to use more than one core is another process. The
+Rust service is ~2x faster per core and scales with `MATCHER_WORKERS`.
+
+Rules, each a bug if it goes:
+
+- **The service is one more source of results, never the only one.** Service
+  down, non-200, a response whose heights do not line up with the request, an
+  error on one block, a label index nobody asked about: **that block is matched
+  in Python.** The failure to keep out is "I could not tell" becoming "nothing
+  here" — a block reported empty is a payment that stays invisible *and* a
+  resume point that moves past it. `test_rust_matcher.py` breaks each of these
+  on purpose and the matching test fails.
+- **`shadow` is the default and the way to earn trust.** Python's answer is what
+  the scan stores; the service is asked the same question and compared, and a
+  difference is an `ERROR` log line (`RUST MATCHER MISMATCH`) plus a counter in
+  the `Scan timing` line. Nothing the service says can change a balance in
+  shadow mode. `active` is a deliberate second step, after a clean signet run.
+- **A whole range batch is one request.** That is what gives it parallelism;
+  `match_range_batch` collects its blocks into one `_match_jobs` call for
+  that reason. In-process the same call runs them one after another, exactly as
+  before.
+- **The scan secret goes in every request.** It is the scan key (detects, cannot
+  spend) that background scanning already holds, but it is still on a wire, so a
+  plain-http URL to a host that is not loopback or private is refused unless
+  `SILNT_RUST_MATCHER_ALLOW_REMOTE_HTTP` says otherwise. Nothing logs a body,
+  the token or the secret, and a test captures the log to check.
+- **Settings are read through `silnt_env` and re-read every 30 seconds**, unlike
+  the other `SILNT_SCAN_*` settings (read once at import), so the flag can be
+  flipped without a restart. That is on purpose: it is what makes it practical
+  to try, and to switch off in a hurry.
+
+The Rust side is held to the Python by `tests/fixtures/parity.json`, generated
+from the real `helpers/scan.py`. **If matching in `scan.py` changes, regenerate
+it** (`scripts/gen_fixtures.py` in whispa-matcher) or the two will drift and the
+only thing that notices is shadow mode.
+
 `lint` is two rules, not a style pass: `react-hooks/exhaustive-deps` and
 `rules-of-hooks`. It had no config at all until 2026-09-24 and so had never
 run — which is how a `useCallback` that read `network` without listing it

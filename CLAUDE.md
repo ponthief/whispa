@@ -329,8 +329,8 @@ Added 2026-11-15, asked for as *"run whispa-matcher as the system service… and
 add it next to Fulcrum/Blindbit so that Admin can configure it and monitor the
 status"*. The service itself is its own repo; this is the other end of it.
 
-`AdminView.vue` has a **Rust matcher (scanning)** card between Fulcrum and
-System Settings: status (up, version, latency, mode, networks, **whether the
+`AdminView.vue` has a **Rust matcher (scanning)** card on the Infra page, between
+Fulcrum and the Connections form: status (up, version, latency, mode, networks, **whether the
 service accepts the token**), running totals (answered / fell back /
 **mismatched** / last problem) and the settings. Mode is ONE select — Off,
 Shadow, Active — because a switch plus a mode can be left on over the wrong one,
@@ -352,6 +352,30 @@ Things the card must keep doing, each of which looks fine when broken:
 The helper under the select says to run Shadow until a signet scan shows zero
 mismatches before switching to Active, and that sentence is why Shadow is the
 default; do not cut it as redundant.
+
+### System Settings is six pages, not one
+
+Asked for 2026-11-15 (*"System Settings is rather long.. can you build nested
+pages from there: Infra, Configs, Tango, Bitmail, Notifications, Cloudflare"*).
+`AdminView.vue` is still ONE component with one `config`, and a route param
+(`/:section?`, closed on the six names) chooses what shows, under a tab strip.
+Why not six views: every section reads and writes the same `config` and one
+`saveConfig` saves all of it, so separate views would only mean passing state
+around. Why a param on the same route record: moving between sections reuses the
+page, so the health timers do not restart and nothing remounts.
+
+- **Infra** — BlindBit, Fulcrum and the matcher status, and the Connections
+  form (BlindBit, Mempool, Explorer, Boltz, Fulcrum). **Configs** — scanning and
+  privacy defaults, and the API reference. **Tango** — the change-to-Lightning
+  settings and the payout ledger. **BitMail** — the DNS setup (hidden when
+  BitMail is off). **Notifications** — ntfy. **Cloudflare** — the sign-up
+  Turnstile check.
+- **Each form has its own Save button, and every one saves the whole `config`.**
+  An unsaved edit on a page you left stays in the form; it is not lost, and it is
+  not saved until a Save is pressed on any page.
+- The route pattern must stay closed: an open `:section` would swallow
+  `/requests` and `/accounts`.
+- `/` is Infra, so an old bookmark keeps working.
 
 ## Stealth mode hides an icon, not an app
 

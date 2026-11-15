@@ -63,7 +63,11 @@ const userRoutes = [
 
 // Admin-portal routes — only present in the admin build (admin.thrilla.me).
 const adminRoutes = [
-  { path: '/', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { admin: true } },
+  // One route record for every section of System Settings, so moving between
+  // them reuses the page instead of remounting it. The pattern is closed on the
+  // section names: an open `:section` would swallow /requests and /accounts.
+  { path: '/:section(infra|configs|tango|bitmail|notifications|cloudflare)?', name: 'admin',
+    component: () => import('@/views/AdminView.vue'), meta: { admin: true } },
   { path: '/requests', name: 'bitmail-requests', component: () => import('@/views/BitMailRequestsView.vue'), meta: { admin: true } },
   { path: '/accounts', name: 'accounts', component: () => import('@/views/AccountsView.vue'), meta: { admin: true } },
   // The admin operates their own account too — let them manage their own trusted

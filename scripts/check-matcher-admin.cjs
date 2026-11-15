@@ -35,7 +35,7 @@ need(/checkMatcherHealth\(\)\s*\n\s*mhealthTimer/.test(view), 'it is checked as 
 need(/nothing missed/.test(view) && /matching in-process meanwhile/.test(view), 'a down or refused matcher says scans still work')
 need(/mhealth\.enabled && !mhealth\.ok/.test(view), 'it is red only when it is switched on')
 need(/Use environment settings/.test(view) && /forgetMatcher/.test(view), 'there is a way back to the environment settings')
-need(view.indexOf('Rust matcher (scanning)') > view.indexOf('Fulcrum (PayJoin)') && view.indexOf('Rust matcher (scanning)') < view.indexOf('System Settings'),
-     'the card sits after Fulcrum and before System Settings')
+need(view.indexOf('Rust matcher (scanning)') > view.indexOf('Fulcrum (PayJoin)') && view.indexOf('Rust matcher (scanning)') < view.indexOf('<h2>Connections</h2>'),
+     'the card sits after Fulcrum and before the Connections form, on the Infra page')
 if (bad) { console.error(`\n${bad} check(s) failed`); process.exit(1) }
 console.log('\nall checks passed — the matcher card keeps its token write-only and its states honest')

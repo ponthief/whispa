@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
@@ -10,6 +10,25 @@ const BITMAIL_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
 const auth   = useAuthStore()
 const router = useRouter()
+const route  = useRoute()
+
+// The admin's pages (see the nav in the template). `infra` is the default, so
+// the bare path still lands somewhere and an old bookmark of / keeps working.
+const sections = [
+  { key: 'infra',         label: 'Infra' },
+  { key: 'configs',       label: 'Configs' },
+  { key: 'tango',         label: 'Tango' },
+  { key: 'bitmail',       label: 'BitMail' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'cloudflare',    label: 'Cloudflare' },
+]
+// BitMail's only page is the DNS setup, which a build with BitMail off does not
+// have: a tab onto an empty page is a dead control.
+const visibleSections = computed(() => sections.filter(s => s.key !== 'bitmail' || BITMAIL_ENABLED))
+const section = computed(() => {
+  const k = route.params.section
+  return visibleSections.value.some(s => s.key === k) ? k : 'infra'
+})
 
 const isAdmin   = ref(false)
 const meLoading = ref(true)
@@ -505,6 +524,9 @@ async function testNtfy() {
   finally { ntfyTesting.value = false }
 }
 
+// A refusal or a "Saved." belongs to the page it appeared on.
+watch(section, () => { error.value = null; saved.value = false })
+
 function fmtDate(ts) { return new Date(ts * 1000).toLocaleString() }
 
 onMounted(async () => {
@@ -541,6 +563,20 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else-if="isAdmin">
+        <!-- The admin's pages. One component and one set of state, with a route
+             param choosing between them: every section reads and writes the
+             same `config`, so separate views would only mean passing it around.
+             The same route record serves all of them, so moving between
+             sections does not remount the page and the health timers keep
+             running. -->
+        <nav class="admin-tabs" aria-label="System settings sections">
+          <router-link v-for="s in visibleSections" :key="s.key"
+                       :to="s.key === 'infra' ? { name: 'admin' } : { name: 'admin', params: { section: s.key } }"
+                       class="admin-tab" :class="{ active: section === s.key }">
+            <BrandText :text="s.label" />
+          </router-link>
+        </nav>
+
         <!-- Security alerts (e.g. BitMail tampering) -->
         <div v-if="alerts.length" class="card" style="margin-bottom:16px;border:1px solid var(--red)">
           <div class="card-header"><h2 style="color:#ff7b72">⚠ Security Alerts ({{ alerts.length }})</h2></div>
@@ -559,6 +595,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div v-if="section === 'infra'" class="admin-section">
         <!-- BlindBit Oracle health -->
         <div class="card" style="margin-bottom:16px"
              :style="health && health.ok && health.in_sync !== false ? '' : (health ? 'border:1px solid var(--red)' : '')">
@@ -736,9 +773,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- BlindBit Oracle / network -->
         <div class="card">
-          <div class="card-header"><h2>System Settings</h2></div>
+          <div class="card-header"><h2>Connections</h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <div class="field">
               <label>BlindBit Oracle URL</label>
@@ -784,6 +820,23 @@ onBeforeUnmount(() => {
                 <label for="fulcrum_tls" style="margin:0">Use TLS (e.g. port 50002)</label>
               </div>
             </div>
+
+            <div v-if="error" class="alert alert-error">⚠ {{ error }}</div>
+            <div v-if="saved" class="alert alert-success">✓ Saved.</div>
+            <div>
+              <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
+                <span v-if="saving" class="spinner" style="border-top-color:#000"></span>
+                {{ saving ? 'Saving…' : 'Save Connections' }}
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <div v-if="section === 'configs'" class="admin-section">
+        <div class="card">
+          <div class="card-header"><h2>Scanning &amp; privacy</h2></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <div class="field">
               <label>Minimum Scan Height</label>
               <input class="input" v-model.number="config.min_scan_height" type="number" min="0" />
@@ -806,6 +859,110 @@ onBeforeUnmount(() => {
               <input class="input" v-model.number="config.login_scan_auto_threshold" type="number" min="1" placeholder="432" style="max-width:160px;" />
               <span class="text-dim text-xs">Gaps smaller than this scan silently in the background; larger gaps ask the user first (avoids surprise long scans). 432 ≈ 3 days.</span>
             </div>
+
+            <div v-if="error" class="alert alert-error">⚠ {{ error }}</div>
+            <div v-if="saved" class="alert alert-success">✓ Saved.</div>
+            <div>
+              <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
+                <span v-if="saving" class="spinner" style="border-top-color:#000"></span>
+                {{ saving ? 'Saving…' : 'Save Settings' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── API reference ──────────────────────────────────────────── -->
+        <!-- Generated by the server from the router that answered the
+             request. A hand-kept endpoint list is wrong the first time
+             somebody adds a route and nobody notices, and a reference that is
+             quietly wrong is worse than none because it is believed.
+             Collapsed by default: an operator who came here to fix something
+             should not have to scroll 120 endpoints to reach the next card. -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <h2>API reference</h2>
+            <button class="btn btn-ghost btn-sm" @click="toggleApiDocs">
+              {{ apiDocsOpen ? '▴ Hide' : '▾ Show' }}
+            </button>
+          </div>
+          <div v-if="apiDocsOpen" class="card-body">
+            <div class="text-dim text-xs" style="margin-bottom:10px">
+              Read off the live router, so it matches what this server is
+              actually serving. Summaries are the first paragraph of each
+              endpoint's own docstring; request and response shapes are in
+              FastAPI's OpenAPI schema, which this does not repeat.
+            </div>
+
+            <div v-if="apiDocsError" class="alert alert-warn" style="margin-bottom:10px">
+              {{ apiDocsError }}
+              <button class="btn btn-ghost btn-sm" style="margin-left:8px"
+                      @click="loadApiDocs">Try again</button>
+            </div>
+            <div v-else-if="apiDocsLoading" class="text-dim text-sm">Loading…</div>
+
+            <template v-else-if="apiDocs">
+              <input class="input" v-model="apiDocsFilter" style="margin-bottom:10px"
+                     placeholder="Filter by path, function name, summary, or a method like POST" />
+              <div class="text-dim text-xs" style="margin-bottom:12px">
+                Showing {{ apiDocsShownCount }} of {{ apiDocs.count }} endpoint<span
+                  v-if="apiDocs.count !== 1">s</span>.
+              </div>
+
+              <div v-if="!apiDocsGroups.length" class="text-dim text-sm">
+                Nothing matches “{{ apiDocsFilter }}”.
+              </div>
+
+              <div v-for="g in apiDocsGroups" :key="g.group" style="margin-bottom:18px">
+                <h3 style="margin:0 0 6px">{{ g.title }}</h3>
+                <div v-for="r in g.routes" :key="r.method + r.path"
+                     class="api-route">
+                  <div class="api-route-head" @click="toggleApiRoute(r)">
+                    <!-- Spelled out rather than built with
+                         `'badge-' + r.method` on purpose: check:vue reads
+                         object-literal keys in a :class binding and cannot
+                         see a concatenated one, and an undefined class name
+                         here renders in the body colour without failing a
+                         build, a lint or a test. -->
+                    <span class="badge" :class="{
+                            'badge-get': r.method === 'GET',
+                            'badge-post': r.method === 'POST',
+                            'badge-put': r.method === 'PUT',
+                            'badge-patch': r.method === 'PATCH',
+                            'badge-delete': r.method === 'DELETE',
+                          }">
+                      {{ r.method }}
+                    </span>
+                    <span class="mono api-route-path">{{ r.path }}</span>
+                    <span v-for="a in r.auth" :key="a" class="badge badge-auth">{{ a }}</span>
+                  </div>
+                  <div v-if="r.summary" class="text-dim text-sm api-route-summary">
+                    {{ r.summary }}
+                  </div>
+                  <div v-else class="text-dim text-xs api-route-summary">
+                    <em>No description.</em>
+                  </div>
+                  <!-- The detail is the reasoning behind the endpoint, which
+                       is often several paragraphs. Behind a click, so the
+                       list stays a list. -->
+                  <template v-if="r.detail">
+                    <button class="btn btn-ghost btn-sm" style="margin-top:4px"
+                            @click="toggleApiRoute(r)">
+                      {{ apiDocsShown[apiRouteKey(r)] ? 'Less' : 'More' }}
+                    </button>
+                    <pre v-if="apiDocsShown[apiRouteKey(r)]"
+                         class="api-route-detail">{{ r.detail }}</pre>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+        </div>
+
+        <div v-if="section === 'tango'" class="admin-section">
+        <div class="card">
+          <div class="card-header"><h2>Tango settings</h2></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <!-- ── Tango change → Lightning ──────────────────────────── -->
             <!-- A round's change output is the strongest remaining
                  linkability problem in Tango: its value is fixed by the
@@ -963,7 +1120,7 @@ onBeforeUnmount(() => {
             <div>
               <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
                 <span v-if="saving" class="spinner" style="border-top-color:#000"></span>
-                {{ saving ? 'Saving…' : 'Save System Config' }}
+                {{ saving ? 'Saving…' : 'Save Tango Settings' }}
               </button>
             </div>
           </div>
@@ -1207,96 +1364,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-
-        <!-- ── API reference ──────────────────────────────────────────── -->
-        <!-- Generated by the server from the router that answered the
-             request. A hand-kept endpoint list is wrong the first time
-             somebody adds a route and nobody notices, and a reference that is
-             quietly wrong is worse than none because it is believed.
-             Collapsed by default: an operator who came here to fix something
-             should not have to scroll 120 endpoints to reach the next card. -->
-        <div class="card" style="margin-top:20px">
-          <div class="card-header">
-            <h2>API reference</h2>
-            <button class="btn btn-ghost btn-sm" @click="toggleApiDocs">
-              {{ apiDocsOpen ? '▴ Hide' : '▾ Show' }}
-            </button>
-          </div>
-          <div v-if="apiDocsOpen" class="card-body">
-            <div class="text-dim text-xs" style="margin-bottom:10px">
-              Read off the live router, so it matches what this server is
-              actually serving. Summaries are the first paragraph of each
-              endpoint's own docstring; request and response shapes are in
-              FastAPI's OpenAPI schema, which this does not repeat.
-            </div>
-
-            <div v-if="apiDocsError" class="alert alert-warn" style="margin-bottom:10px">
-              {{ apiDocsError }}
-              <button class="btn btn-ghost btn-sm" style="margin-left:8px"
-                      @click="loadApiDocs">Try again</button>
-            </div>
-            <div v-else-if="apiDocsLoading" class="text-dim text-sm">Loading…</div>
-
-            <template v-else-if="apiDocs">
-              <input class="input" v-model="apiDocsFilter" style="margin-bottom:10px"
-                     placeholder="Filter by path, function name, summary, or a method like POST" />
-              <div class="text-dim text-xs" style="margin-bottom:12px">
-                Showing {{ apiDocsShownCount }} of {{ apiDocs.count }} endpoint<span
-                  v-if="apiDocs.count !== 1">s</span>.
-              </div>
-
-              <div v-if="!apiDocsGroups.length" class="text-dim text-sm">
-                Nothing matches “{{ apiDocsFilter }}”.
-              </div>
-
-              <div v-for="g in apiDocsGroups" :key="g.group" style="margin-bottom:18px">
-                <h3 style="margin:0 0 6px">{{ g.title }}</h3>
-                <div v-for="r in g.routes" :key="r.method + r.path"
-                     class="api-route">
-                  <div class="api-route-head" @click="toggleApiRoute(r)">
-                    <!-- Spelled out rather than built with
-                         `'badge-' + r.method` on purpose: check:vue reads
-                         object-literal keys in a :class binding and cannot
-                         see a concatenated one, and an undefined class name
-                         here renders in the body colour without failing a
-                         build, a lint or a test. -->
-                    <span class="badge" :class="{
-                            'badge-get': r.method === 'GET',
-                            'badge-post': r.method === 'POST',
-                            'badge-put': r.method === 'PUT',
-                            'badge-patch': r.method === 'PATCH',
-                            'badge-delete': r.method === 'DELETE',
-                          }">
-                      {{ r.method }}
-                    </span>
-                    <span class="mono api-route-path">{{ r.path }}</span>
-                    <span v-for="a in r.auth" :key="a" class="badge badge-auth">{{ a }}</span>
-                  </div>
-                  <div v-if="r.summary" class="text-dim text-sm api-route-summary">
-                    {{ r.summary }}
-                  </div>
-                  <div v-else class="text-dim text-xs api-route-summary">
-                    <em>No description.</em>
-                  </div>
-                  <!-- The detail is the reasoning behind the endpoint, which
-                       is often several paragraphs. Behind a click, so the
-                       list stays a list. -->
-                  <template v-if="r.detail">
-                    <button class="btn btn-ghost btn-sm" style="margin-top:4px"
-                            @click="toggleApiRoute(r)">
-                      {{ apiDocsShown[apiRouteKey(r)] ? 'Less' : 'More' }}
-                    </button>
-                    <pre v-if="apiDocsShown[apiRouteKey(r)]"
-                         class="api-route-detail">{{ r.detail }}</pre>
-                  </template>
-                </div>
-              </div>
-            </template>
-          </div>
         </div>
 
+        <div v-if="section === 'bitmail' && BITMAIL_ENABLED" class="admin-section">
         <!-- Cloudflare — BitMail setup -->
-        <div v-if="BITMAIL_ENABLED" class="card" style="margin-top:20px">
+        <div v-if="BITMAIL_ENABLED" class="card">
           <div class="card-header"><h2><BrandText text="BitMail — DNS Setup (Cloudflare)" /></h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <p class="text-dim text-sm">Configure Cloudflare API access so approved BitMail addresses can be published automatically.</p>
@@ -1335,9 +1407,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+        </div>
 
+        <div v-if="section === 'notifications'" class="admin-section">
         <!-- Ntfy notifications -->
-        <div class="card" style="margin-top:20px">
+        <div class="card">
           <div class="card-header"><h2>Notifications (ntfy)</h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <p class="text-dim text-sm">Send admin notifications to <span class="mono">ntfy</span> topics. Subscribe to the same topic in the ntfy app or at your server to receive them.</p>
@@ -1406,9 +1480,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+        </div>
 
+        <div v-if="section === 'cloudflare'" class="admin-section">
         <!-- Turnstile: the bot check on the public signup form -->
-        <div class="card" style="margin-top:20px">
+        <div class="card">
           <div class="card-header"><h2>Sign-up bot check (Cloudflare Turnstile)</h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <p class="text-dim text-sm">
@@ -1472,6 +1548,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+        </div>
         </div>
 
       </template>
@@ -1540,4 +1617,30 @@ onBeforeUnmount(() => {
   word-break: break-word;
   color: var(--text-dim);
 }
+
+/* ── Section tabs ── */
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.admin-tab {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.admin-tab:hover { color: var(--text); }
+.admin-tab.active {
+  color: var(--orange, #f97316);
+  border-color: var(--orange, #f97316);
+  background: rgba(249, 115, 22, .08);
+}
+.admin-section { display: flex; flex-direction: column; gap: 20px; }
 </style>

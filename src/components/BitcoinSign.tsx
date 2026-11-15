@@ -18,14 +18,19 @@ interface Props {
   // Stroke weight relative to the glyph, so it can be made to sit convincingly
   // beside bold or regular text.
   weight?: number;
+  // Cropped to the strokes instead of the full 24-unit square, for use INSIDE a
+  // word. The square has about a quarter of its width as padding on each side,
+  // which is right beside a number and wrong between letters: "BitMail" read as
+  // "B itMail". Same four paths; only the window onto them narrows.
+  tight?: boolean;
 }
 
-export default function BitcoinSign({ size = 24, color, weight = 2.1 }: Props) {
+export default function BitcoinSign({ size = 24, color, weight = 2.1, tight = false }: Props) {
   return (
     <Svg
-      width={size}
+      width={tight ? (size * 16) / 24 : size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox={tight ? '4.5 0 16 24' : '0 0 24 24'}
       fill="none"
       stroke={color}
       strokeWidth={weight}

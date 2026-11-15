@@ -12,6 +12,7 @@ import { useAuthStore } from '@stores/authStore';
 import { useBitmailAlert } from '@stores/bitmailAlert';
 import * as api from '@services/api';
 import { colors } from '@/theme';
+import BrandText from './BrandText';
 
 const PRIMARY = colors.primary;
 // Mirror the backend rules (models.py): 3–20 chars, lowercase letters/digits/-/_,
@@ -163,7 +164,7 @@ export default function BitMailCard({ wallet }: Props) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>BitMail (BIP-353)</Text>
+      <BrandText style={styles.title} text="BitMail (BIP-353)" />
 
       {tampered ? (
         <View style={styles.tamper}>
@@ -252,7 +253,7 @@ export default function BitMailCard({ wallet }: Props) {
                 {busy ? (
                   <ActivityIndicator color={colors.onPrimary} />
                 ) : (
-                  <Text style={styles.primaryBtnText}>Request BitMail</Text>
+                  <BrandText style={styles.primaryBtnText} text="Request BitMail" />
                 )}
               </TouchableOpacity>
             );

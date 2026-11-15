@@ -2980,11 +2980,27 @@ and that is what is drawn** (the request said "two horizontal lines"; if the
 intent was something other than the sign people know as the Bitcoin logo, that is
 the thing to say).
 
-**Not done, and a decision rather than an omission:** the phone's BitMail name
-(`BitMailCard.tsx` and its screens) still says "BitMail" in letters. The request
-was about the web app, and the phone's sign is a drawing in a `<Svg>` that cannot
-sit inside a `<Text>` run the way the web's inline SVG does - doing it there is a
-layout piece of work, not a swap.
+**The phone does it too** (*"do the same for BitMail on the phone"*, the same day).
+`components/BrandText.tsx` draws the sign **inline inside a `<Text>`**, so a title
+that has to wrap still wraps as one run, and takes its size, colour and weight
+from the style it is given. It is used where the NAME is shown - the BitMail card
+title and its Request button, the wallet's tamper warning and its Copy label, and
+the Send screen's "Detected: BitMail" line - and not in prose, and **not in an
+`Alert`**, whose title is a string and cannot hold a component. The splitting rule
+is `services/brandText.ts` (pure, so `check:bitcoin` runs it) and the wrapper
+carries the plain name as its `accessibilityLabel`, because the drawn B has no
+letter in it and would be read aloud as "Bitcoin". Inside a word the sign is
+`BitcoinSign`'s **`tight`** window (`viewBox` `4.5 0 16 24`), the same four paths
+cropped to the strokes: the full square left "B itMail", as it did on the web.
+
+**KNOW WHAT WAS NOT SEEN.** This was typechecked, linted, run through
+`check:bitcoin`, and the cropped drawing was rendered in Chromium to confirm
+nothing clips - but it was NOT run on a device, and there is no React Native
+renderer in this environment. The one thing that can only be judged there is
+**baseline**: an inline view in a `<Text>` sits with its bottom on the text
+baseline, and the drawing has about 2.4 units of tail below the B's own baseline,
+so the sign may stand a touch high beside the letters. If it looks raised, the
+fix is a smaller size or a bottom offset in `BrandText`, not a different drawing.
 
 ## It is a native SegWit address, and calling it "Plain" said nothing
 

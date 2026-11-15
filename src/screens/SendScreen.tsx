@@ -58,6 +58,7 @@ import { sliderTop } from '@services/sendAmount';
 import { useScanProgress } from '@stores/scanProgress';
 import ContactsModal from '../components/ContactsModal';
 import ConfirmLockModal from '../components/ConfirmLockModal';
+import BrandText from '../components/BrandText';
 import {
   buildSignedTx,
   estimateVsize,
@@ -1397,7 +1398,7 @@ export default function SendScreen() {
           />
 
           {rKind ? (
-            <Text style={styles.kindHint}>Detected: {KIND_LABEL[rKind]}</Text>
+            <BrandText style={styles.kindHint} text={`Detected: ${KIND_LABEL[rKind]}`} />
           ) : null}
 
           {bitmailChecking ? (

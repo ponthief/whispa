@@ -37,6 +37,7 @@ import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
 import { MASK, useBalancePrivacy } from '@stores/balancePrivacy';
 import { useCatchUpScan } from '../hooks/useCatchUpScan';
+import BrandText from '../components/BrandText';
 
 // Falls back to the brand rather than to an empty header: Config is empty in a
 // plain `react-native start` session with no env file selected.
@@ -490,7 +491,7 @@ export default function WalletScreen() {
 
         {tamper ? (
           <View style={styles.tamperCard}>
-            <Text style={styles.tamperTitle}>⚠ BitMail tampering detected</Text>
+            <BrandText style={styles.tamperTitle} text="⚠ BitMail tampering detected" />
             <Text style={styles.tamperBody}>
               {tamper.bitmail} currently resolves to a different address than your
               wallet. Do not rely on it to receive — the DNS record may have been
@@ -825,7 +826,7 @@ function CardCopyButton({ value, label }: { value: string; label: string }) {
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => setCopied(false), 1500);
       }}>
-      <Text style={styles.backActionText}>{copied ? '✓ Copied' : label}</Text>
+      <BrandText style={styles.backActionText} text={copied ? '✓ Copied' : label} />
     </TouchableOpacity>
   );
 }

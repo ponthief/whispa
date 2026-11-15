@@ -32,7 +32,9 @@ ok('the web draws it as SVG paths', /<svg[\s\S]*<path /.test(web));
 ok('and from exactly the phone\'s paths',
   JSON.stringify(pathsOf(web)) === JSON.stringify(pathsOf(phone)) && pathsOf(web).length === 4,
   'two copies of one drawing: change both or neither');
-ok('and the same viewBox', /viewBox="0 0 24 24"/.test(web) && /viewBox="0 0 24 24"/.test(phone));
+ok('and the same viewBox',
+  /viewBox="0 0 24 24"/.test(web) && /'0 0 24 24'/.test(phone),
+  'the phone narrows the window only when asked to (`tight`); the default is the same square');
 
 console.log('\nnothing types the character');
 const offenders = [];
@@ -67,5 +69,42 @@ const bm = strip(read('src/views/BitMailView.vue'));
 ok('the BitMail page heading is drawn through BrandText',
   /<h1><BrandText text="BitMail" \/><\/h1>/.test(bm));
 
-console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed — one drawing, never typed, and BitMail starts with it');
-process.exit(failures ? 1 : 0);
+console.log('\nthe phone draws BitMail the same way');
+{
+  const bt = strip(read('src/components/BrandText.tsx'));
+  ok('BrandText draws the sign inline and keeps the rest of the word',
+    /<BitcoinSign[\s\S]*tight/.test(bt) && /BRAND_REST/.test(bt) && /splitBrand\(text\)/.test(bt));
+  ok('and gives the wrapper the plain name to read aloud',
+    /accessibilityLabel=\{text\}/.test(bt),
+    'the drawn B has no letter in it');
+  ok('the sign is cropped to its strokes inside a word',
+    /tight \? '4\.5 0 16 24'/.test(strip(phone)),
+    'the full square leaves "B itMail"');
+  const uses = {
+    'src/components/BitMailCard.tsx': ['text="BitMail (BIP-353)"', 'text="Request BitMail"'],
+    'src/screens/WalletScreen.tsx': ['text="⚠ BitMail tampering detected"', 'text={copied ?'],
+    'src/screens/SendScreen.tsx': ['text={`Detected: ${KIND_LABEL[rKind]}`}'],
+  };
+  for (const [file, needles] of Object.entries(uses)) {
+    const src = strip(read(file));
+    ok(`${file.split('/').pop()} shows the name through BrandText`,
+      /import BrandText from/.test(src) && needles.every((n) => src.includes(n)));
+  }
+}
+
+console.log('\nthe split rule, run');
+const finish = (code) => process.exit(code);
+import('../src/services/brandText.ts').then(({ splitBrand }) => {
+  const rebuild = (parts) => parts.map((p) => ('name' in p ? 'BitMail' : p.t)).join('');
+  const cases = ['Request BitMail', 'BitMail Requests', 'No name here', 'BitMail and BitMail', '⚠ BitMail tampering detected', 'Detected: BitMail', ''];
+  ok('every string is reproduced exactly, with the name standing where it was',
+    cases.every((c) => rebuild(splitBrand(c)) === c));
+  ok('only the name is replaced', splitBrand('Request BitMail').length === 2 &&
+    splitBrand('Request BitMail')[1].name === true && splitBrand('Request BitMail')[0].t === 'Request ');
+  ok('two names are two replacements', splitBrand('BitMail and BitMail').filter((p) => p.name).length === 2);
+  ok('a string without it is untouched', splitBrand('No name here').length === 1 && !('name' in splitBrand('No name here')[0]));
+  ok('and it is case-sensitive, like the name', !splitBrand('bitmail').some((p) => p.name));
+  ok('an empty string gives no parts', splitBrand('').length === 0);
+  console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed — one drawing, never typed, and BitMail starts with it');
+  finish(failures ? 1 : 0);
+}).catch((e) => { console.log('  FAIL could not load services/brandText.ts — ' + e.message); finish(1); });

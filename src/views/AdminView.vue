@@ -236,6 +236,97 @@ function fhealthAgeText() {
   return `${Math.round(secs / 60)}m ago`
 }
 
+// ── whispa-matcher (out-of-process matching) ───────────────────────────────
+// Health is "enabled AND reachable AND the token is accepted". A matcher that is
+// switched off is not an outage, and a matcher that is down costs speed rather
+// than correctness (a block the service cannot answer is matched in-process),
+// which the status line says so nobody reads a red card as lost payments.
+const mhealth = ref(null)
+const mhealthCheckedAt = ref(null)
+const mhealthLoading = ref(false)
+let mhealthTimer = null
+
+async function checkMatcherHealth() {
+  mhealthLoading.value = true
+  try {
+    mhealth.value = await api.getMatcherHealth(auth.adminkey)
+  } catch (e) {
+    mhealth.value = { enabled: true, ok: false, reachable: false, token_ok: null,
+                      error: 'Could not reach the health endpoint.', stats: null }
+  } finally {
+    mhealthCheckedAt.value = new Date()
+    mhealthLoading.value = false
+  }
+}
+
+function mhealthAgeText() {
+  if (!mhealthCheckedAt.value) return ''
+  const secs = Math.round((Date.now() - mhealthCheckedAt.value.getTime()) / 1000)
+  if (secs < 60) return `${secs}s ago`
+  return `${Math.round(secs / 60)}m ago`
+}
+
+function fmtAgo(ts) {
+  if (!ts) return ''
+  const secs = Math.max(0, Math.round(Date.now() / 1000 - ts))
+  if (secs < 60) return `${secs}s ago`
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.round(secs / 3600)}h ago`
+  return `${Math.round(secs / 86400)}d ago`
+}
+
+// One select instead of an on/off switch plus a mode: "off" and "shadow" are not
+// two independent facts, and a switch left on over the wrong mode is the way a
+// service that was meant to be compared against ends up deciding.
+const matcher = ref({ state: 'off', networks: 'signet', url: 'http://127.0.0.1:8787', token: '', timeout: 120 })
+const matcherTokenSet = ref(false)
+const matcherConfigured = ref(false)
+const matcherSource = ref('environment')
+const matcherSaving = ref(false)
+const matcherSaved = ref(false)
+const matcherError = ref(null)
+
+function applyMatcherConfig(c) {
+  matcherConfigured.value = !!c.configured
+  matcherSource.value = c.source || 'environment'
+  matcherTokenSet.value = !!c.token_set
+  if (c.configured) {
+    matcher.value.state = !c.enabled ? 'off' : (c.mode === 'active' ? 'active' : 'shadow')
+    matcher.value.networks = c.networks || 'signet'
+    matcher.value.url = c.url || 'http://127.0.0.1:8787'
+    matcher.value.timeout = c.timeout || 120
+  }
+  matcher.value.token = ''
+}
+
+async function saveMatcher() {
+  matcherSaving.value = true; matcherError.value = null; matcherSaved.value = false
+  try {
+    const res = await api.updateMatcherConfig(auth.adminkey, {
+      enabled: matcher.value.state !== 'off',
+      mode: matcher.value.state === 'active' ? 'active' : 'shadow',
+      networks: matcher.value.networks,
+      url: matcher.value.url,
+      token: matcher.value.token,
+      timeout: Number(matcher.value.timeout) || 120,
+    })
+    applyMatcherConfig(res)
+    matcherSaved.value = true
+    setTimeout(() => matcherSaved.value = false, 3000)
+    checkMatcherHealth()
+  } catch (e) { matcherError.value = e.detail || e.message }
+  finally { matcherSaving.value = false }
+}
+
+async function forgetMatcher() {
+  matcherSaving.value = true; matcherError.value = null; matcherSaved.value = false
+  try {
+    applyMatcherConfig(await api.forgetMatcherConfig(auth.adminkey))
+    checkMatcherHealth()
+  } catch (e) { matcherError.value = e.detail || e.message }
+  finally { matcherSaving.value = false }
+}
+
 async function loadMe() {
   try {
     const me = await api.getMe(auth.inkey)
@@ -264,6 +355,7 @@ async function loadConfig() {
       try { cfConfig.value = await api.getCloudflareConfig(auth.adminkey) } catch { /* may be unset */ }
     }
     try { ntfy.value = await api.getNtfyConfig(auth.adminkey) } catch { /* may be unset */ }
+    try { applyMatcherConfig(await api.getMatcherConfig(auth.adminkey)) } catch { /* older backend */ }
     try {
       const ts = await api.getTurnstileConfig(auth.adminkey)
       turnstile.value.site_key = ts.site_key || ''
@@ -423,12 +515,15 @@ onMounted(async () => {
   healthTimer = setInterval(checkHealth, 60000)
   checkFulcrumHealth()
   fhealthTimer = setInterval(checkFulcrumHealth, 60000)
+  checkMatcherHealth()
+  mhealthTimer = setInterval(checkMatcherHealth, 60000)
   loadAlerts()
   alertsTimer = setInterval(loadAlerts, 60000)
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
   if (fhealthTimer) clearInterval(fhealthTimer)
+  if (mhealthTimer) clearInterval(mhealthTimer)
   if (alertsTimer) clearInterval(alertsTimer)
 })
 </script>
@@ -538,6 +633,105 @@ onBeforeUnmount(() => {
             <div class="text-dim text-xs" style="display:flex;gap:14px;flex-wrap:wrap">
               <span v-if="fhealthCheckedAt">Last checked: {{ fhealthAgeText() }}</span>
               <span>Auto-checks every 60s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- whispa-matcher: out-of-process BIP-352 matching -->
+        <div class="card" :style="mhealth && mhealth.enabled && !mhealth.ok ? 'border:1px solid var(--red)' : ''">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <h2>Rust matcher (scanning)</h2>
+            <button class="btn btn-ghost btn-sm" :disabled="mhealthLoading" @click="checkMatcherHealth">
+              {{ mhealthLoading ? 'Checking…' : '↻ Check now' }}
+            </button>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+            <div v-if="mhealth && !mhealth.enabled" class="alert alert-info" style="margin:0">
+              <strong>Off.</strong> Matching runs in-process.
+              <span v-if="mhealth.source === 'environment'">Not set from this page, so the server's environment settings apply.</span>
+            </div>
+            <div v-else-if="mhealth && mhealth.reachable && mhealth.token_ok === false" class="alert alert-error" style="margin:0">
+              ✕ <strong>The service is there but refused the token.</strong>
+              Enter the token again below. Scans are matching in-process meanwhile.
+            </div>
+            <div v-else-if="mhealth && !mhealth.ok" class="alert alert-error" style="margin:0">
+              ✕ <strong>Matcher unreachable.</strong> ({{ mhealth.error || 'no response from the service' }})
+              Scans match in-process meanwhile: slower, nothing missed.
+            </div>
+            <div v-else-if="mhealth && mhealth.ok" class="alert alert-success" style="margin:0">
+              ✓ <strong>Matcher is up</strong>
+              <span v-if="mhealth.version"> · v{{ mhealth.version }}</span>
+              <span v-if="mhealth.latency_ms != null"> · {{ mhealth.latency_ms }} ms</span>
+              · <strong>{{ mhealth.mode }}</strong>
+              <span v-if="mhealth.mode === 'shadow'"> (compared only; Python decides)</span>
+              <span v-else> (the service decides; Python is the fallback)</span>
+              · {{ (mhealth.networks || []).join(', ') }}
+            </div>
+            <div v-else class="text-dim text-sm">Checking matcher status…</div>
+
+            <div v-if="mhealth && mhealth.stats && (mhealth.stats.blocks || mhealth.stats.fallbacks || mhealth.stats.mismatches)"
+                 class="text-sm" style="display:flex;gap:16px;flex-wrap:wrap">
+              <span><strong>{{ mhealth.stats.blocks }}</strong> blocks answered</span>
+              <span><strong>{{ mhealth.stats.fallbacks }}</strong> fell back to in-process</span>
+              <span :class="mhealth.stats.mismatches ? 'text-error' : ''">
+                <strong>{{ mhealth.stats.mismatches }}</strong> mismatched<span v-if="mhealth.stats.mismatches"> — see the log (RUST MATCHER MISMATCH)</span>
+              </span>
+            </div>
+            <div v-if="mhealth && mhealth.stats && mhealth.stats.last_error" class="text-dim text-xs">
+              Last problem: {{ mhealth.stats.last_error }} ({{ fmtAgo(mhealth.stats.last_error_at) }})
+            </div>
+            <div class="text-dim text-xs" style="display:flex;gap:14px;flex-wrap:wrap">
+              <span v-if="mhealthCheckedAt">Last checked: {{ mhealthAgeText() }}</span>
+              <span>Auto-checks every 60s</span>
+              <span v-if="mhealth && mhealth.stats">Totals since the last restart</span>
+            </div>
+
+            <div class="field">
+              <label>Mode</label>
+              <select class="input" v-model="matcher.state" style="max-width:360px">
+                <option value="off">Off — match in-process</option>
+                <option value="shadow">Shadow — compare only, Python decides</option>
+                <option value="active">Active — the service decides</option>
+              </select>
+              <span class="text-dim text-xs">
+                Run Shadow until a signet scan shows zero mismatched, then switch to Active.
+                Whatever the service cannot answer is matched in-process either way.
+              </span>
+            </div>
+            <div class="field">
+              <label>Networks</label>
+              <input class="input" v-model="matcher.networks" placeholder="signet" spellcheck="false" autocomplete="off" />
+              <span class="text-dim text-xs"><span class="mono">signet</span>, <span class="mono">signet,mainnet</span> or <span class="mono">all</span>. A network not named is untouched.</span>
+            </div>
+            <div class="field">
+              <label>Service URL</label>
+              <input class="input" v-model="matcher.url" placeholder="http://127.0.0.1:8787" spellcheck="false" autocomplete="off" />
+              <span class="text-dim text-xs">Keep it on this machine or a private network: the scan secret is in every request.</span>
+            </div>
+            <div class="field">
+              <label>Token</label>
+              <input class="input" type="password" v-model="matcher.token" autocomplete="new-password" spellcheck="false"
+                     :placeholder="matcherTokenSet ? '•••••••• (saved — leave blank to keep)' : 'the service\'s MATCHER_TOKEN'" />
+              <span class="text-dim text-xs">
+                Write-only. On the server: <span class="mono">sudo deploy/install-service.sh show-token</span>.
+                Save <span class="mono">-</span> to clear it.
+              </span>
+            </div>
+            <div class="field">
+              <label>Request timeout (seconds)</label>
+              <input class="input" type="number" min="1" max="600" v-model="matcher.timeout" style="max-width:140px" />
+            </div>
+
+            <div v-if="matcherError" class="alert alert-error">⚠ {{ matcherError }}</div>
+            <div v-if="matcherSaved" class="alert alert-success">✓ Matcher settings saved.</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-primary" :disabled="matcherSaving" @click="saveMatcher">
+                <span v-if="matcherSaving" class="spinner" style="border-top-color:#000"></span>
+                {{ matcherSaving ? 'Saving…' : 'Save Matcher Settings' }}
+              </button>
+              <button v-if="matcherConfigured" class="btn btn-ghost" :disabled="matcherSaving" @click="forgetMatcher">
+                Use environment settings
+              </button>
             </div>
           </div>
         </div>

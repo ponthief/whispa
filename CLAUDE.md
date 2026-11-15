@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:matcher       # the matcher card: token write-only, one mode choice, honest states
 npm run check:bitcoin       # the Bitcoin sign is drawn from one set of paths, never typed, and BitMail starts with it
 npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
@@ -321,6 +322,36 @@ The app lock is the ONLY thing in the wallet written with an `accessControl`,
 so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
+
+## The matcher is switched and watched from the admin page
+
+Added 2026-11-15, asked for as *"run whispa-matcher as the system service… and
+add it next to Fulcrum/Blindbit so that Admin can configure it and monitor the
+status"*. The service itself is its own repo; this is the other end of it.
+
+`AdminView.vue` has a **Rust matcher (scanning)** card between Fulcrum and
+System Settings: status (up, version, latency, mode, networks, **whether the
+service accepts the token**), running totals (answered / fell back /
+**mismatched** / last problem) and the settings. Mode is ONE select — Off,
+Shadow, Active — because a switch plus a mode can be left on over the wrong one,
+and Active is the setting where the service, not Python, decides what is stored.
+
+Things the card must keep doing, each of which looks fine when broken:
+
+- **The page is the authority once it has saved** and `SILNT_RUST_MATCHER_*` is
+  then not read, *off* included; "Use environment settings" gives the decision
+  back. The backend is the owner of that rule (siLNt `helpers/rust_matcher.py`).
+- **The token is write-only**: a password field, emptied after every load and
+  save, a `token_set` flag in place of the value. `check:matcher` refuses a copy
+  from the server into the field.
+- **A down or refused matcher says scans carry on.** The service can only ever
+  ADD an answer source; a red card that reads as missing payments is false.
+  Red only when it is switched on — off is not an outage.
+- The status poll is cleared on unmount with the other two.
+
+The helper under the select says to run Shadow until a signet scan shows zero
+mismatches before switching to Active, and that sentence is why Shadow is the
+default; do not cut it as redundant.
 
 ## Stealth mode hides an icon, not an app
 

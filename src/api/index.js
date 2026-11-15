@@ -366,6 +366,23 @@ export async function getFulcrumHealth(adminkey, network = undefined) {
   return req(`${SILNT}/api/v1/admin/fulcrum/health${_cfgQs(network)}`, { headers: keyHeaders(adminkey) })
 }
 
+// whispa-matcher (out-of-process BIP-352 matching). The GET answers with
+// `token_set` and never the token, which is write-only like Turnstile's secret.
+export async function getMatcherConfig(adminkey) {
+  return req(`${SILNT}/api/v1/admin/matcher/config`, { headers: keyHeaders(adminkey) })
+}
+export async function updateMatcherConfig(adminkey, data) {
+  return req(`${SILNT}/api/v1/admin/matcher/config`, {
+    method: 'PUT', headers: keyHeaders(adminkey), body: JSON.stringify(data),
+  })
+}
+export async function forgetMatcherConfig(adminkey) {
+  return req(`${SILNT}/api/v1/admin/matcher/config`, { method: 'DELETE', headers: keyHeaders(adminkey) })
+}
+export async function getMatcherHealth(adminkey) {
+  return req(`${SILNT}/api/v1/admin/matcher/health`, { headers: keyHeaders(adminkey) })
+}
+
 export async function getAdminAlerts(adminkey, includeAck = false) {
   const qs = includeAck ? '?include_acknowledged=true' : ''
   return req(`${SILNT}/api/v1/admin/alerts${qs}`, { headers: keyHeaders(adminkey) })

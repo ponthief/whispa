@@ -51,6 +51,7 @@
     "check:catchup": "node --import ./scripts/ts-resolve.mjs scripts/check-catchup.mjs",
     "check:vue": "node scripts/check-vue-imports.cjs",
     "check:admin": "node scripts/check-admin-payouts.cjs",
+    "check:matcher": "node scripts/check-matcher-admin.cjs",
     "check:bitcoin": "node scripts/check-bitcoin-sign.cjs",
     "check:lock": "node scripts/check-app-lock.cjs",
     "check:terms": "node scripts/check-terms.cjs",

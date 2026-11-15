@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:bitcoin       # the Bitcoin sign is drawn from one set of paths, never typed, and BitMail starts with it
 npm run check:lock          # unlocking asks every time
 npm run check:slider        # the Send amount slider sets an amount, and only an amount
 npm run check:plain         # a fresh plain address stays inside the gap limit
@@ -2944,6 +2945,46 @@ requires one and GitHub showed none.
 and Zapstore both read. Its changelog file is named for the **versionCode**
 (`major * 10000 + minor * 100 + patch`, so 0.5.0 is `500.txt`) — one named
 after the version string is silently ignored.
+
+## The Bitcoin sign is drawn, and BitMail starts with it
+
+Asked for 2026-11-15 (*"in web app there is not a single page with Bitcoin
+logo.. also make a changes to display for Bitmail so that B is Bitcoin logo"*).
+The phone already had it - the Wallet tab icon and the balance headline - and the
+web had nothing, so the web now has the same drawing:
+`components/BitcoinSign.vue` is `BitcoinSign.tsx`'s four paths, point for point.
+
+**DRAWN, NEVER TYPED.** U+20BF only reached Unicode in 2017, so a font that
+predates it renders an empty box; the phone drew it for exactly that reason on
+Android 6-7. An inline SVG is identical in every font and follows the text colour
+through `currentColor`. `check:bitcoin` fails if the web's paths differ from the
+phone's (two copies of one drawing will drift) and if any source file types the
+character outside a comment.
+
+It is on the **Wallet nav item** (both navs), beside the **wallet balance**, and
+in the **BitMail name**. The balance carries it **in sats only**: in USD it would
+sit beside a dollar figure and say the wrong thing.
+
+**BitMail is `components/BrandText.vue`**, which swaps the B of the name for the
+sign wherever the NAME is shown - the nav, page and card headings, the admin's
+BitMail Requests and DNS Setup titles. Not running prose: a drawn glyph in the
+middle of a sentence is noise, and the explanations still say "BitMail". Two
+details were found by looking: the sign has about a quarter of its width as
+padding each side, so inside a word it read as "B itMail" until it was pulled in
+(`.brand-btc`); and in the phone-width bottom nav the narrow label wrapped
+between the sign and "itMail", leaving a lone sign on one line, so the two are
+one `nowrap` unit.
+
+**The standard sign has two strokes through the stem, at the TOP and the BOTTOM,
+and that is what is drawn** (the request said "two horizontal lines"; if the
+intent was something other than the sign people know as the Bitcoin logo, that is
+the thing to say).
+
+**Not done, and a decision rather than an omission:** the phone's BitMail name
+(`BitMailCard.tsx` and its screens) still says "BitMail" in letters. The request
+was about the web app, and the phone's sign is a drawing in a `<Svg>` that cannot
+sit inside a `<Text>` run the way the web's inline SVG does - doing it there is a
+layout piece of work, not a swap.
 
 ## It is a native SegWit address, and calling it "Plain" said nothing
 

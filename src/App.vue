@@ -14,6 +14,8 @@ import { startTangoWatch, stopTangoWatch, tangoPending, tangoRequests } from '@/
 import { scanWatchWallets, scanStartedAt, clearScanWatch, notifyScanStarted } from '@/stores/scanwatch'
 import * as api from '@/api'
 import { onMounted, onBeforeUnmount, onErrorCaptured, ref, watch } from 'vue'
+import BitcoinSign from '@/components/BitcoinSign.vue'
+import BrandText from '@/components/BrandText.vue'
 
 const route  = useRoute()
 const router = useRouter()
@@ -56,7 +58,7 @@ const IS_ADMIN_BUILD = APP_ROLE === 'admin'
 const baseNav = [
   // Not "SP Wallet": the screen also holds the plain bech32 pocket, which is
   // deliberately not a Silent Payments address.
-  { name: 'wallets', label: 'Wallet',   icon: '◈' },
+  { name: 'wallets', label: 'Wallet',   icon: 'bitcoin' },
   { name: 'utxos',   label: 'Coins',    icon: '⬡' },
   { name: 'send',    label: 'Send',     icon: '↗' },
   ...(SWAP_ENABLED ? [{ name: 'swap', label: 'Swap ⚡', icon: '⇌' }] : []),
@@ -645,8 +647,8 @@ function logout() {
         <div class="nav-links">
           <router-link v-for="item in nav" :key="item.name" :to="{ name: item.name }"
             class="nav-link" :class="{ active: route.name === item.name }">
-            <span class="nav-icon">{{ item.icon }}</span>
-            <span>{{ item.label }}</span>
+            <span class="nav-icon"><BitcoinSign v-if="item.icon === 'bitcoin'" /><template v-else>{{ item.icon }}</template></span>
+            <span><BrandText :text="item.label" /></span>
             <span v-if="item.name === 'bitmail' && bitmailTampered" class="nav-alert-badge" title="BitMail tampering detected — open BitMail">⛔</span>
             <span v-if="item.name === 'payjoin' && payjoinPending > 0" class="nav-count-badge" :title="payjoinPending + ' PayJoin request(s) need your attention'">{{ payjoinPending }}</span>
             <span v-if="item.name === 'tango' && (tangoPending + tangoRequests) > 0" class="nav-count-badge" :title="(tangoPending + tangoRequests) + ' waiting on you in Tango'">{{ tangoPending + tangoRequests }}</span>
@@ -744,8 +746,8 @@ function logout() {
       <nav class="bottom-nav">
         <router-link v-for="item in nav" :key="item.name" :to="{ name: item.name }"
           class="bottom-nav-item" :class="{ active: route.name === item.name }">
-          <span class="bottom-nav-icon">{{ item.icon }}<span v-if="item.name === 'bitmail' && bitmailTampered" class="bottom-nav-alert-dot"></span><span v-if="item.name === 'payjoin' && payjoinPending > 0" class="bottom-nav-count">{{ payjoinPending }}</span><span v-if="item.name === 'tango' && (tangoPending + tangoRequests) > 0" class="bottom-nav-count">{{ tangoPending + tangoRequests }}</span></span>
-          <span class="bottom-nav-label">{{ item.label }}</span>
+          <span class="bottom-nav-icon"><BitcoinSign v-if="item.icon === 'bitcoin'" /><template v-else>{{ item.icon }}</template><span v-if="item.name === 'bitmail' && bitmailTampered" class="bottom-nav-alert-dot"></span><span v-if="item.name === 'payjoin' && payjoinPending > 0" class="bottom-nav-count">{{ payjoinPending }}</span><span v-if="item.name === 'tango' && (tangoPending + tangoRequests) > 0" class="bottom-nav-count">{{ tangoPending + tangoRequests }}</span></span>
+          <span class="bottom-nav-label"><BrandText :text="item.label" /></span>
         </router-link>
         <button class="bottom-nav-item bottom-nav-logout" @click="logout">
           <span class="bottom-nav-icon">⏻</span>

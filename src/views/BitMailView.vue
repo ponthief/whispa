@@ -5,6 +5,7 @@ import * as api from '@/api'
 import { pinBitmail, getPin, repin, verifyAgainstPin, normalizeSp, removePin } from '@/stores/bitmailpins'
 import { pushToast } from '@/stores/toasts'
 import { setBitmailTamper } from '@/stores/bitmailalert'
+import BrandText from '@/components/BrandText.vue'
 
 const auth    = useAuthStore()
 const address = ref('')
@@ -474,7 +475,7 @@ onBeforeUnmount(() => {
 <template>
   <div style="max-width:600px">
     <div style="margin-bottom:24px">
-      <h1>BitMail</h1>
+      <h1><BrandText text="BitMail" /></h1>
       <p class="text-dim text-sm" style="margin-top:2px">Send and receive using a simple email-style address instead of a long payment code</p>
     </div>
 
@@ -505,7 +506,7 @@ onBeforeUnmount(() => {
     <!-- Info box -->
     <div class="card" style="margin-top:20px">
       <div class="card-body">
-        <h3 style="margin-bottom:10px">What is BitMail?</h3>
+        <h3 style="margin-bottom:10px"><BrandText text="What is BitMail?" /></h3>
         <p class="text-dim text-sm" style="line-height:1.7">
           BitMail lets you receive Bitcoin at a memorable address that looks like an email — for example <span class="mono text-green">{{ exampleAddress() }}</span> — instead of sharing a long, hard-to-read payment code.
         </p>
@@ -513,7 +514,7 @@ onBeforeUnmount(() => {
     </div>
     <!-- Request Username card -->
     <div class="card" style="margin-top:20px">
-      <div class="card-header"><h2>Request a BitMail address</h2></div>
+      <div class="card-header"><h2><BrandText text="Request a BitMail address" /></h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
         <p class="text-dim text-sm" style="margin:0">
           Pick a memorable name and we'll set up a BitMail address like <strong>{{ exampleAddress() }}</strong> for your wallet. An administrator reviews each request, and once approved your address is ready to share.

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
+import BrandText from '@/components/BrandText.vue'
 
 const BITMAIL_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
@@ -1102,7 +1103,7 @@ onBeforeUnmount(() => {
 
         <!-- Cloudflare — BitMail setup -->
         <div v-if="BITMAIL_ENABLED" class="card" style="margin-top:20px">
-          <div class="card-header"><h2>BitMail — DNS Setup (Cloudflare)</h2></div>
+          <div class="card-header"><h2><BrandText text="BitMail — DNS Setup (Cloudflare)" /></h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
             <p class="text-dim text-sm">Configure Cloudflare API access so approved BitMail addresses can be published automatically.</p>
             <div class="field">

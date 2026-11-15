@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
+import BrandText from '@/components/BrandText.vue'
 
 const BITMAIL_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
@@ -132,7 +133,7 @@ onBeforeUnmount(() => {
   <div class="page-wrap">
     <div class="page-inner">
       <div class="page-header">
-        <h1>BitMail Requests</h1>
+        <h1><BrandText text="BitMail Requests" /></h1>
         <p class="text-dim text-sm" style="margin-top:2px">Review and approve or reject pending BitMail address requests</p>
       </div>
 

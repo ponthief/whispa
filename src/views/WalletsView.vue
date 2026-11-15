@@ -80,6 +80,8 @@ function openDust() {
 // Client-side Silent Payments derivation — the same module the mobile app uses,
 // verified byte-for-byte against the backend. Keeps the seed on this device.
 import { deriveSilentPayment, generateMnemonic, isValidMnemonic, validateNewWalletPassphrase } from '@/services/spKeys'
+import BitcoinSign from '@/components/BitcoinSign.vue'
+import BrandText from '@/components/BrandText.vue'
 
 // Build-time flags injected from .env (e.g. .env.signet)
 const NETWORK_LOCK   = import.meta.env.VITE_NETWORK_LOCK   || null
@@ -116,7 +118,7 @@ async function loadMinScanHeight() {
 const router = useRouter()
 const route = useRoute()
 const auth   = useAuthStore()
-const { fmt } = useAmount()
+const { fmt, units } = useAmount()
 
 const wallets  = ref([])
 const loading  = ref(true)
@@ -820,7 +822,12 @@ watch(swapCompletedAt, () => {
                  that exists to say which coins you hold. See the note on the
                  split in CLAUDE.md for what that gives up. -->
             <div class="balance-badge">
-              <span class="text-orange mono" style="font-size:18px;font-weight:600">{{ fmt((w.balance ?? 0) + segwitSats(w.id)) }}</span>
+              <!-- THE SIGN BESIDE THE BALANCE, as on the phone's headline.
+                   Sats only: in USD it would sit next to a dollar figure and
+                   say the wrong thing. -->
+              <span class="text-orange mono" style="font-size:18px;font-weight:600">
+                <BitcoinSign v-if="units.unit === 'sats'" size="1.05em" :weight="2.4" style="margin-right:4px" />{{ fmt((w.balance ?? 0) + segwitSats(w.id)) }}
+              </span>
             </div>
           </div>
 
@@ -1216,7 +1223,7 @@ watch(swapCompletedAt, () => {
     <div v-if="BIP353_ENABLED && showBip353Setup && bip353Target" class="modal-overlay" @click.self="showBip353Setup = false">
       <div class="card modal" style="max-width:420px">
         <div class="card-header">
-          <h2>Set up BitMail Address</h2>
+          <h2><BrandText text="Set up BitMail Address" /></h2>
           <button class="btn btn-ghost btn-sm btn-icon" @click="showBip353Setup = false">✕</button>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
@@ -1267,7 +1274,7 @@ watch(swapCompletedAt, () => {
       <div class="card modal" style="max-width:380px">
         <div class="card-body" style="text-align:center">
           <div style="font-size:28px;margin-bottom:12px">⌖</div>
-          <h2 style="margin-bottom:8px">Remove BitMail Address?</h2>
+          <h2 style="margin-bottom:8px"><BrandText text="Remove BitMail Address?" /></h2>
           <p class="text-dim text-sm" style="margin-bottom:12px">This deletes the DNS TXT record. Senders will no longer be able to reach this wallet via its BitMail address. Your wallet and funds are unaffected.</p>
           <div class="mono text-orange" style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;margin-bottom:16px">
             {{ bip353Target.hr_address }}

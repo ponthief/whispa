@@ -40,6 +40,10 @@ const isOn = computed(() => !!(status.value && status.value.enabled))
 // what lets the toggle ask for a code rather than start over.
 const hasApp = computed(() => !!(status.value && status.value.totp))
 const reenable = ref(false)
+// The code on screen is for the NEW app that "Use a different app" started,
+// not the confirmed one. Sent with the confirm so the server checks the right
+// secret — it holds both while 2FA is off.
+const replacing = ref(false)
 
 // The switch on the Account card opens this dialog, and the dialog goes
 // straight to the step that switch would take. Off → start setup (which needs
@@ -59,11 +63,19 @@ function begin() {
   startSetup()
 }
 
-function cancelSetup() {
+// BACK TO THE APP THAT IS ALREADY SET UP (2026-11-15: "if user had 2fa but
+// switched it off when he comes back and clicks use another app, he is unable
+// to go to the screen where he can enter code from existing app"). The setup
+// screen had a Cancel that closed the whole dialog and nothing that led back,
+// and the server had already overwritten the old secret by then. It holds the
+// replacement beside it now (siLNt m046), so this is a real way back: the
+// existing app's codes still work until a code from the new one is accepted.
+function backToExisting() {
   secret.value = ''
   uri.value = ''
   code.value = ''
-  reenable.value = false
+  replacing.value = false
+  reenable.value = true
   say('')
 }
 
@@ -94,11 +106,14 @@ watch(() => props.show, (open) => {
   busy.value = null
   confirmOff.value = false
   reenable.value = false
+  replacing.value = false
   say('')
   if (open) load(true)
 })
 
 async function startSetup() {
+  // A setup begun while an app is already confirmed is a REPLACEMENT.
+  replacing.value = hasApp.value
   busy.value = 'start'
   say('')
   try {
@@ -143,12 +158,13 @@ async function confirm() {
   busy.value = 'confirm'
   say('')
   try {
-    await api.confirmTwofaTotp(auth.inkey, c)
+    await api.confirmTwofaTotp(auth.inkey, c, replacing.value)
     secret.value = ''
     uri.value = ''
     code.value = ''
     confirmOff.value = false
     reenable.value = false
+    replacing.value = false
     await load()
     emit('changed')
     // NO SUCCESS LINE. The toggle moved; saying so again is the prose this
@@ -257,6 +273,11 @@ function close() { emit('close') }
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-primary" :disabled="!!busy" @click="confirm">
               {{ busy === 'confirm' ? 'Working…' : 'Turn on' }}
+            </button>
+            <!-- THE WAY BACK, only when there is an app to go back to. -->
+            <button v-if="hasApp" class="btn btn-ghost" :disabled="!!busy"
+                    @click="backToExisting">
+              Use my existing app
             </button>
             <button class="btn btn-ghost" :disabled="!!busy" @click="close">Cancel</button>
           </div>

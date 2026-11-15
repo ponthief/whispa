@@ -81,6 +81,7 @@ const adminBuildNav = [
   { name: 'accounts', label: 'Accounts', icon: '☻' },
   ...(BITMAIL_ENABLED ? [{ name: 'bitmail-requests', label: 'BitMail Requests', icon: '⌖' }] : []),
   { name: 'devices', label: 'My Devices', icon: '⚙' },
+  { name: 'security', label: 'Two-Factor', icon: '⚿' },
 ]
 
 // isAdmin is loaded from the API (used by the admin build to enforce that the

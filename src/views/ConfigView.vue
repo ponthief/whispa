@@ -3,25 +3,12 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
-import TwoFactorModal from '@/components/TwoFactorModal.vue'
+import TwoFactorCard from '@/components/TwoFactorCard.vue'
 
 const BIP353_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
 const confirmForget = ref(false)
 const myWalletIds = ref([])
-
-// THE SECOND FACTOR'S state, read here so the card can say which it is rather
-// than offering "Set up" to somebody who already has it on. Best effort: a
-// failed read leaves the card offering setup, and the modal says what is
-// actually true the moment it opens.
-const showTwofa = ref(false)
-const twofaOn = ref(false)
-async function loadTwofa() {
-  try {
-    const s = await api.getTwofaStatus(auth.inkey)
-    twofaOn.value = !!(s && s.enabled)
-  } catch (_) { twofaOn.value = false }
-}
 
 async function loadMyWalletIds() {
   try {
@@ -232,7 +219,6 @@ async function saveCfConfig() {
 onMounted(() => {
   loading.value = false   // no admin config to fetch here anymore
   loadMyWalletIds()
-  loadTwofa()
 })
 </script>
 
@@ -278,28 +264,7 @@ onMounted(() => {
     <!-- Two-Factor. Beside Trusted Devices because the two answer the same
          question from different ends: which devices are known, and what a
          known device still has to present. -->
-    <div class="card">
-      <div class="card-header"><h2>Two-Factor</h2></div>
-      <div class="card-body">
-        <!-- No paragraph: the heading names it and the dialog is one switch
-             (2026-11-10, "drop text ... can you just have a toggle"). The
-             label carries the state, which is the only thing a sentence here
-             was adding. -->
-        <!-- A SWITCH, not a checkbox (2026-11-12: "I asked you to have a on/off
-             toggle, not a checkbox that looks poor"). It shows what the
-             server says; pressing it opens the dialog for the direction it
-             would move, because both directions need a code. -->
-        <div class="switch-row">
-          <span>Require a code to sign in</span>
-          <button type="button" class="switch" role="switch"
-                  :aria-checked="twofaOn" :class="{ on: twofaOn }"
-                  aria-label="Two-factor authentication"
-                  @click="showTwofa = true">
-            <span class="switch-knob"></span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <TwoFactorCard />
 
     <!-- Invite a friend. The phone's Settings → Account has had this all
          along; the browser not having it meant one account offering the
@@ -429,7 +394,6 @@ onMounted(() => {
          left: App.vue wraps every page in <transition mode="out-in">, which
          cannot animate a fragment, so the NEXT page never mounts — blank, no
          error, no banner, cured by F5 (2026-11-10). check:vue refuses it. -->
-    <TwoFactorModal :show="showTwofa" @close="showTwofa = false" @changed="loadTwofa" />
   </div>
 </template>
 

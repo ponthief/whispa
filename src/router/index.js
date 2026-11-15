@@ -70,6 +70,10 @@ const adminRoutes = [
   // devices from the admin portal (same page/endpoints as the user app; it only
   // ever acts on the caller's own devices, never another user's).
   { path: '/devices', name: 'devices', component: () => import('@/views/DevicesView.vue'), meta: { admin: true } },
+  // The second factor's switch. The enforcement was always here (the gate route
+  // above, and require_trusted_device_admin on the server); this is where an
+  // admin turns it on, since the user app's Account page is compiled out.
+  { path: '/security', name: 'security', component: () => import('@/views/AdminSecurityView.vue'), meta: { admin: true } },
 ]
 
 const routes = [

@@ -850,11 +850,14 @@ export async function startTwofaTotp(inkey) {
 // A correct code proves the app holds the secret, and only then is 2FA on.
 // The same call leaves THIS session verified, or switching it on would lock
 // the user out of the screen they switched it on from.
-export async function confirmTwofaTotp(inkey, code) {
+// `replace` says the code is from the NEW app started with "Use a different
+// app", not the confirmed one — the server keeps both while 2FA is off and
+// will not guess which a code was meant for.
+export async function confirmTwofaTotp(inkey, code, replace = false) {
   const res = await req(`${SILNT}/api/v1/auth/2fa/totp/confirm`, {
     method: 'POST',
     headers: keyHeaders(inkey),
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, replace: !!replace }),
   })
   try { if (res && res.session) setTwofaSession(res.session) } catch (_) {}
   return res

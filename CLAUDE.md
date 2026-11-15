@@ -2532,6 +2532,49 @@ app, which is what proves the user still holds it; somebody who has lost it
 asks for a new secret explicitly ("Use a different app"), which is now the only
 route to one.
 
+**"USE A DIFFERENT APP" USED TO KILL THE APP THAT WORKED, AND THE SCREEN HAD NO
+WAY BACK** (2026-11-15: *"if user had 2fa but switched it off when he comes back
+and clicks use another app, he is unable to go to the screen where he can enter
+code from existing app"*). Two layers, and the visible one was the smaller.
+`TwoFactorModal`'s setup screen had Turn on and a Cancel that closed the whole
+dialog; nothing led back to the existing-app screen. Underneath, `start_twofa_totp`
+overwrote `totp_secret` and reset `totp_confirmed` the instant the button was
+pressed, so by then the existing app's codes were already dead and there was
+nothing to go back TO - a back button alone would have led to a screen that could
+no longer succeed.
+
+The replacement is held in its own column (`pending_secret`, m046) and takes the
+place of `totp_secret` only when a code from it is accepted. Until then the old
+app works exactly as before, so looking at the option and backing out costs
+nothing, which is what the screen always assumed. The confirm call says which app
+a code is from (`replace`) rather than letting the server guess: with both secrets
+present, accepting either would answer a question the screen did not ask. A
+confirm against the old app also drops an abandoned replacement, so a stale QR
+cannot be confirmed later. First-time setup has no app to go back to and no
+button saying so, and a secret that is IN FORCE is still never replaceable.
+
+`tests/test_twofa_replacement_app.py` runs the real crud functions against a real
+SQLite (the failure is a round trip - an overwritten secret still "exists"), and
+fails three ways against the old overwrite. **Deploy siLNt first**: a new client
+against the old server works (the old one ignores `replace` and has already
+swapped the secret), but an old cached client against the new server sends its
+replacement code to the old secret and is refused.
+
+**THE ADMIN PORTAL CAN TURN IT ON** (same day: *"also add 2fa to the Admin
+site"*). It was enforced there already - `require_trusted_device_admin` checks the
+factor on every admin-key route and the `/two-factor` gate is in both builds - but
+the only switch was on the user app's Account page, which the admin build compiles
+out. An admin could not protect the most powerful account on the instance without
+first signing in to the user app. The switch is `TwoFactorCard.vue` now, rendered
+by both `ConfigView` and the admin's new `/security` page (nav: Two-Factor), one
+copy of the markup rather than two. It acts on the caller's own account only.
+
+Two admin health reads, `api/v1/admin/blindbit/health` and `.../fulcrum/health`,
+used the bare `require_admin_key` and so walked around both the device gate and
+the second factor; they use `require_trusted_device_admin` now. **Not changed and
+worth knowing:** `api_tx_confirmation` also takes `require_admin_key` and is a
+wallet-scoped user read, so it still skips both gates.
+
 **AND A CRASHED VIEW ON A BARE ROUTE SHOWED NOTHING AT ALL.** `onErrorCaptured`
 in `App.vue` swallows a child's failure and returns false, so the view renders
 empty — and the banner that reports it was inside the app-shell branch only. A

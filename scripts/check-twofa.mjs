@@ -261,7 +261,9 @@ console.log('\nthe screens');
   // checkbox; the control is a role="switch" button on the Account card, and
   // neither file may go back to a checkbox. A box that flips before the server
   // agrees lies the moment a code is wrong, so it is bound to the answer.
-  const cfg = strip(read('src/views/ConfigView.vue'));
+  // The switch is TwoFactorCard.vue now, so the user app's Account page and
+  // the admin portal render one control rather than two copies of the markup.
+  const cfg = strip(read('src/components/TwoFactorCard.vue'));
   ok('the control is a switch on the Account card, not a checkbox',
     /role="switch"/.test(cfg) && /class="switch"/.test(cfg) &&
     !/type="checkbox"/.test(cfg) && !/type="checkbox"/.test(modal));
@@ -291,6 +293,41 @@ console.log('\nthe screens');
     /Use a different app/.test(modal));
   ok('and the card is told to re-read the setting',
     /emit\('changed'\)/.test(modal));
+
+  // A DIFFERENT APP MUST NOT COST THE ONE THAT WORKS (2026-11-15: "if user had
+  // 2fa but switched it off when he comes back and clicks use another app, he
+  // is unable to go to the screen where he can enter code from existing app").
+  // The setup screen's only exits were Turn on and a Cancel that closed the
+  // whole dialog, and the server had already overwritten the old secret.
+  ok('the setup screen leads back to the existing app',
+    /function backToExisting\(\)/.test(modal) &&
+    /v-if="hasApp"[^>]*[\s\S]{0,120}@click="backToExisting"/.test(modal) &&
+    /Use my existing app/.test(modal),
+    'a way out that is only Cancel is not a way back');
+  ok('and a code from the NEW app is sent as a replacement, so the server checks the right secret',
+    /replacing\.value = hasApp\.value/.test(modal) &&
+    /confirmTwofaTotp\(auth\.inkey, c, replacing\.value\)/.test(modal) &&
+    /replace: !!replace/.test(strip(read('src/api/index.js'))));
+}
+
+console.log('\nthe admin portal can turn it on');
+{
+  // The admin build compiles the Account page out, and the switch used to live
+  // only there. The server enforced the factor on admin routes all along
+  // (require_trusted_device_admin) with nowhere to enable it.
+  const router = strip(read('src/router/index.js'));
+  const app = strip(read('src/App.vue'));
+  const adminRoutes = router.slice(router.indexOf('const adminRoutes'), router.indexOf('const routes = ['));
+  ok('the admin build has a Two-Factor page',
+    /name: 'security'/.test(adminRoutes) && /AdminSecurityView\.vue/.test(adminRoutes));
+  ok('and it is in the admin nav',
+    /adminBuildNav[\s\S]{0,600}name: 'security'/.test(app));
+  ok('and the gate screen is still in both builds',
+    /name: 'two-factor'/.test(router.slice(0, router.indexOf('const selfServiceRoutes'))));
+  ok('the page and the Account page render the same card, not two copies',
+    /<TwoFactorCard\b/.test(strip(read('src/views/AdminSecurityView.vue'))) &&
+    /<TwoFactorCard\b/.test(strip(read('src/views/ConfigView.vue'))) &&
+    !/role="switch"/.test(strip(read('src/views/ConfigView.vue'))));
 }
 
 console.log('\nand it is not in a backup');

@@ -763,6 +763,30 @@ console.log('the two backup screens say the same simple thing');
   ok('the phone buttons are only ever disabled while busy',
     !/disabled=\{[^}]*!password/.test(P) && !/disabled=\{[^}]*password !== confirm/.test(P),
     'greying a button out instead of explaining is how Restore went missing');
+  // THE PASSPHRASE FIELD BELONGS TO SAVE, AND THE LAYOUT SAYS SO (2026-11-15:
+  // "it appears that user has to enter passphrase and then click Restore..
+  // that field is really for Save backup button"). It was one field above ONE
+  // ROW holding both buttons, which reads as "type this, then press either".
+  // A restore does not take it: the file is picked first and then asks for its
+  // own secret. Nothing in tsc, lint, check:vue or a behavioural test sees a
+  // layout, so the shape is pinned: Save and Restore are in different
+  // containers, and the phone gives Restore a group of its own.
+  {
+    const web = copy(V);
+    const between = web.slice(web.indexOf('@click="doSave"'), web.indexOf('@click="startRestore"'));
+    ok('the web does not put Save and Restore in one row',
+      web.includes('@click="doSave"') && web.includes('@click="startRestore"') &&
+      /<\/div>/.test(between) && /border-top/.test(between),
+      'one field over one row of two buttons reads as "type, then press either"');
+    const phone = copy(P);
+    const save = phone.indexOf('onPress={onExport}');
+    const rest = phone.indexOf('onPress={onPickFile}');
+    ok('the phone gives Restore a group of its own, apart from Save',
+      save > 0 && rest > save &&
+      /<Group title="Restore">/.test(phone) &&
+      /<Group title=\{pending \? 'Restore from file' : 'Save a backup'\}>/.test(phone) &&
+      phone.slice(save, rest).includes('</Group>'));
+  }
   // THE FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND (2026-11-08:
   // "when restoring user selects the file and if the file is encrypted it
   // should ask for a password"). These replace two assertions that pinned the

@@ -167,9 +167,13 @@ async function confirm() {
     replacing.value = false
     await load()
     emit('changed')
-    // NO SUCCESS LINE. The toggle moved; saying so again is the prose this
-    // screen was asked to lose. Errors still speak, because nothing else
-    // reports those.
+    // NO SUCCESS LINE, AND NO DIALOG LEFT BEHIND. The switch moved; saying so
+    // again is the prose this screen was asked to lose, and with every flag
+    // cleared the card below had nothing to render — an empty pop-up whose
+    // only control was the X (2026-11-15: "after 2fa is switched on or off,
+    // there appears a pop-up which can be just closed.. remove it"). Errors
+    // still speak and still keep it open, because nothing else reports those.
+    emit('close')
   } catch (e) {
     say(e.detail || e.message || 'That code is not right.', 'error')
     code.value = ''
@@ -189,6 +193,7 @@ async function disable() {
     confirmOff.value = false
     await load()
     emit('changed')
+    emit('close')
   } catch (e) {
     say(e.detail || e.message || 'That code is not right.', 'error')
     code.value = ''

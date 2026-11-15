@@ -661,8 +661,13 @@ console.log('\nthe browser does all of it too');
   ok('copy follows the shown address',
      /writeText\(shownAddress\.value\)/.test(PANEL), PANEL);
   ok('and so does the QR', /:address="shownAddress"/.test(PANEL), PANEL);
+  // The picker's button calls pickSource('segwit') since the Send page became
+  // tabs (it used to assign `source = 'segwit'` directly): an empty tab flips in
+  // place, one with something in it opens a new tab on the other chain. Same
+  // question, the picker exists and offers SegWit - the pattern had gone stale
+  // and was red from that commit until 2026-11-15.
   ok('the web Send page has a chain picker',
-     /source = 'segwit'/.test(SEND), SEND);
+     /(source = |pickSource\()'segwit'/.test(SEND), SEND);
   // ONE FORM THERE TOO. The recipient, amount, slider, fee tiers, summary,
   // Build and review are the same controls whichever side pays.
   ok('there is no separate SegWit panel',

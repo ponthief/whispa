@@ -584,35 +584,46 @@ async function openPending() {
              is indistinguishable from one that is not there. They are live,
              and each says what it needs. Only `busy` disables them, because
              two concurrent runs really are not possible. -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <!-- A FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND, so
-               once one is waiting the row is about that file and nothing
-               else: offering Save beside it would seal a NEW backup under the
-               password being typed to open an old one. -->
-          <template v-if="pending">
+        <!-- THE FIELD BELONGS TO SAVE, AND THE LAYOUT SAYS SO (2026-11-15: "on
+             Backup Restore pop up in web, it appears that user has to enter
+             passphrase and then click Restore.. that field is really for Save
+             backup button"). It was one field above ONE ROW holding both
+             buttons, which reads as "type this, then press either" — and a
+             restore does not take it: the file is picked first and THEN asks
+             for that file's own secret, in this same box. So Save sits
+             directly under the field and Restore is its own thing below a
+             rule. With a file waiting the box is about that file and nothing
+             else, and Save is not offered beside it: it would seal a NEW
+             backup under the password being typed to open an old one. -->
+        <template v-if="pending">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-primary btn-sm" :disabled="!!busy" @click="openPending">
               {{ busy === 'restore' ? '…' : '🔓 Open backup' }}
             </button>
             <button class="btn btn-ghost btn-sm" :disabled="!!busy" @click="pending = null; say('')">
               Cancel
             </button>
-          </template>
-          <template v-else>
+          </div>
+        </template>
+        <template v-else>
+          <div>
             <button class="btn btn-primary btn-sm" :disabled="!!busy" @click="doSave">
               {{ busy === 'save' ? '…' : '↓ Save backup' }}
             </button>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:14px">
             <button class="btn btn-ghost btn-sm" :disabled="!!busy" @click="startRestore">
               ↑ Restore from backup
             </button>
-          </template>
-          <!-- NO `accept` FILTER, the same call the phone's picker makes: a
-               backup that has been through Drive, a chat app or mail comes
-               back as octet-stream or without its extension routinely, and
-               filtering hides the user's own file from them with nothing
-               saying why. What the file is gets answered by reading it. -->
-          <input ref="fileInput" type="file"
-                 style="display:none" @change="onPickFile" />
-        </div>
+          </div>
+        </template>
+        <!-- NO `accept` FILTER, the same call the phone's picker makes: a
+             backup that has been through Drive, a chat app or mail comes
+             back as octet-stream or without its extension routinely, and
+             filtering hides the user's own file from them with nothing
+             saying why. What the file is gets answered by reading it. -->
+        <input ref="fileInput" type="file"
+               style="display:none" @change="onPickFile" />
 
         <p v-if="msg" class="text-sm" style="margin:0"
            :style="err === 'error' ? 'color:var(--red)'

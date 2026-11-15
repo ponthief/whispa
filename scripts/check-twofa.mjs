@@ -293,6 +293,20 @@ console.log('\nthe screens');
     /Use a different app/.test(modal));
   ok('and the card is told to re-read the setting',
     /emit\('changed'\)/.test(modal));
+  // A FINISHED CHANGE CLOSES THE DIALOG (2026-11-15: "after 2fa is switched on
+  // or off, there appears a pop-up which can be just closed.. remove it"). Every
+  // flag is cleared on success, so the card had nothing to render and was left
+  // open with only its X. Both directions, and after `changed` so the switch has
+  // already been told.
+  for (const [fn, name] of [['async function confirm', 'turning it on'], ['async function disable', 'turning it off']]) {
+    const body = modal.slice(modal.indexOf(fn));
+    const end = body.indexOf('\n}\n');
+    const ok_ = body.slice(0, end);
+    ok(`${name} closes the dialog once it has worked`,
+      /emit\('changed'\)[\s\S]*emit\('close'\)/.test(ok_) &&
+      ok_.indexOf("emit('close')") < ok_.indexOf('catch'),
+      'an empty pop-up whose only control is the X is not a result');
+  }
 
   // A DIFFERENT APP MUST NOT COST THE ONE THAT WORKS (2026-11-15: "if user had
   // 2fa but switched it off when he comes back and clicks use another app, he

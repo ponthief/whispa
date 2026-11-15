@@ -485,7 +485,19 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
       </Group>
 
       {backupFileAvailable() ? (
-        <Group title="Backup file">
+        <>
+          {/* THE FIELD BELONGS TO SAVE, AND THE LAYOUT SAYS SO (2026-11-15,
+              reported on the web modal and true here too: "it appears that
+              user has to enter passphrase and then click Restore.. that field
+              is really for Save backup"). One field over two buttons reads as
+              "type this, then press either", and a restore does not take it:
+              the file is chosen first and then asks for ITS secret. So Save is
+              a group of its own with the field, and Restore is a separate
+              group below it. With a file waiting the field is about that file
+              and nothing else, and Save is not offered beside it — it would
+              seal a NEW backup under the password being typed to open an old
+              one. */}
+          <Group title={pending ? 'Restore from file' : 'Save a backup'}>
           {/* MASKED FOR SAVING AND OPENING ALIKE, with an eye (2026-11-12:
               "while saving backup file entered passphrase is not masked and
               stays visible"; the web modal matches). Saving was visible from
@@ -519,35 +531,30 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
                 : 'The passphrase your wallet was created with.'}
             </Help>
           </Block>
-          {/* A FILE IS CHOSEN FIRST AND THE PASSWORD ASKED FOR SECOND, so
-              once one is waiting the screen is about that file and nothing
-              else: offering Save beside it would seal a NEW backup under the
-              password being typed to open an old one. */}
-          {pending ? (
-            <>
-              <Block>
-                <Button
-                  label={busy === 'restore' ? 'Working…' : 'Open backup'}
-                  kind="primary"
-                  onPress={onRestore}
-                  busy={busy === 'restore'}
-                  disabled={!!busy}
-                />
-              </Block>
-              <Block>
-                <Button
-                  label="Cancel"
-                  kind="secondary"
-                  onPress={() => {
-                    setPending(null);
-                    say(null);
-                  }}
-                  disabled={!!busy}
-                />
-              </Block>
-            </>
-          ) : (
-            <>
+            {pending ? (
+              <>
+                <Block>
+                  <Button
+                    label={busy === 'restore' ? 'Working…' : 'Open backup'}
+                    kind="primary"
+                    onPress={onRestore}
+                    busy={busy === 'restore'}
+                    disabled={!!busy}
+                  />
+                </Block>
+                <Block>
+                  <Button
+                    label="Cancel"
+                    kind="secondary"
+                    onPress={() => {
+                      setPending(null);
+                      say(null);
+                    }}
+                    disabled={!!busy}
+                  />
+                </Block>
+              </>
+            ) : (
               <Block>
                 <Button
                   label={busy === 'export' ? 'Working…' : 'Save a backup'}
@@ -557,7 +564,11 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
                   disabled={!!busy}
                 />
               </Block>
-              <Block>
+            )}
+          </Group>
+          {pending ? null : (
+            <Group title="Restore">
+              <Block first>
                 <Button
                   label={busy === 'restore' ? 'Working…' : 'Restore from a file'}
                   kind="secondary"
@@ -566,14 +577,19 @@ export default function BackupPage({ onBack }: { onBack: () => void }) {
                   disabled={!!busy}
                 />
               </Block>
-            </>
+            </Group>
           )}
+          {/* One status line under BOTH groups: it reports Save and Restore
+              alike, and inside the first group a restore error would read as
+              being about saving. */}
           {msg ? (
-            <Block>
-              <Note kind={err ? 'error' : 'info'}>{msg}</Note>
-            </Block>
+            <Group>
+              <Block first>
+                <Note kind={err ? 'error' : 'info'}>{msg}</Note>
+              </Block>
+            </Group>
           ) : null}
-        </Group>
+        </>
       ) : (
         <Group title="Backup file">
           <Block first>

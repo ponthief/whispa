@@ -1806,6 +1806,20 @@ control with no explanation is indistinguishable from one that is not there.**
 Both buttons are live now; the handlers say what is missing, and `startRestore`
 refuses before opening a file picker whose result it would only reject.
 
+**The passphrase field belongs to SAVE, and the layout has to say so**
+(2026-11-15: *"on Backup Restore pop up in web, it appears that user has to
+enter passphrase and then click Restore.. that field is really for Save backup
+button"*). It was one field above one row holding both buttons, which reads as
+"type this, then press either" - and a restore takes no passphrase up front: the
+file is picked first and then asks for its OWN secret, in the same box. So Save
+sits directly under the field and Restore is a separate thing below a rule; with a
+file waiting the box is about that file and Save is not offered. The phone had the
+same shape (stacked, so a little less ambiguous) and got the same split: a *Save a
+backup* group holding the field, and a *Restore* group of its own, with one status
+line under both so a restore error is not read as being about saving. Nothing in
+tsc, lint or a behavioural test sees a layout, so `check:backup` pins that the two
+buttons are in different containers on both clients.
+
 **SAVING is not masked; OPENING a file is.** The first half is 2026-11-08, on
 the user's instruction: it is a per-file secret with no checksum, typed once,
 not an account credential — seeing it is the only way to tell you are typing
@@ -2574,6 +2588,14 @@ used the bare `require_admin_key` and so walked around both the device gate and
 the second factor; they use `require_trusted_device_admin` now. **Not changed and
 worth knowing:** `api_tx_confirmation` also takes `require_admin_key` and is a
 wallet-scoped user read, so it still skips both gates.
+
+**A FINISHED CHANGE CLOSES THE DIALOG** (2026-11-15: *"after 2fa is switched on
+or off, there appears a pop-up which can be just closed.. remove it"*). The "no
+success line" rule left a hole: on success every flag in `TwoFactorModal` is
+cleared, so none of its branches matched and the card rendered with an empty body
+and an X. Turning it on and turning it off both emit `close` after `changed` now.
+Errors still keep it open, because nothing else reports those. `check:twofa` pins
+both directions.
 
 **AND A CRASHED VIEW ON A BARE ROUTE SHOWED NOTHING AT ALL.** `onErrorCaptured`
 in `App.vue` swallows a child's failure and returns false, so the view renders

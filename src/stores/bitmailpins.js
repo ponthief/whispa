@@ -1,3 +1,4 @@
+import { spFromUri } from '@/services/spUri'
 /**
  * bitmailpins.js — client-side pinning of BitMail → SP address mappings.
  *
@@ -32,11 +33,8 @@ function _save(map) {
 /** Normalize an SP address for comparison (trim, lowercase, strip uri prefix). */
 export function normalizeSp(addr) {
   if (!addr) return ''
-  return String(addr)
-    .replace('bitcoin:?sp=', '')
-    .replace('sp=', '')
-    .trim()
-    .toLowerCase()
+  // A URI (either key) gives its address; anything else is compared as typed.
+  return (spFromUri(String(addr)) || String(addr).trim()).toLowerCase()
 }
 
 /**
@@ -172,7 +170,7 @@ export async function verifyBitmailTamper(api, inkey) {
     try {
       const res = await api.resolveBip353(inkey, bm)
       const raw = (res?.result || res?.sp_address || '')
-      resolved = raw.replace('bitcoin:?sp=', '').replace('sp=', '').trim()
+      resolved = spFromUri(raw)
     } catch (e) {
       resolveFailed = true
     }

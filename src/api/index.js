@@ -1,3 +1,4 @@
+import { spFromUri } from '@/services/spUri'
 // ── API base URLs ─────────────────────────────────────────────────────────────
 // In Android app: injected via window.THRILLA_CONFIG.backendUrl
 // In production web (Caddy proxy): VITE_LNBITS_URL is empty (same-origin)
@@ -331,7 +332,7 @@ export async function getTxConfirmation(adminkey, txid, walletId) {
 // Mirrors services/api.ts::spFromResolve — the two API layers are parallel by
 // design, and this is a pure string parse with nothing platform-specific in it.
 export function spFromResolve(res) {
-  return (res?.result || '').replace('bitcoin:?sp=', '').replace('sp=', '').trim()
+  return spFromUri(res?.result)
 }
 
 export async function resolveBip353(inkey, address) {

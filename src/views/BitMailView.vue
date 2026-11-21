@@ -1,4 +1,5 @@
 <script setup>
+import { spFromUri } from '@/services/spUri'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
@@ -415,7 +416,7 @@ function copyText(t) { navigator.clipboard.writeText(t).catch(() => {}) }
 function extractSpAddress(res) {
   if (!res) return null
   const raw = res.result || res.sp_address || ''
-  return raw.replace('bitcoin:?sp=', '').replace('sp=', '').trim() || null
+  return spFromUri(raw) || null
 }
 
 function fmtDate(ts) { return new Date(ts * 1000).toLocaleString() }

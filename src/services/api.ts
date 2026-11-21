@@ -1,6 +1,7 @@
 import Config from 'react-native-config';
 import { DEVICE_TRUST_ENABLED } from '@/theme';
 import { currentDeviceId } from './deviceTrust';
+import { spFromUri } from './spUri';
 
 // Backend base URL + Silent-Payments prefix are injected at build time by
 // react-native-config (see .env.mainnet). LNBITS_URL must be an absolute URL.
@@ -289,8 +290,7 @@ export async function resolveBip353(
 
 // Extract the sp1…/tsp1… address from a resolve result (e.g. "bitcoin:?sp=sp1…").
 export function spFromResolve(res: { result?: string } | null): string {
-  const raw = (res?.result || '').replace('bitcoin:?sp=', '').replace('sp=', '');
-  return raw.trim();
+  return spFromUri(res?.result);
 }
 
 // The configured BitMail domain (empty string = feature unavailable). Uses inkey.

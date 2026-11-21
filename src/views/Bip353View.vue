@@ -1,4 +1,5 @@
 <script setup>
+import { spFromUri } from '@/services/spUri'
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
@@ -95,7 +96,7 @@ function copyText(t) { navigator.clipboard.writeText(t).catch(() => {}) }
 function extractSpAddress(res) {
   if (!res) return null
   const raw = res.result || res.sp_address || ''
-  return raw.replace('bitcoin:?sp=', '').replace('sp=', '').trim() || null
+  return spFromUri(raw) || null
 }
 
 function fmtDate(ts) { return new Date(ts * 1000).toLocaleString() }
@@ -178,7 +179,7 @@ onMounted(() => {
         <p class="text-dim text-sm" style="line-height:1.7">
           BIP-353 defines a standard for human-readable Bitcoin payment addresses using DNS TXT records.
           An address like <span class="mono text-orange">alice@domain.com</span> resolves via a DNS lookup
-          to <span class="mono">bitcoin:?sp=sp1q…</span>, giving you the recipient's Silent Payment address.
+          to <span class="mono">bitcoin:?sp=sp1q…</span> (<span class="mono">tsp=</span> on signet), giving you the recipient's Silent Payment address.
         </p>
       </div>
     </div>

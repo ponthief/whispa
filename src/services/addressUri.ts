@@ -2,7 +2,7 @@
 //
 // A QR code is rarely just an address. Wallets encode BIP-21 URIs
 // (`bitcoin:bc1…?amount=…`), and Silent Payments ride in as an `sp=` parameter
-// on one. Clipboards are worse: text picked up from a web page or a chat app
+// on one (`tsp=` on signet — BIP-321 keys a bech32 instruction by its HRP). Clipboards are worse: text picked up from a web page or a chat app
 // routinely carries leading whitespace or a trailing newline, which a bech32
 // decoder rejects with an unhelpful "invalid address".
 //
@@ -13,7 +13,7 @@ export function parseScannedAddress(raw: string): string {
   const s = (raw || '').trim();
   // An sp= parameter wins: a URI carrying one is offering the Silent Payments
   // address as the better destination, with the on-chain one as the fallback.
-  const m = s.match(/[?&]sp=([^&]+)/i);
+  const m = s.match(/[?&]t?sp=([^&]+)/i);
   if (m) {
     try {
       return decodeURIComponent(m[1]).trim();

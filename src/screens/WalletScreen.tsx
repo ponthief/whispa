@@ -228,7 +228,7 @@ export default function WalletScreen() {
     // they only existed while pending, and a confirmed one from last month has
     // no business above this morning's.
     return [...local, ...rows]
-      .map((it) => (txMemoMap[it.id] ? { ...it, memo: txMemoMap[it.id] } : it))
+      .map((it) => (txMemoMap[it.id] && it.direction === 'out' ? { ...it, memo: txMemoMap[it.id] } : it))
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [spRawTxs, txLabelMap, txMemoMap, pendingLocal, plainHistory, spWalletId]);
 

@@ -12,6 +12,11 @@ import { scanWatchWallets } from '@/stores/scanwatch'
 import { listPlainSends } from '@/stores/plainhistory'
 import { mixFeeNote } from '@/services/tangoTurns'
 
+// The memo is the SENDER's note, kept per txid on this device. The store knows
+// nothing about which account or which side it was written for, so a receiver
+// signed in on the same browser would be shown it too: only a send shows one.
+const memoOf = (tx) => (tx.kind === 'send' ? getTxMemo(tx.txid) : null)
+
 const auth   = useAuthStore()
 const { fmt } = useAmount()
 const route  = useRoute()
@@ -412,16 +417,16 @@ onMounted(() => {
               </div>
               <!-- The memo the sender typed on Send, kept on this device. One
                    line here, all of it in the detail below. -->
-              <div v-if="getTxMemo(tx.txid)" class="tx-memo" :title="getTxMemo(tx.txid)">{{ getTxMemo(tx.txid) }}</div>
+              <div v-if="memoOf(tx)" class="tx-memo" :title="memoOf(tx)">{{ memoOf(tx) }}</div>
             </div>
             <span class="tx-chevron">{{ expandedTxid === tx.txid ? '▾' : '▸' }}</span>
           </div>
 
           <div v-if="expandedTxid === tx.txid" class="tx-detail">
-            <div v-if="getTxMemo(tx.txid)" class="tx-detail-content">
+            <div v-if="memoOf(tx)" class="tx-detail-content">
               <div class="tx-detail-row" style="align-items:flex-start">
                 <span class="tx-detail-label">Memo:</span>
-                <span class="tx-detail-value" style="font-size:12px;white-space:pre-wrap">{{ getTxMemo(tx.txid) }}</span>
+                <span class="tx-detail-value" style="font-size:12px;white-space:pre-wrap">{{ memoOf(tx) }}</span>
               </div>
             </div>
             <!-- ONE ROW, because the destination is the only thing here that is

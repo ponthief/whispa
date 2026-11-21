@@ -97,7 +97,19 @@ ok('it is in the draft and cleared with the form', /memo,\n    \}\);/.test(SS) &
 ok('the broadcast callback depends on it', /recipient, memo, amountSats/.test(SS));
 
 console.log('Activity');
-ok('web: the row and the detail', (read('src/views/TransactionsView.vue').match(/getTxMemo\(/g) || []).length >= 4);
+ok('web: the row and the detail', (strip(read('src/views/TransactionsView.vue')).match(/memoOf\(tx\)/g) || []).length >= 4);
+// THE MEMO IS THE SENDER'S. The stores are keyed by txid and know no account or
+// side, so a receiver signed in on the same browser or phone as the sender was
+// shown the sender's note (2026-11-21: "it shows up on receivers end in
+// Activity"). Not on the wire — only the display was wrong — and every read of
+// a memo goes through a send-only gate, on both clients.
+ok('web: only a send shows a memo, and nothing reads the store raw in the view',
+  /memoOf = \(tx\) => \(tx\.kind === 'send' \? getTxMemo\(tx\.txid\) : null\)/.test(strip(read('src/views/TransactionsView.vue'))) &&
+  (strip(read('src/views/TransactionsView.vue')).match(/getTxMemo\(/g) || []).length === 1);
+ok('phone: the row carries a memo only on a send',
+  /txMemoMap\[it\.id\] && it\.direction === 'out'/.test(strip(read('src/screens/WalletScreen.tsx'))));
+ok('phone: the detail sheet hides it on a receive',
+  /\{memo && !incoming \?/.test(strip(read('src/components/TxDetailModal.tsx'))));
 ok('phone: the row carries it', /memo\?: string/.test(read('src/components/TransactionList.tsx')) && /txMemoMap\[it\.id\]/.test(read('src/screens/WalletScreen.tsx')));
 ok('phone: the detail sheet shows it', /useTxMemoStore/.test(read('src/components/TxDetailModal.tsx')) && /Memo<\/Text>/.test(read('src/components/TxDetailModal.tsx')));
 

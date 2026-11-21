@@ -516,6 +516,15 @@ It is set at broadcast, for both the Silent Payments and the SegWit send, kept
 with each Send tab and the half-built draft, and cleared with the form. It is
 not offered while a swap is being funded, where the payment is Boltz's.
 
+**Only a send shows one** (2026-11-21: *"I just sent tnx with memo and it shows
+up on receivers end in Activity"*). Not a leak on the wire — nothing posts a memo
+— but both stores are keyed by txid alone and know no account or side, so a
+receiver signed in on the **same browser or phone** as the sender read the
+sender's note. Web `memoOf(tx)` and the phone's row and detail now gate on a send
+(`kind === 'send'`, `direction === 'out'`, `!incoming`); `check:memo` pins each.
+A send to your own wallet reads as incoming and so shows no memo — the cost of
+having no way to tell it from a receive on the same device.
+
 **Deliberately not done:** editing a memo after the send (the label editor on the
 phone could take it), a Tango memo, and showing it on the receiver's side — the
 receiver has nothing to show, by design.

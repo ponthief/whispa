@@ -174,7 +174,7 @@ export default function TxDetailModal({
               Outside the `detail` gate on purpose: it is already in hand, and a
               send still in the mempool is exactly when the explorer lookup is
               likeliest to come back with nothing. */}
-          {memo ? (
+          {memo && !incoming ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Memo</Text>
               <Text style={styles.value} selectable>

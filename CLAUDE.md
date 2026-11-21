@@ -572,6 +572,30 @@ dialog. The ask-before-enabling step is unchanged and the switch's help line
 under it on the phone still says it is server-side and detection only. `check:scan`
 pins the short text on both and refuses the old clauses coming back.
 
+**The line under the phone's background-scanning switch is gone too** (*"cut the
+help line under the switch too"*): *"Scanning takes place server side using your
+scan key — detection only, it can never spend your funds."* The switch has a
+title and nothing else now; `check:scan` asserts the `help` prop absent. The web
+has no line there — its button has a hover tooltip saying the same thing, left as
+it was.
+
+**A BitMail contact on the wrong chain is refused at SAVE** (2026-11-21: *"I saved
+a bitmail contact from mainnet in the signet mobile app.. should warn or not
+allow?"*). Not allowed, because a contact on the wrong chain is a send that cannot
+succeed saved under a name that says it can, and "refused rather than warned" is
+this repo's rule for wrong-chain recipients. The gap was that a name carries no
+chain, so `recipient_chain_mismatch` returns `None` for any `name@domain` and
+only a SEND resolved it (`resolve_recipient`), so the mistake surfaced the day
+somebody paid. siLNt `bitmail_chain_mismatch` resolves it once, on create and on
+repoint, and returns the **same sentence** an address gets. **A lookup that
+cannot answer does not refuse** — DNS down, a name not published yet, a DNSSEC
+failure — so a contact is never turned away for the resolver's trouble, and a
+contact saved in that window is still caught at send. Both clients mirror it
+from the address they already resolve while the recipient is typed
+(`resolvedSp`), so the warning also arrives before Build instead of at it.
+Contacts saved before this are not swept: a wrong-chain one stays until it is
+sent to or edited, and the send still refuses it.
+
 **The phone's *★ Save contact* saves** (*"clicking Save contact after entering it
 on Send screen doesn't save it: you have to enter label and click Save"*). It was
 a toggle that opened a label field and a second *Save* button. It is the web's

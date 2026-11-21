@@ -368,6 +368,11 @@ console.log('');
     !/uploads this wallet|payment history|spend key never leaves/i.test(
       (web.match(/Turn on background scanning\?[\s\S]{0,400}/) || [''])[0] +
       (phone.match(/Turn on background scanning\?[\s\S]{0,400}/) || [''])[0]));
+  // And the line under the phone's switch went too (the user: "cut the help line
+  // under the switch too"). Absent, not merely unchanged, so it does not grow back.
+  const bgRow = (phone.match(/title="Background scanning"[\s\S]{0,400}/) || [''])[0];
+  ok('the phone switch has no help line under it',
+    /title="Background scanning"/.test(phone) && !/\bhelp=/.test(bgRow.split('/>')[0]));
   ok('and both still ask before turning it on',
     /confirm\(\s*"Turn on background scanning/.test(web) && /Alert\.alert\(\s*'Turn on background scanning/.test(phone));
 }

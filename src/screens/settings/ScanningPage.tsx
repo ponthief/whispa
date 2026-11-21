@@ -115,7 +115,6 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
         <SwitchRow
           first
           title="Background scanning"
-          help="Scanning takes place server side using your scan key — detection only, it can never spend your funds."
           value={bgEnabled}
           onValueChange={onToggleBackgroundScan}
           busy={bgBusy}

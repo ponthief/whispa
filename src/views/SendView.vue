@@ -456,9 +456,18 @@ const selectionTooSmall = computed(() =>
 const walletNetwork = computed(
   () => (wallets.value.find((w) => w.id === selectedWallet.value) || {}).network || '',
 )
-const chainWarning = computed(() =>
-  walletNetwork.value ? chainMismatch(recipient.value, walletNetwork.value) : null,
-)
+// A BitMail names no chain, so it is judged on the address it resolves to
+// (resolvedSp, cleared whenever the recipient changes). Mirrors the server's
+// bitmail_chain_mismatch, which is the authority and also refuses to SAVE such a
+// contact.
+const chainWarning = computed(() => {
+  if (!walletNetwork.value) return null
+  const direct = chainMismatch(recipient.value, walletNetwork.value)
+  if (direct) return direct
+  return recipient.value.includes('@') && resolvedSp.value
+    ? chainMismatch(resolvedSp.value, walletNetwork.value)
+    : null
+})
 
 const canBuild = computed(() =>
   selectedWallet.value &&

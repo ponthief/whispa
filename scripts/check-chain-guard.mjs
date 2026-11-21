@@ -136,6 +136,11 @@ console.log('\nboth send screens refuse before Build');
       /chainWarning\s*=\s*(useMemo|computed)/.test(src));
     ok(`${label} gates Build on it`, /!chainWarning/.test(src));
     ok(`${label} refuses Save contact too`, src.includes('chainWarning'));
+    // A BitMail names no chain: it is judged on the address it resolves to, the
+    // server's bitmail_chain_mismatch mirrored (2026-11-21: a mainnet BitMail was
+    // saved from a signet app and would have failed only when paid).
+    ok(`${label} judges a resolved BitMail too`,
+      /includes\('@'\)[\s\S]{0,40}resolvedSp[\s\S]{0,80}chainMismatch\(resolvedSp/.test(src));
     // Shown, not silently disabling a button with no explanation.
     ok(`${label} says why`, /\{\{ chainWarning \}\}|\{chainWarning\}/.test(src));
   }

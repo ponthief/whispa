@@ -415,10 +415,18 @@ export default function SendScreen() {
   // Depends on the network string rather than the wallet object, so a refresh
   // that returns an equal wallet does not recompute it.
   const walletNetwork = wallet?.network || '';
-  const chainWarning = useMemo(
-    () => (walletNetwork ? chainMismatch(recipient, walletNetwork) : null),
-    [recipient, walletNetwork],
-  );
+  // A BitMail names no chain, so it is judged on the address it resolves to
+  // (resolvedSp, which is cleared whenever the recipient changes). Mirrors the
+  // server's bitmail_chain_mismatch, which is the authority and also refuses to
+  // SAVE such a contact.
+  const chainWarning = useMemo(() => {
+    if (!walletNetwork) return null;
+    const direct = chainMismatch(recipient, walletNetwork);
+    if (direct) return direct;
+    return recipient.includes('@') && resolvedSp
+      ? chainMismatch(resolvedSp, walletNetwork)
+      : null;
+  }, [recipient, resolvedSp, walletNetwork]);
 
   const onSaveContact = useCallback(async () => {
     if (!inkey) return;

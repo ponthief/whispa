@@ -64,7 +64,23 @@ Repo: https://github.com/ponthief/whispa.git
 # reproducible costs a failed build, never a wrong-key release.
 #
 # %v is versionName, so v%v resolves to the tag.
-Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet.apk
+#
+# THE ASSET IS NOT whispa-mainnet.apk, and that is the whole point of its name.
+# whispa-mainnet.apk is what people install and it carries Firebase push; the
+# F-Droid build cannot (the prebuild below burns WHISPA_NO_PUSH on and there is
+# no google-services.json), so it can never be byte-identical to it and the
+# comparison above would fail every time. whispa-mainnet-fdroid.apk is the SAME
+# app built the way F-Droid builds it and signed with the SAME key. CI builds it
+# in the same run as the others (build-android.yml, "THE APK F-DROID
+# REPRODUCES") and scripts/cut-release.sh publishes it under this name, from the
+# commit being released, with the checksums. check:fdroid pins that the three
+# agree on the name. Every release needs it, or F-Droid cannot build that
+# version.
+#
+# versionName, versionCode and commit below move with every release. They are
+# changed by hand after cut-release.sh, in the MR, and they have to name a tag
+# whose release HAS that asset: 0.5.0 and 0.6.0 predate it.
+Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
   - versionName: 0.5.0

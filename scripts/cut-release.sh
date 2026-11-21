@@ -11,6 +11,7 @@
 # Usage:
 #   scripts/cut-release.sh v0.4.0                       # fetch the CI builds
 #   scripts/cut-release.sh v0.4.0 main.apk signet.apk   # use local files
+#   scripts/cut-release.sh v0.4.0 main.apk signet.apk fdroid.apk
 #
 # The tag is not yours to choose: it must be v<APP_VERSION> from src/version.ts,
 # because that is the string the in-app update check compares. The release's
@@ -22,6 +23,7 @@
 #                                 a mismatch aborts. Same value as the
 #                                 RELEASE_CERT_SHA256 repository variable.
 #   WHISPA_DRY_RUN=1              do everything except create the release
+#   WHISPA_SKIP_FDROID=1          do not require or publish the F-Droid APK
 #
 # The THRILLA_* spelling of each still works. These names are in people's
 # shells and in CI secrets, so the rename carries a fallback rather than a
@@ -30,7 +32,16 @@
 # What it publishes, under stable asset names so the download page never needs
 # editing again:
 #
-#   whispa-mainnet.apk  whispa-signet.apk  SHA256SUMS  SHA256SUMS.asc
+#   whispa-mainnet.apk  whispa-signet.apk  whispa-mainnet-fdroid.apk
+#   SHA256SUMS  SHA256SUMS.asc
+#
+# whispa-mainnet-fdroid.apk is the build f-droid.org reproduces (WHISPA_NO_PUSH,
+# no Firebase), signed with the same key. fdroiddata's `Binaries:` points at it
+# and F-Droid copies OUR signature onto ITS build, so it has to be exactly the
+# build F-Droid makes from this tag — which is why it comes from CI, from the
+# same run as the other APKs, and why this script refuses one built from any
+# other commit. WHISPA_SKIP_FDROID=1 leaves it out (and a release without it
+# cannot be picked up by F-Droid's auto-update: its build looks for this file).
 #
 # The page links to /releases/latest/download/<name>, which GitHub resolves to
 # the newest release that is NOT a prerelease — so the rolling ci-* builds are
@@ -46,7 +57,7 @@ die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 note() { printf '  %s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
 
-[ -n "$tag" ] || die "usage: scripts/cut-release.sh <tag> [mainnet.apk signet.apk]"
+[ -n "$tag" ] || die "usage: scripts/cut-release.sh <tag> [mainnet.apk signet.apk [fdroid.apk]]"
 
 # ------------------------------------------------------- the tag the tree says
 # THE TAG IS NOT A FREE PARAMETER, and treating it as one published a release
@@ -117,13 +128,23 @@ rm -rf "$work" && mkdir -p "$work"
 
 # ---------------------------------------------------------------- get the APKs
 step "Collecting APKs"
-if [ "$#" -eq 2 ]; then
+have_fdroid=0
+skip_fdroid="${WHISPA_SKIP_FDROID:-}"
+if [ "$#" -eq 2 ] || [ "$#" -eq 3 ]; then
   [ -f "$1" ] || die "not found: $1"
   [ -f "$2" ] || die "not found: $2"
   cp "$1" "$work/whispa-mainnet.apk"
   cp "$2" "$work/whispa-signet.apk"
   note "mainnet ← $1"
   note "signet  ← $2"
+  if [ "$#" -eq 3 ]; then
+    [ -f "$3" ] || die "not found: $3"
+    cp "$3" "$work/whispa-mainnet-fdroid.apk"
+    have_fdroid=1
+    note "f-droid ← $3"
+  else
+    note "no F-Droid APK given — this release will not have one."
+  fi
 elif [ "$#" -eq 0 ]; then
   need_gh "needed to download the CI builds"
   # The rolling CI prereleases. Deliberately fetched through gh rather than a
@@ -135,8 +156,38 @@ elif [ "$#" -eq 0 ]; then
       || die "could not download whispa-$net-release.apk from the ci-$net-release release. Either that release does not exist yet — run the Build Android APK workflow for the $net flavour — or this account cannot read it. Check with: gh release view ci-$net-release"
     mv "$work/whispa-$net-release.apk" "$work/whispa-$net.apk"
   done
+
+  # THE F-DROID APK. See the header for why it exists. It is checked more
+  # strictly than the other two for one reason: those are what people install,
+  # and this is what a third party REBUILDS FROM SOURCE and compares against.
+  # An APK built from a different commit than the tag does not fail loudly
+  # here — it fails in F-Droid's build, weeks later, as "binary does not
+  # match", with nothing pointing back at this step.
+  if [ "$skip_fdroid" = "1" ]; then
+    note "WHISPA_SKIP_FDROID=1 — not fetching the F-Droid APK."
+  else
+    note "downloading the F-Droid build from ci-mainnet-release…"
+    gh release download "ci-mainnet-release" \
+       --pattern "whispa-mainnet-fdroid-release.apk" --dir "$work" --clobber \
+      || die "ci-mainnet-release has no whispa-mainnet-fdroid-release.apk. CI attaches it after every release-signed mainnet build, and removes the old one first, so it is missing when the last run's F-Droid steps failed — open that run. To release without it, set WHISPA_SKIP_FDROID=1 (F-Droid will then not be able to build this version)."
+    mv "$work/whispa-mainnet-fdroid-release.apk" "$work/whispa-mainnet-fdroid.apk"
+    have_fdroid=1
+
+    # Built from the commit this tree is at? CI writes the commit it built from
+    # into the release notes in the same run that attaches the asset, and
+    # deletes a stale asset before doing so, so the sentence and the file agree.
+    ci_notes="$(gh release view ci-mainnet-release --json body --jq .body 2>/dev/null || true)"
+    ci_sha="$(printf '%s' "$ci_notes" | sed -n 's/.* at `\([0-9a-f]\{8\}\)`.*/\1/p' | head -1)"
+    here_sha="$(git -C "$repo_root" rev-parse --short=8 HEAD 2>/dev/null || true)"
+    if [ -z "$ci_sha" ] || [ -z "$here_sha" ]; then
+      die "could not tell which commit the F-Droid APK was built from (CI notes: '${ci_sha:-?}', this tree: '${here_sha:-?}'). Refusing to publish a file F-Droid will rebuild without knowing it matches the tag."
+    fi
+    [ "$ci_sha" = "$here_sha" ] \
+      || die "the CI build is from commit $ci_sha but this tree is at $here_sha. The F-Droid APK has to be built from the commit being released, or F-Droid's rebuild will not match it. Push this commit and wait for the Build Android APK run to finish, then try again."
+    note "built from $ci_sha, which is this tree ✓"
+  fi
 else
-  die "pass either no APKs (fetch from CI) or exactly two: mainnet then signet."
+  die "pass either no APKs (fetch from CI), two (mainnet, signet) or three (… and the F-Droid APK)."
 fi
 
 # --------------------------------------------------------- signing certificate
@@ -172,14 +223,27 @@ PY
 main_cert="$(cert_of "$work/whispa-mainnet.apk")"
 sig_cert="$(cert_of "$work/whispa-signet.apk")"
 
-if [ -z "$main_cert" ] || [ -z "$sig_cert" ]; then
+fd_cert=""
+if [ "$have_fdroid" = "1" ]; then
+  fd_cert="$(cert_of "$work/whispa-mainnet-fdroid.apk")"
+fi
+
+if [ -z "$main_cert" ] || [ -z "$sig_cert" ] || { [ "$have_fdroid" = "1" ] && [ -z "$fd_cert" ]; }; then
   die "could not read a signing certificate from the APKs. Install the Android SDK build-tools (for apksigner) or python3+openssl, and try again — publishing without knowing which key signed a wallet is not a thing to do."
 fi
 note "mainnet $main_cert"
 note "signet  $sig_cert"
+[ "$have_fdroid" = "1" ] && note "f-droid $fd_cert"
 
 [ "$main_cert" = "$sig_cert" ] \
   || die "the two APKs are signed by DIFFERENT keys. One of them did not come from the release keystore."
+# The F-Droid APK is checked against the SAME key, not just "not debug":
+# fdroiddata's AllowedAPKSigningKeys is this certificate, so a file signed by
+# anything else is not a build F-Droid can ever publish.
+if [ "$have_fdroid" = "1" ]; then
+  [ "$main_cert" = "$fd_cert" ] \
+    || die "the F-Droid APK is signed by a DIFFERENT key ($fd_cert) than the mainnet APK ($main_cert). F-Droid's AllowedAPKSigningKeys would refuse it."
+fi
 
 debug_cert=""
 if command -v keytool >/dev/null 2>&1 && [ -f "$repo_root/android/app/debug.keystore" ]; then
@@ -206,7 +270,9 @@ fi
 
 # ------------------------------------------------------------ checksum and sign
 step "Checksumming and signing"
-"$repo_root/scripts/sign-release.sh" "$work/whispa-mainnet.apk" "$work/whispa-signet.apk"
+sign_files=("$work/whispa-mainnet.apk" "$work/whispa-signet.apk")
+[ "$have_fdroid" = "1" ] && sign_files+=("$work/whispa-mainnet-fdroid.apk")
+"$repo_root/scripts/sign-release.sh" "${sign_files[@]}"
 
 for f in SHA256SUMS SHA256SUMS.asc; do
   [ -s "$work/$f" ] || die "$f was not produced; not publishing."
@@ -281,6 +347,13 @@ else
   title="WhiSPa $tag"
 fi
 
+fdroid_note=""
+if [ "$have_fdroid" = "1" ]; then
+  fdroid_note="
+\`whispa-mainnet-fdroid.apk\` is the build F-Droid reproduces from source: the same app and signing key, without push notifications. It is not the one to install unless you are checking that build.
+"
+fi
+
 notes="$(cat <<EOF
 ${changelog:+$changelog
 
@@ -299,7 +372,7 @@ sha256sum --ignore-missing -c SHA256SUMS
 APK signing certificate SHA-256: \`$main_cert\`
 Android enforces this on every update, so an APK signed by any other key cannot
 replace an installed WhiSPa.
-
+${fdroid_note}
 \`\`\`
 $(cat "$work/SHA256SUMS")
 \`\`\`
@@ -325,11 +398,11 @@ if [ -n "$label" ] && gh release list --limit 100 --json name --jq '.[].name' \
      2>/dev/null | grep -Fxq "$title"; then
   die "a release is already called '$title'. PRERELEASE_LABEL in src/version.ts is still '$label' — bump it to the name this release should carry, or pass a tag for a build that has one."
 fi
+release_files=("$work/whispa-mainnet.apk" "$work/whispa-signet.apk")
+[ "$have_fdroid" = "1" ] && release_files+=("$work/whispa-mainnet-fdroid.apk")
+release_files+=("$work/SHA256SUMS" "$work/SHA256SUMS.asc")
 gh release create "$tag" \
-  "$work/whispa-mainnet.apk" \
-  "$work/whispa-signet.apk" \
-  "$work/SHA256SUMS" \
-  "$work/SHA256SUMS.asc" \
+  "${release_files[@]}" \
   --title "$title" \
   --notes "$notes" \
   || die "gh release create failed. The signed files are in $work — you can attach them by hand."
@@ -343,6 +416,11 @@ note "https://github.com/ponthief/whispa/releases/tag/$tag"
 note "The download page picks this up automatically:"
 note "  https://github.com/ponthief/whispa/releases/latest/download/whispa-mainnet.apk"
 note "  https://github.com/ponthief/whispa/releases/latest/download/whispa-signet.apk"
+if [ "$have_fdroid" = "1" ]; then
+  note "F-Droid's Binaries: asset is whispa-mainnet-fdroid.apk on this release."
+  note "Now bump versionName/versionCode/commit/CurrentVersion* in the fdroiddata"
+  note "MR to this release — see FDROID.md."
+fi
 note ""
 note "Check the fingerprint above still matches whispawallet.com/download.html, and"
 note "that it is also stated somewhere other than that page."

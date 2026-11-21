@@ -11,7 +11,7 @@ AutoName: WhiSPa
 
 RepoType: git
 Repo: https://github.com/ponthief/whispa.git
-Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet.apk
+Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
   - versionName: 0.5.0

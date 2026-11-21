@@ -323,6 +323,26 @@ JDK), no build timestamps in the output, and a verified rebuild before each
 release. It is the only way onto f-droid.org without breaking the update path,
 and it is a project of its own.
 
+### The reproducible-build asset
+
+`Binaries:` in the recipe names `whispa-mainnet-fdroid.apk`, **not**
+`whispa-mainnet.apk`. The published APK carries Firebase push and the F-Droid
+build cannot, so comparing against it fails every time — `build.py` raises on a
+mismatch, deletes the built APK and fails the build; it does not fall back to
+signing with F-Droid's key.
+
+CI builds the asset (`WHISPA_NO_PUSH=1`, `google-services.json` removed, default
+ABIs, after a `clean`, release key) and `scripts/cut-release.sh` publishes it
+from the commit being released. See RELEASING.md for the procedure and
+`npm run check:fdroid` for what is pinned.
+
+What is **not** settled by any of that: whether F-Droid's rebuild comes out
+byte-identical. CI checks what can be checked in the file — same certificate as
+the standard APK, no Firebase, MLKit or Play Services in the dex — and the real
+answer is F-Droid's build. The toolchain differs (the CI job uses `.nvmrc`'s
+node and Temurin 17; F-Droid's buildserver uses Debian's nodejs and its own
+JDK), and if the comparison fails, that is the first place to look.
+
 ### The submission
 
 A merge request against `gitlab.com/fdroid/fdroiddata` adding one file,

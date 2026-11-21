@@ -19,6 +19,38 @@ So the tag is `v${APP_VERSION}` and the release is *titled* from
 of `src/version.ts` rather than rebuilding it, so the About page and the
 release page cannot drift. `check:update` asserts both directions.
 
+### The F-Droid APK comes with it
+
+A release now carries a third APK, `whispa-mainnet-fdroid.apk`, beside the two
+people install. It is the **same app built the way f-droid.org builds it** — no
+Firebase, no `google-services.json`, default ABIs — and signed with the same
+release key. fdroiddata's `Binaries:` points at it, and F-Droid copies *our*
+signature onto *its* build and requires the result to verify, which is what lets
+f-droid.org publish an APK our existing installs can update to. It cannot be
+`whispa-mainnet.apk`: that one carries push notifications, so the two could
+never be byte-identical.
+
+You do not build it. CI does, in the mainnet job, after the normal APK is
+published (`THE APK F-DROID REPRODUCES` in `build-android.yml`), and attaches it
+to the rolling `ci-mainnet-release` prerelease. `cut-release.sh` then:
+
+- downloads it, and **refuses it** unless it was built from the commit this
+  tree is at (CI writes the commit into the release notes in the same run that
+  attaches the file, and deletes the previous file first, so the two agree) and
+  was signed by the **same key** as the mainnet APK;
+- checksums and GPG-signs it with the others, and attaches it.
+
+Push the release commit, **wait for the Build Android APK run to finish**, then
+cut the release. If the F-Droid steps failed in that run, the asset is missing
+and the script says so; open the run. `WHISPA_SKIP_FDROID=1` releases without
+it, at the cost that F-Droid then cannot build that version.
+
+**After cutting, move the MR.** In the fdroiddata branch change `versionName`,
+`versionCode`, `commit` (the full hash of the tag) and `CurrentVersion` /
+`CurrentVersionCode`. Only a release made after this existed has the asset: 0.5.0
+and 0.6.0 do not, and 0.5.0's source cannot be built F-Droid-style at all (it
+has no `WHISPA_NO_PUSH` switch and still scans through MLKit).
+
 ## Zapstore
 
 ### The thing to understand first

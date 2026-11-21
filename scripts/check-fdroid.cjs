@@ -209,6 +209,94 @@ console.log('\nthe F-Droid metadata is where fdroidserver looks');
   }
 }
 
+// ── the APK F-Droid reproduces ──────────────────────────────────────────────
+// `Binaries:` in the recipe names a release asset, F-Droid rebuilds from source
+// and requires the two to match bar the signature. That only holds if the asset
+// is built the way F-Droid builds it: no Firebase, no google-services.json,
+// default ABIs, the same key as the APK people install. Each of those is a line
+// in a workflow nobody can run from here, and each one wrong produces a file
+// that installs and runs and is simply never accepted — at F-Droid's build,
+// weeks later, as "binary does not match", with nothing pointing back here.
+console.log('\nthe F-Droid asset is built, signed and published the way F-Droid needs');
+{
+  const WF = read('.github/workflows/build-android.yml');
+  const CUT = read('scripts/cut-release.sh');
+  const canonR = read('fdroid/com.whispawallet.app.canonical.yml');
+  const ASSET = 'whispa-mainnet-fdroid.apk';
+  const CI_ASSET = 'whispa-mainnet-fdroid-release.apk';
+
+  const binaries = canonR && /^Binaries: .*\/v%v\/(\S+)$/m.exec(canonR);
+  ok('the recipe\'s Binaries: names the F-Droid asset, not the push build',
+    !!binaries && binaries[1] === ASSET,
+    binaries ? `it names ${binaries[1]}` : 'no Binaries: line');
+
+  ok('cut-release.sh publishes that asset name',
+    !!CUT && CUT.includes(`whispa-mainnet-fdroid.apk`) &&
+    /release_files\+=\(.*whispa-mainnet-fdroid\.apk/.test(CUT));
+  ok('and fetches what CI attaches',
+    !!CUT && CUT.includes(CI_ASSET));
+  ok('and checksums and signs it with the other two',
+    !!CUT && /sign_files\+=\(.*whispa-mainnet-fdroid\.apk/.test(CUT));
+  ok('and refuses one signed by a different key than the mainnet APK',
+    !!CUT && /\$main_cert" = "\$fd_cert"/.test(CUT));
+  ok('and refuses one built from another commit than the tree',
+    !!CUT && /\$ci_sha" = "\$here_sha"/.test(CUT));
+
+  if (WF) {
+    const step = (name) => {
+      const i = WF.indexOf(`- name: ${name}`);
+      if (i < 0) return null;
+      const next = WF.indexOf('\n      - ', i + 10);
+      return WF.slice(i, next < 0 ? undefined : next);
+    };
+    const build = step('Build the F-Droid (no-push) mainnet APK');
+    const verify = step('Verify the F-Droid APK');
+    const attach = step('Attach the F-Droid APK to the rolling prerelease');
+    const drop = step('Drop the previous F-Droid asset');
+    ok('CI has all four F-Droid steps', !!(build && verify && attach && drop));
+
+    const GATE = "matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'";
+    for (const [n, st] of [['build', build], ['verify', verify], ['attach', attach], ['drop', drop]]) {
+      ok(`the ${n} step runs only for a release-signed mainnet release build`,
+        !!st && st.includes(GATE),
+        'a debug-signed asset on the release would not be an update for anyone');
+    }
+    if (build) {
+      const rmAt = build.indexOf('rm -f android/app/google-services.json');
+      const runAt = build.indexOf('npm run apk:fdroid');
+      ok('google-services.json is removed BEFORE the build',
+        rmAt >= 0 && runAt > rmAt,
+        'app/build.gradle applies the google-services plugin whenever the file exists');
+      ok('after a clean, so nothing carries over from the push build',
+        /gradlew clean/.test(build) && build.indexOf('gradlew clean') < runAt);
+      ok('through apk:fdroid, which sets WHISPA_NO_PUSH', runAt >= 0);
+      ok('with the default ABIs, as F-Droid builds them',
+        !/reactNativeArchitectures/.test(build.replace(/#.*$/gm, '')),
+        'a -PreactNativeArchitectures here makes the asset differ from F-Droid\'s build');
+    }
+    if (verify) {
+      ok('it is checked against the standard APK\'s certificate',
+        /steps\.cert\.outputs\.cert/.test(verify) && /"\$CERT" != "\$MAIN_CERT"/.test(verify));
+      ok('and for Firebase, MLKit and Play Services in the dex',
+        ['com/google/firebase', 'io/invertase/firebase', 'com/google/mlkit', 'com/google/android/gms']
+          .every((p) => verify.includes(p)) && /barhopper/.test(verify));
+    }
+    if (attach) {
+      ok(`it is attached as ${CI_ASSET}, which cut-release.sh downloads`,
+        attach.includes(CI_ASSET) && attach.includes('ci-mainnet-release'));
+    }
+    const dropAt = WF.indexOf('- name: Drop the previous F-Droid asset');
+    const pubAt = WF.indexOf('- name: Publish a rolling prerelease');
+    ok('the previous asset is dropped BEFORE this run\'s notes are written',
+      dropAt >= 0 && pubAt > dropAt,
+      'the notes name the commit cut-release.sh checks; a stale asset under them would be a lie');
+    const keyAt = WF.indexOf('- name: Remove the keystore');
+    const attachAt = WF.indexOf('- name: Attach the F-Droid APK');
+    ok('and the keystore is still there when it is signed',
+      attachAt >= 0 && keyAt > attachAt && WF.indexOf('- name: Build the F-Droid (no-push) mainnet APK') < keyAt);
+  }
+}
+
 // THE CANONICAL RECIPE CARRIES NO COMMENTS, and that is not a style rule.
 // fdroiddata's CI enforces `fdroid rewritemeta` output, and rewritemeta strips
 // every comment to produce it — so a comment in this file is a guaranteed CI

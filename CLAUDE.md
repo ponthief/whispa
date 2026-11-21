@@ -3001,6 +3001,35 @@ and Zapstore both read. Its changelog file is named for the **versionCode**
 (`major * 10000 + minor * 100 + patch`, so 0.5.0 is `500.txt`) — one named
 after the version string is silently ignored.
 
+### The F-Droid asset is a second APK, built by CI
+
+Asked for 2026-11-21 (*"can't you build it in CI?"*), after fdroiddata MR 54187
+turned out to be set up to compare F-Droid's no-push build against
+`whispa-mainnet.apk`, which carries Firebase and so could never match.
+
+Every release carries `whispa-mainnet-fdroid.apk`: the same app built the way
+F-Droid builds it, signed with the release key. The mainnet CI job builds it
+**after** the normal APK is published (so a failure cannot touch the downloads
+that went out) and attaches it to `ci-mainnet-release`; `cut-release.sh` fetches
+it and refuses one built from another commit or signed by another key.
+Things that must stay true, each pinned by `check:fdroid` and each invisible
+otherwise, because the file installs and runs either way:
+
+- `google-services.json` is **removed** before that build — `app/build.gradle`
+  applies the plugin whenever the file exists — and it is built after a `clean`.
+- **No `-PreactNativeArchitectures`**: F-Droid passes none.
+- It is checked against the standard APK's certificate and for Firebase, MLKit
+  and Play Services in the dex before it is attached.
+- **The previous asset is deleted before the notes are rewritten.** The notes
+  name the commit `cut-release.sh` compares against; a stale asset under them
+  would be a lie that passes.
+- fdroiddata's `Binaries:` is `…/v%v/whispa-mainnet-fdroid.apk`, and only
+  releases made after this have it. 0.5.0 and 0.6.0 do not.
+
+Not verified, and only F-Droid's own build can: that its rebuild is
+byte-identical (different node and JDK from CI's). That is the failure to
+expect first.
+
 ## The Bitcoin sign is drawn, and BitMail starts with it
 
 Asked for 2026-11-15 (*"in web app there is not a single page with Bitcoin

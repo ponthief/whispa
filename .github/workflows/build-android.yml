@@ -519,6 +519,23 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           retention-days: 14
 
+      # THE F-DROID ASSET MUST NEVER OUTLIVE ITS BUILD. The no-push APK below is
+      # attached to this same rolling prerelease, and the notes the publish step
+      # writes say which commit the release was built from. If this run's
+      # F-Droid build failed and last run's asset were left in place, the notes
+      # would name this commit over a file built from the previous one, and
+      # scripts/cut-release.sh — which checks that very sentence — would be
+      # reading a lie. So the old one goes first: an asset that is there was
+      # built by the run whose notes are on the page.
+      - name: Drop the previous F-Droid asset
+        if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete-asset ci-mainnet-release whispa-mainnet-fdroid-release.apk --yes 2>/dev/null \
+            && echo "Removed the previous F-Droid asset." \
+            || echo "No previous F-Droid asset to remove."
+
       # A run artifact is a login-gated zip, which is the wrong shape when the
       # device you want the APK on is the phone. This puts the raw .apk behind a
       # fixed URL you can open in the phone's browser and install straight from
@@ -716,6 +733,138 @@ jobs:
             echo '```'
             echo "adb install -r <the .apk>"
             echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ───────────────────────────────────────────────────────────────────────
+      # THE APK F-DROID REPRODUCES  (mainnet release builds only)
+      #
+      # fdroiddata's metadata says `Binaries: …/whispa-mainnet-fdroid.apk` and
+      # `AllowedAPKSigningKeys: <our certificate>`. That pair is what lets
+      # f-droid.org publish an APK signed with OUR key — otherwise it signs with
+      # its own, which is a different app to Android, and nobody on an existing
+      # install could update to it. F-Droid builds from source, downloads this
+      # file, copies our signature onto its own build and requires the result to
+      # verify. For that the two have to be the same build, byte for byte, bar
+      # the signature.
+      #
+      # So this is not the APK above. F-Droid's build has no Firebase: the
+      # metadata burns WHISPA_NO_PUSH on, and there is no google-services.json.
+      # The APK above has both, and could never match. This one is built the way
+      # F-Droid builds it —
+      #
+      #   * WHISPA_NO_PUSH=1, which drops Firebase from autolinking;
+      #   * android/app/google-services.json REMOVED, because app/build.gradle
+      #     applies the google-services plugin whenever the file exists;
+      #   * the default ABIs, not this run's `architectures` input — F-Droid
+      #     passes none;
+      #   * after a `clean`, so nothing is carried over from the build above,
+      #
+      # — and signed with the same release key, which is still decoded here:
+      # these steps run before the keystore is removed. Nothing about the key's
+      # exposure changes; it signs one more file in a job that already held it.
+      #
+      # It runs AFTER the primary APK has been published, in the same job, so a
+      # failure here marks the run red without touching the downloads that
+      # already went out. It is deliberately not `continue-on-error`: a silent
+      # failure would be a release with no F-Droid asset and nothing saying why.
+      #
+      # Whether it really matches F-Droid's rebuild is settled by F-Droid's
+      # build, not here. This job only guarantees what can be checked in the
+      # file: same key as the standard APK, and no Firebase, MLKit or Play
+      # Services in it.
+      - name: Build the F-Droid (no-push) mainnet APK
+        id: fdroid_build
+        if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g
+        run: |
+          rm -f android/app/google-services.json
+          ( cd android && ./gradlew clean && ./gradlew --stop )
+          # --stop so the build below starts a daemon whose environment is this
+          # step's: the autolinking decision reads WHISPA_NO_PUSH, and a daemon
+          # left over from the build above is not worth trusting with it.
+          # No -PreactNativeArchitectures: F-Droid passes none, and the
+          # build.gradle default is what it will build.
+          npm run apk:fdroid
+
+      - name: Verify the F-Droid APK
+        id: fdroid_verify
+        if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
+        env:
+          MAIN_CERT: ${{ steps.cert.outputs.cert }}
+        run: |
+          APK="$(find android/app/build/outputs/apk -name '*.apk' -print | head -1)"
+          test -n "$APK" || { echo "::error::the F-Droid build produced no APK"; exit 1; }
+          APK="$(realpath "$APK")"
+          ls -l "$APK"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$APKSIGNER" || { echo "::error::apksigner not found in the Android SDK"; exit 1; }
+          CERT="$("$APKSIGNER" verify --print-certs "$APK" \
+                    | grep -i 'SHA-256 digest' | head -1 | awk '{print $NF}' | tr 'A-F' 'a-f')"
+          echo "F-Droid APK certificate: $CERT"
+          echo "Standard APK certificate: $MAIN_CERT"
+          if [ -z "$CERT" ] || [ "$CERT" != "$MAIN_CERT" ]; then
+            echo "::error::The F-Droid APK is not signed by the same key as the standard APK. It would not be an update for anyone, and F-Droid's AllowedAPKSigningKeys would refuse it."
+            exit 1
+          fi
+
+          # What makes it the F-Droid build rather than a second copy of the
+          # first: no proprietary code in it. Publishing one with Firebase in it
+          # would be the same mistake as not building it at all, and nobody
+          # would notice, because it installs and runs.
+          unzip -Z1 "$APK" > /tmp/fd-entries.txt
+          fail=0
+          if grep -qiE 'barhopper|\.tflite$' /tmp/fd-entries.txt; then
+            echo "::error::MLKit native files are in the F-Droid APK:"
+            grep -iE 'barhopper|\.tflite$' /tmp/fd-entries.txt
+            fail=1
+          fi
+          mkdir -p /tmp/fd-dex && unzip -qo "$APK" 'classes*.dex' -d /tmp/fd-dex
+          for pattern in com/google/firebase io/invertase/firebase com/google/mlkit com/google/android/gms; do
+            n=$(cat /tmp/fd-dex/classes*.dex | strings | grep -c "$pattern" || true)
+            printf '%-28s %s\n' "$pattern" "$n"
+            if [ "$n" -gt 0 ]; then
+              echo "::error::$pattern is in the F-Droid APK ($n class-name hits)."
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Attach the F-Droid APK to the rolling prerelease
+        id: fdroid_publish
+        if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME=whispa-mainnet-fdroid-release.apk
+          cp "${{ steps.fdroid_verify.outputs.apk }}" "$NAME"
+          gh release upload ci-mainnet-release "$NAME" --clobber
+          # Prove the asset is there at the size we built, rather than trusting
+          # that an upload which returned 0 stored what was sent.
+          WANT="$(stat -c%s "$NAME")"
+          GOT="$(gh release view ci-mainnet-release --json assets \
+                   --jq ".assets[] | select(.name==\"$NAME\") | .size")"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::$NAME is $GOT bytes on the release, expected $WANT."
+            exit 1
+          fi
+          SHA="$(sha256sum "$NAME" | cut -d' ' -f1)"
+          {
+            echo "### F-Droid APK"
+            echo
+            echo "\`$NAME\` attached to the \`ci-mainnet-release\` prerelease."
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| size | $WANT bytes |"
+            echo "| file SHA-256 | \`$SHA\` |"
+            echo "| signed with | the same key as the standard APK |"
+            echo "| built from | \`${GITHUB_SHA:0:8}\` |"
+            echo
+            echo "No push notifications, no Firebase, MLKit or Play Services. \`scripts/cut-release.sh\` publishes it as \`whispa-mainnet-fdroid.apk\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove the keystore

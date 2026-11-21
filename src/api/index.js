@@ -1002,15 +1002,6 @@ export async function adminListBip353Requests(inkey) {
   })
 }
 
-// Rewrite issued BitMail records so they use the BIP-321 key for their network
-// (tsp= on signet). Only the key changes; see siLNt helpers/bip321.py.
-export async function adminRepublishBip353(inkey) {
-  return req(`${SILNT}/api/v1/bip353/admin/republish`, {
-    method: 'POST',
-    headers: keyHeaders(inkey),
-  })
-}
-
 export async function adminApproveBip353Request(inkey, reqId, finalUsername = null) {
   return req(`${SILNT}/api/v1/bip353/admin/requests/${reqId}/approve`, {
     method: 'POST',

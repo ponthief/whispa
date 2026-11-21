@@ -157,23 +157,6 @@ const cfSaved   = ref(false)
 const cfError   = ref(null)
 const showToken = ref(false)
 
-// Rewriting issued BitMail records to the BIP-321 key for their network.
-const republishing     = ref(false)
-const republishResult  = ref(null)
-const republishError   = ref(null)
-async function republishBitmail() {
-  if (republishing.value) return
-  if (!window.confirm('Rewrite issued BitMail DNS records to the BIP-321 key for their network (tsp= on signet)? Only the key changes; a record pointing at a different address is left alone.')) return
-  republishing.value = true; republishError.value = null; republishResult.value = null
-  try {
-    republishResult.value = await api.adminRepublishBip353(auth.adminkey)
-  } catch (e) {
-    republishError.value = e.message
-  } finally {
-    republishing.value = false
-  }
-}
-
 // Ntfy notifications config
 const ntfy        = ref({ enabled: false, server_url: 'https://ntfy.sh', topics: [], access_token: '', username: '', password: '', priority: 'default' })
 const ntfySaving  = ref(false)
@@ -1420,29 +1403,6 @@ onBeforeUnmount(() => {
               <button class="btn btn-primary" :disabled="cfSaving" @click="saveCfConfig">
                 <span v-if="cfSaving" class="spinner" style="border-top-color:#000"></span>
                 {{ cfSaving ? 'Saving…' : 'Save Cloudflare Config' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:16px">
-          <div class="card-header"><h2>Record format</h2></div>
-          <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
-            <p class="text-dim text-sm">
-              Wallets like Sparrow read a signet BitMail from <span class="mono">tsp=</span>, not
-              <span class="mono">sp=</span>. New records already use the right key; this rewrites the
-              ones issued before.
-            </p>
-            <div v-if="republishError" class="alert alert-error">⚠ {{ republishError }}</div>
-            <div v-if="republishResult" class="alert alert-success">
-              ✓ {{ republishResult.rewritten.length }} rewritten, {{ republishResult.already_current }} already current<span v-if="republishResult.skipped.length">, {{ republishResult.skipped.length }} skipped</span>.
-              <div v-if="republishResult.rewritten.length" class="mono text-xs" style="margin-top:6px">{{ republishResult.rewritten.join(', ') }}</div>
-              <div v-for="s in republishResult.skipped" :key="s.name" class="text-xs" style="margin-top:4px"><span class="mono">{{ s.name }}</span> — {{ s.reason }}</div>
-            </div>
-            <div>
-              <button class="btn btn-ghost" :disabled="republishing" @click="republishBitmail">
-                <span v-if="republishing" class="spinner"></span>
-                {{ republishing ? 'Rewriting…' : 'Rewrite existing records' }}
               </button>
             </div>
           </div>

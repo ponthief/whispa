@@ -286,9 +286,11 @@ export async function prepareTx(adminkey, { walletId, recipient, amount, feeRate
   })
 }
 
-// DEPRECATED for the web app, still live for React Native: this is the call
-// that sends the spend key. It stays until the mobile app moves to prepareTx +
-// spSign.ts as well — see siLNt models.py BuildTxRequest.
+// DEPRECATED — this is the call that sends the spend key. Neither client calls
+// it any more (both build and sign on the device through prepareTx + spSign.ts);
+// it stays only so a build that predates that still has something to talk to,
+// with /tx/build on the backend (siLNt models.py BuildTxRequest). check:keywire
+// refuses a caller.
 export async function buildTx(adminkey, data, spendKey, scanSecret) {
   return req(`${SILNT}/api/v1/tx/build`, {
     method: 'POST',

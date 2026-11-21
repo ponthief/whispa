@@ -89,6 +89,7 @@ npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
 npm run check:memo          # the Send memo: 200 characters, one line, device-only, in Activity and the backup
+npm run check:keywire       # signing sends no key: the wire, the callers and the call sites, both clients
 npm run check:sendwatch     # the send watcher polls only what this account sent
 npm run check:spuri         # a BitMail record's SP key is its address's HRP: sp= mainnet, tsp= signet
 npm run check:activity      # Recipients only on a send; a confirmed row is not Pending
@@ -111,6 +112,55 @@ npm run check:seed          # the web keeps the words beside the keys, and shows
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
+
+## Signing sends no key, and nothing used to say so
+
+Asked for 2026-11-21 (*"check that when we sign the tnx in the web app we are
+not sending spend keys to the server.. also for mobile"*). **Neither client
+sends one.** Both build and sign on the device: a send posts outpoints to
+`/tx/prepare` (or addresses to `/plain/prepare`), signs locally, and posts the
+signed hex to `/tx/broadcast` (`/plain/broadcast`). Tango posts public scripts
+and signatures; PayJoin posts outpoints and a signed PSBT; wallet create posts
+`{ title, sp_address, last_height }`.
+
+What the audit found is that **nothing pinned it**. Both api modules still carry
+three functions that serialise a private key — `buildTx` (`spend_key`),
+`buildPlainSpend` (the BIP-84 chain's keys) and `recoverWalletKeys` (an
+encrypted mnemonic and the passphrase) — and the backend still accepts all
+three for builds that predate on-device signing. Only the last had a guard
+(`check:seed`). A first caller added to either of the others would have sent a
+spend key with every other check green, because a signed transaction still comes
+out the far end.
+
+`check:keywire` is that guard, three ways. It **loads the real api modules**
+against a capturing `fetch` and calls every function a send, a wallet create or a
+broadcast goes through with sentinel secrets planted where a careless caller
+could pass them (a coin object carrying `priv_key_tweak`, a `meta` carrying a
+key); its **controls** call the legacy functions the same way and require the
+sentinel to appear, so a blind capture cannot pass. It **refuses any caller** of
+the three outside the api modules, and **any other api function whose request
+body names a key**. And it reads the **object literals the views hand** to the
+Tango, PayJoin, send and create calls, which the wire test cannot reach. All
+four mutations it was written against (a caller, a new leaking function, a key at
+a call site, `prepareTx` no longer reducing coins to outpoints) fail it.
+
+**What does reach the server, by design**, and is not a finding: the **scan key**
+(`scan_secret`) in scan, preview and background-scan calls — it detects payments
+and cannot spend them, and `ALLOWED_SCAN` in the check names exactly which
+functions may send it; and each coin's **`priv_key_tweak`**, which the server
+stores in `silnt.utxos` — it is `t_k`, and the output's private key is
+`b_spend + t_k`, so it spends nothing without the spend key. Background scan
+stores the scan key server-side only after the user turns it on.
+
+**Not done, and wanting a decision:** the three legacy functions are still in
+both api modules and the three endpoints (`/tx/build`, `/plain/spend`,
+`/wallet/{id}/recover-keys`) still accept keys on the backend. Removing them
+strands any installed build that has not updated, and this file's standing rule
+is not to remove anything unasked. Until they go, a client that did call one
+would be refused by `check:keywire`, but a **script posting to the server could
+still hand it a key** — the server accepts, uses and discards it. Closing the
+endpoints, once old builds have aged out, is what makes "the server never sees a
+spend key" true of the server and not only of our two clients.
 
 ## WhiSPa is not a Lightning wallet
 

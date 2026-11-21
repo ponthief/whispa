@@ -698,7 +698,7 @@ console.log('\nthe browser does all of it too');
   const ACTIVITY = read2('src/views/TransactionsView.vue');
   const PSTORE = read2('src/stores/pendingsends.js');
   ok('the pending store records which way the money went',
-     /kind = 'send'\)/.test(PSTORE), PSTORE);
+     /kind = 'send'(?:, owner = null)?\)/.test(PSTORE), PSTORE);
   ok('with a default for rows written before it existed',
      /export function sendKind/.test(PSTORE), PSTORE);
   ok('Activity reads it rather than assuming',

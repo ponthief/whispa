@@ -412,8 +412,16 @@ nowhere else.
 siLNt `helpers/bip321.py` writes the right key and reads **both**; the clients
 read through `services/spUri.ts`. Reading both is deliberate: every signet record
 issued before this carries `bitcoin:?sp=tsp1…` and must keep resolving. The
-admin action `POST /api/v1/bip353/admin/republish` rewrites issued records that
-differ from the spec only in the key, and leaves one pointing elsewhere alone.
+endpoint `POST /api/v1/bip353/admin/republish` rewrites issued records that
+differ from the spec only in the key, and leaves one pointing elsewhere alone. It
+was run once on signet (2026-11-21) from a button that was then removed at the
+user's instruction; the endpoint stays, with no UI. New records are written
+correctly, so it is only needed if records are ever written another way.
+
+`GET /bip353/resolve` keeps `result` in the legacy `bitcoin:?sp=<address>` shape
+(`client_resolve_shape`), with `uri` and `sp_address` beside it, because a build
+that predates `tsp=` reads `bitcoin:?tsp=…` as a different address and would call
+a correct record tampering. Do not "simplify" that back to the raw record.
 
 The old parser was `str.replace('sp=', '')`, and it does not merely miss `tsp=`:
 it turns `bitcoin:?tsp=tsp1…` into `bitcoin:?ttsp1…`. `check:spuri` and

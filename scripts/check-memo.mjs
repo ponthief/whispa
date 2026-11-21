@@ -113,6 +113,16 @@ ok('phone: the detail sheet hides it on a receive',
 ok('phone: the row carries it', /memo\?: string/.test(read('src/components/TransactionList.tsx')) && /txMemoMap\[it\.id\]/.test(read('src/screens/WalletScreen.tsx')));
 ok('phone: the detail sheet shows it', /useTxMemoStore/.test(read('src/components/TxDetailModal.tsx')) && /Memo<\/Text>/.test(read('src/components/TxDetailModal.tsx')));
 
+console.log('copy');
+// The field no longer says "Only you see this" (2026-11-21, on the user's
+// instruction). It is still true — the memo is device-only, which is what the
+// section below pins — and it is the explanation that was cut, not the rule.
+ok('neither memo field says who can see it',
+  !/Only you see/.test(read('src/views/SendView.vue')) && !/Only you see/.test(read('src/screens/SendScreen.tsx')));
+ok('both keep the length counter',
+  /memoLength\(memo\) \}\}\/\{\{ MEMO_MAX/.test(read('src/views/SendView.vue')) &&
+  /\{memoLength\(memo\)\}\/\{MEMO_MAX\}/.test(read('src/screens/SendScreen.tsx')));
+
 console.log('device only');
 ok('the phone store is the keystore and nothing else', /Keychain/.test(read('src/services/txMemos.ts')) && !/fetch\(|api\./.test(read('src/services/txMemos.ts')));
 ok('neither client sends it to the server', !/memo/i.test(

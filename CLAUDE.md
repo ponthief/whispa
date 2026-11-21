@@ -518,8 +518,10 @@ backup file.
 
 **It is NOT sent to the recipient.** It is not in the transaction (an OP_RETURN
 would be on chain for good) and not in any message, so the recipient never sees
-it, and the field says "Only you see this" for that reason. A memo the other side
-could read would be a different feature with a different privacy cost.
+it. The field used to say "Only you see this" and no longer does (2026-11-21, on
+the user's instruction); it is still true, and `check:memo` asserts the phrase
+absent so it does not grow back. A memo the other side could read would be a
+different feature with a different privacy cost.
 
 **It is device-only, beside the transaction labels and for the same reason** —
 a server-side map of txid to what the payment was for is the metadata this wallet
@@ -556,6 +558,26 @@ having no way to tell it from a receive on the same device.
 **Deliberately not done:** editing a memo after the send (the label editor on the
 phone could take it), a Tango memo, and showing it on the receiver's side — the
 receiver has nothing to show, by design.
+
+## Smaller copy and flow decisions, 2026-11-21
+
+**Background scanning's consent is two sentences** (*"too long.. drop most of
+it.. just say that scanning takes place while the app is closed and that if any
+payments found would be shown"*): *"Scanning takes place while the app is closed.
+Any payments found will be shown."*, in the web `confirm` and the phone `Alert`.
+It was a paragraph saying the scan key is uploaded, that the server can then see
+the payment history, and that it can never spend. **Know what that costs:** the
+only place the product said the server learns the history is gone from the
+dialog. The ask-before-enabling step is unchanged and the switch's help line
+under it on the phone still says it is server-side and detection only. `check:scan`
+pins the short text on both and refuses the old clauses coming back.
+
+**The phone's *★ Save contact* saves** (*"clicking Save contact after entering it
+on Send screen doesn't save it: you have to enter label and click Save"*). It was
+a toggle that opened a label field and a second *Save* button. It is the web's
+shape now: an optional label field and the button that says what it does, shown
+only for an address not already saved, falling back to the address as the label.
+`check:send` pins it.
 
 ## Stealth mode hides an icon, not an app
 

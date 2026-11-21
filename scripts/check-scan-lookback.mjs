@@ -348,6 +348,30 @@ console.log('\nthe screen and the picker use them');
 }
 
 console.log('');
+// THE CONSENT TEXT FOR BACKGROUND SCANNING IS TWO SENTENCES (2026-11-21, on the
+// user's instruction: "too long.. drop most of it.. just say that scanning takes
+// place while the app is closed and that if any payments found would be shown").
+// It had been a paragraph on both clients saying the scan key is uploaded, that
+// the server can then see the payment history, and that it can never spend.
+// Know what that costs: the dialog no longer says the server learns the history.
+// The Cancel / Turn on choice is still there; it is the explanation that went.
+// Asserted ABSENT as well as present, because a cut here grows back one true
+// clause at a time (see the stealth and backup notes).
+{
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const web = strip(read('src/views/WalletsView.vue'));
+  const phone = strip(read('src/screens/settings/ScanningPage.tsx'));
+  const SHORT = /Scanning takes place while the app is[\s\S]{0,12}closed\. Any payments found will[\s\S]{0,12}be shown\./;
+  ok('web consent says scanning runs while the app is closed and payments are shown', SHORT.test(web));
+  ok('phone consent says the same', SHORT.test(phone));
+  ok('neither consent grows back the paragraph',
+    !/uploads this wallet|payment history|spend key never leaves/i.test(
+      (web.match(/Turn on background scanning\?[\s\S]{0,400}/) || [''])[0] +
+      (phone.match(/Turn on background scanning\?[\s\S]{0,400}/) || [''])[0]));
+  ok('and both still ask before turning it on',
+    /confirm\(\s*"Turn on background scanning/.test(web) && /Alert\.alert\(\s*'Turn on background scanning/.test(phone));
+}
+
 if (failures) {
   console.log(`${failures} check(s) failed`);
   process.exit(1);

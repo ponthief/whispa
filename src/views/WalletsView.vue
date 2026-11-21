@@ -298,10 +298,8 @@ async function loadBgScan(list) {
 async function toggleBgScan(w) {
   const enabling = !bgScan.value[w.id]
   if (enabling && !confirm(
-    "Turn on background scanning?\n\nThis uploads this wallet's scan key to the " +
-    "server so it can find your incoming payments while you're away. The server " +
-    "will then be able to see your payment history — but it can never spend your " +
-    "funds (your spend key never leaves this device). You can turn it off anytime."
+    "Turn on background scanning?\n\nScanning takes place while the app is " +
+    "closed. Any payments found will be shown."
   )) return
   bgBusy.value = { ...bgBusy.value, [w.id]: true }
   try {

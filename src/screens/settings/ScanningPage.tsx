@@ -77,13 +77,11 @@ export default function ScanningPage({ onBack }: { onBack: () => void }) {
         applyBackgroundScan(false);
         return;
       }
-      // Enabling uploads the scan key — get explicit, informed consent.
+      // Enabling uploads the scan key, so it is asked first. The text is short on
+      // purpose (the user's instruction, 2026-11-21); see check:scan.
       Alert.alert(
         'Turn on background scanning?',
-        "This uploads this wallet's scan key to the server so it can find your " +
-          'incoming payments while the app is closed. The server will then be ' +
-          'able to see your payment history — but it can never spend your funds ' +
-          '(your spend key never leaves this phone). You can turn it off anytime.',
+        'Scanning takes place while the app is closed. Any payments found will be shown.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Turn on', onPress: () => applyBackgroundScan(true) },

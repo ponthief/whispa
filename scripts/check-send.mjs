@@ -145,5 +145,24 @@ console.log('the Send page builds several transactions at once, and a coin is in
     'a <button> defaults to buttontext, black on a dark card');
 }
 
+// THE PHONE'S "★ Save contact" SAVES (2026-11-21: "clicking Save contact after
+// entering it on Send screen doesn't save it: you have to enter label and click
+// Save"). It was a toggle that opened a label field and a second Save button, so
+// the button named for the action did not do it. The web's has always saved
+// straight away with an optional label; the phone is that now.
+{
+  const ss = read('src/screens/SendScreen.tsx');
+  ok('the phone has no toggle in front of saving a contact',
+    !/showSaveContact|setShowSaveContact/.test(ss),
+    'a button called Save contact must be the one that saves');
+  ok('the button that says Save contact is the one wired to onSaveContact',
+    /onPress=\{onSaveContact\}[\s\S]{0,260}★ Save contact/.test(ss));
+  ok('the label is optional and falls back to the address, as on the web',
+    /createContact\(inkey, contactLabel\.trim\(\) \|\| value, value\)/.test(ss) &&
+      /Label \(optional/.test(ss));
+  ok('it is offered only for an address not already saved',
+    /saveable && !alreadySaved \? \(\s*<View style=\{styles\.saveContactRow\}/.test(ss));
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed — Send resolves a BitMail on both sides, keeps a draft, builds several transactions in tabs, and a Tango request shows from anywhere');
 process.exit(failed ? 1 : 0);

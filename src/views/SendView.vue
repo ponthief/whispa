@@ -1502,7 +1502,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
                 :maxlength="MEMO_MAX"
                 autocomplete="off"
                 placeholder="What is this payment for?" />
-              <span class="text-dim text-xs">Only you see this · {{ memoLength(memo) }}/{{ MEMO_MAX }}</span>
+              <span class="text-dim text-xs">{{ memoLength(memo) }}/{{ MEMO_MAX }}</span>
             </div>
             <div class="field">
               <label>Fee Rate</label>

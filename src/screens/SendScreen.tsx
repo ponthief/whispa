@@ -264,7 +264,6 @@ export default function SendScreen() {
   const [contacts, setContacts] = useState<api.SpContact[]>([]);
   const [showContacts, setShowContacts] = useState(false);
   const [savingContact, setSavingContact] = useState(false);
-  const [showSaveContact, setShowSaveContact] = useState(false);
   const [contactLabel, setContactLabel] = useState('');
   const [contactMsg, setContactMsg] = useState<string | null>(null);
 
@@ -436,7 +435,6 @@ export default function SendScreen() {
     try {
       await api.createContact(inkey, contactLabel.trim() || value, value);
       setContactLabel('');
-      setShowSaveContact(false);
       setContactMsg('Contact saved.');
       await loadContacts();
     } catch (e: any) {
@@ -1451,13 +1449,6 @@ export default function SendScreen() {
                 Contacts{contacts.length ? ` (${contacts.length})` : ''}
               </Text>
             </TouchableOpacity>
-            {saveable && !alreadySaved ? (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => setShowSaveContact((v) => !v)}>
-                <Text style={styles.actionBtnText}>★ Save contact</Text>
-              </TouchableOpacity>
-            ) : null}
             {alreadySaved ? (
               <Text style={styles.savedHint}>✓ In contacts</Text>
             ) : null}
@@ -1483,13 +1474,13 @@ export default function SendScreen() {
             </View>
           ) : null}
 
-          {showSaveContact && saveable ? (
+          {saveable && !alreadySaved ? (
             <View style={styles.saveContactRow}>
               <TextInput
                 style={[styles.input, styles.contactLabelInput]}
                 value={contactLabel}
                 onChangeText={setContactLabel}
-                placeholder="Label (e.g. Alice)"
+                placeholder="Label (optional, e.g. Alice)"
                 placeholderTextColor={colors.faint}
                 maxLength={40}
               />
@@ -1503,7 +1494,7 @@ export default function SendScreen() {
                 {savingContact ? (
                   <ActivityIndicator color={PRIMARY} />
                 ) : (
-                  <Text style={styles.inlineSaveText}>Save</Text>
+                  <Text style={styles.inlineSaveText}>★ Save contact</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1548,7 +1539,7 @@ export default function SendScreen() {
             placeholderTextColor={colors.faint}
           />
           <Text style={styles.memoHint}>
-            Only you see this · {memoLength(memo)}/{MEMO_MAX}
+            {memoLength(memo)}/{MEMO_MAX}
           </Text>
 
           <Text style={styles.label}>Fee rate</Text>
@@ -1946,7 +1937,7 @@ const styles = StyleSheet.create({
   contactLabelInput: { flex: 1 },
   contactMsg: { fontSize: 13, color: colors.muted, marginTop: 8 },
   memoHint: { fontSize: 12, color: colors.faint, marginTop: 4 },
-  // The "Save" button beside the contact-label input: taller than actionBtn so
+  // The "Save contact" button beside the contact-label input: taller than actionBtn so
   // it lines up with the input's height.
   inlineSaveBtn: {
     borderWidth: 1,

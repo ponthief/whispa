@@ -51,6 +51,7 @@
     "check:catchup": "node --import ./scripts/ts-resolve.mjs scripts/check-catchup.mjs",
     "check:vue": "node scripts/check-vue-imports.cjs",
     "check:admin": "node scripts/check-admin-payouts.cjs",
+    "check:memo": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-memo.mjs",
     "check:sendwatch": "node scripts/check-sendwatch.cjs",
     "check:spuri": "node --experimental-strip-types scripts/check-spuri.mjs",
     "check:activity": "node scripts/check-activity.cjs",

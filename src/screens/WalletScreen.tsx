@@ -35,6 +35,7 @@ import { flushLabelQueue } from '@services/pendingLabelsStore';
 import ScanProgressBar from '../components/ScanProgressBar';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useTxMemoStore } from '@stores/txMemoStore';
 import { MASK, useBalancePrivacy } from '@stores/balancePrivacy';
 import { useCatchUpScan } from '../hooks/useCatchUpScan';
 import BrandText from '../components/BrandText';
@@ -141,6 +142,8 @@ export default function WalletScreen() {
   // refetch and without remounting it.
   const [spRawTxs, setSpRawTxs] = useState<api.SpTransaction[]>([]);
   const txLabelMap = useTxLabelStore((s) => s.labels);
+  // What the sender typed on Send, kept on this device.
+  const txMemoMap = useTxMemoStore((s) => s.memos);
   const pendingLocal = usePendingSends((s) => s.sends);
   // The device's own record of what left the SegWit chain (never sent to the
   // server). The detail sheet needs it for the same reason the web's does:
@@ -224,10 +227,10 @@ export default function WalletScreen() {
     // than pinned on top: one of these was always the most recent thing when
     // they only existed while pending, and a confirmed one from last month has
     // no business above this morning's.
-    return [...local, ...rows].sort(
-      (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
-    );
-  }, [spRawTxs, txLabelMap, pendingLocal, plainHistory, spWalletId]);
+    return [...local, ...rows]
+      .map((it) => (txMemoMap[it.id] ? { ...it, memo: txMemoMap[it.id] } : it))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [spRawTxs, txLabelMap, txMemoMap, pendingLocal, plainHistory, spWalletId]);
 
   const load = useCallback(async () => {
     if (!inkey) {

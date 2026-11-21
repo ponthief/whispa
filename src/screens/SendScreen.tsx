@@ -29,6 +29,8 @@ import {
 import { getWalletKeys } from '@services/secureKeys';
 import { usePendingSends } from '@stores/pendingSends';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useTxMemoStore } from '@stores/txMemoStore';
+import { MEMO_MAX, clampMemo, memoLength } from '@services/memo';
 import { usePlainStatus } from '@stores/plainStatus';
 import {
   isOwnSpAddress,
@@ -182,6 +184,8 @@ export default function SendScreen() {
 
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
+  // A note to yourself, kept on this device (stores/txMemoStore.ts).
+  const [memo, setMemo] = useState('');
 
   const [tiers, setTiers] = useState<api.FeeTiers | null>(null);
   const [feeChoice, setFeeChoice] = useState<keyof api.FeeTiers | 'custom'>(
@@ -500,6 +504,7 @@ export default function SendScreen() {
     setSelected(new Set(draft.selected.filter((k) => live.has(k))));
     setAmount(draft.amount);
     setRecipient(draft.recipient);
+    setMemo(draft.memo || '');
   }, [walletId, utxos]);
 
   useEffect(() => {
@@ -508,8 +513,9 @@ export default function SendScreen() {
       selected: [...selected],
       amount,
       recipient,
+      memo,
     });
-  }, [walletId, selected, amount, recipient]);
+  }, [walletId, selected, amount, recipient, memo]);
 
   // Walked when the SegWit side is chosen, not on every mount: it costs a
   // chain-index request, and the endpoint is capped at thirty a minute.
@@ -965,6 +971,7 @@ export default function SendScreen() {
           self ? segwitBuilt.amount : null,
         );
         setTxid(res.txid);
+        useTxMemoStore.getState().setMemo(res.txid, memo).catch(() => {});
         // The chain index lags a mempool spend, so until it catches up a walk
         // still reports these coins as spendable — and the balance, the slider
         // and the coin list would all offer money already on its way, building
@@ -1029,6 +1036,7 @@ export default function SendScreen() {
         { recipient: recipient.trim(), amount: amountSats, fee: built.fee },
       );
       setTxid(res.txid);
+      useTxMemoStore.getState().setMemo(res.txid, memo).catch(() => {});
       // Start the confirmation watch immediately, before any list refresh.
       usePendingSends.getState().add({
         txid: res.txid,
@@ -1051,7 +1059,7 @@ export default function SendScreen() {
     } finally {
       setBusy(false);
     }
-  }, [built, segwitBuilt, isSegwit, wallet, adminkey, selectedUtxos, recipient, amountSats, spendableTotal, failed]);
+  }, [built, segwitBuilt, isSegwit, wallet, adminkey, selectedUtxos, recipient, memo, amountSats, spendableTotal, failed]);
 
   // Start a catch-up scan from here, so a wallet that's behind can be brought
   // up to date without leaving the Send screen. The existing poller takes over:
@@ -1166,6 +1174,7 @@ export default function SendScreen() {
     setTxid('');
     setRecipient('');
     setAmount('');
+    setMemo('');
     setSelected(new Set());
     setBitmailWarning('');
     setBitmailInvalid(false);
@@ -1249,6 +1258,7 @@ export default function SendScreen() {
           <View style={styles.card}>
             <ReviewRow label="To" value={recipient.trim()} mono />
             <ReviewRow label="Amount" value={`${groupThousands(amountSats)} sats`} />
+            {clampMemo(memo) ? <ReviewRow label="Memo" value={clampMemo(memo)} /> : null}
             <ReviewRow
               label="Network fee"
               value={`${groupThousands(reviewing.fee || 0)} sats`}
@@ -1524,6 +1534,22 @@ export default function SendScreen() {
             onChange={(sats) => setAmount(sats ? String(sats) : '')}
             format={(sats) => `${groupThousands(sats)} sats`}
           />
+
+          {/* A note to yourself: on this device and in your backup, not in the
+              transaction, and the recipient never sees it. */}
+          <Text style={styles.label}>Memo (optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={memo}
+            onChangeText={(t) => setMemo(t.replace(/[\r\n]+/g, ' '))}
+            maxLength={MEMO_MAX}
+            autoCorrect
+            placeholder="What is this payment for?"
+            placeholderTextColor={colors.faint}
+          />
+          <Text style={styles.memoHint}>
+            Only you see this · {memoLength(memo)}/{MEMO_MAX}
+          </Text>
 
           <Text style={styles.label}>Fee rate</Text>
           <View style={styles.feeRow}>
@@ -1919,6 +1945,7 @@ const styles = StyleSheet.create({
   saveContactRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
   contactLabelInput: { flex: 1 },
   contactMsg: { fontSize: 13, color: colors.muted, marginTop: 8 },
+  memoHint: { fontSize: 12, color: colors.faint, marginTop: 4 },
   // The "Save" button beside the contact-label input: taller than actionBtn so
   // it lines up with the input's height.
   inlineSaveBtn: {

@@ -11,6 +11,8 @@ import {
 } from '@/services/spSign'
 import { useAmount } from '@/composables/useAmount'
 import { saveTxRecipientLabel, saveSwapTxLabel } from '@/stores/txlabels'
+import { saveTxMemo } from '@/stores/txmemos'
+import { MEMO_MAX, clampMemo, memoLength } from '@/services/memo'
 import { undoesARound } from '@/services/tango'
 // Aliased: `sliderTop` is the computed below, and importing the helper under
 // that name would shadow it.
@@ -104,7 +106,7 @@ let tabSeq = 0
 function emptySnap(src, rate) {
   return {
     source: src,
-    recipient: '', amount: null,
+    recipient: '', amount: null, memo: '',
     feeChoice: 'halfHourFee', feeRate: rate || 1,
     selected: [], selectedSegwit: [],
     // Per-tab results. Never persisted: see stores/senddraft.js.
@@ -206,6 +208,8 @@ const loadingUtxos  = ref(false)
 
 const recipient  = ref(route.query.address || '')
 const amount     = ref(route.query.amount ? Number(route.query.amount) : null)
+// A note to yourself, kept on this device (stores/txmemos.js). One per tab.
+const memo       = ref('')
 
 // Sats are whole and positive. `min`/`step` on the input stop the spinner
 // arrows, but they do not stop a typed or pasted "-500" or "1.5" — the browser
@@ -698,6 +702,7 @@ async function broadcastTransaction() {
       )
       broadcastDone.value = res.txid
       saveTxRecipientLabel(res.txid, to)
+      saveTxMemo(res.txid, memo.value)
       recordPlainSend(selectedWallet.value, {
         txid: res.txid,
         amount: segwitBuilt.value.amount,
@@ -752,6 +757,7 @@ async function broadcastTransaction() {
     // Save the entered recipient locally (client-only) so Activity can show the
     // BitMail address. Only stores human-readable (@) addresses; never sent to server.
     saveTxRecipientLabel(res.txid, recipient.value)
+    saveTxMemo(res.txid, memo.value)
     showConfirm.value = false
     // Reload UTXOs so spent ones immediately show as unconfirmed_spent
     await loadUtxos()
@@ -767,7 +773,7 @@ async function broadcastTransaction() {
 
 function reset() {
   txResult.value = null; broadcastDone.value = null; buildError.value = null
-  broadcastError.value = null; recipient.value = ''; amount.value = null
+  broadcastError.value = null; recipient.value = ''; amount.value = null; memo.value = ''
   feeChoice.value = 'halfHourFee'; if (feeTiers.value?.halfHourFee) feeRate.value = feeTiers.value.halfHourFee
   utxos.value.forEach(u => u.selected = false)
   selectedSegwit.value = []; segwitBuilt.value = null; segwitChange.value = null
@@ -983,6 +989,7 @@ function liveSnap() {
     source: source.value,
     recipient: recipient.value,
     amount: amount.value,
+    memo: memo.value,
     feeChoice: feeChoice.value,
     feeRate: feeRate.value,
     selected: utxos.value.filter((u) => u.selected).map((u) => `${u.txid}:${u.vout}`),
@@ -1022,6 +1029,7 @@ async function applySnap(s, { reloadSegwit = false } = {}) {
   selectedSegwit.value = [...s.selectedSegwit]
   recipient.value = s.recipient
   amount.value = s.amount
+  memo.value = s.memo || ''
   if (s.feeChoice === 'custom') { feeChoice.value = 'custom'; feeRate.value = s.feeRate }
   else { feeRate.value = s.feeRate; selectFeeTier(s.feeChoice) }
   txResult.value = null; segwitBuilt.value = null; segwitChange.value = null
@@ -1134,7 +1142,7 @@ const tabStrip = computed(() =>
 // overwriting the draft it is about to restore: nothing is saved until the
 // restore has run.
 let draftReady = false
-const PERSISTED = ['source', 'recipient', 'amount', 'feeChoice', 'feeRate', 'selected', 'selectedSegwit']
+const PERSISTED = ['source', 'recipient', 'amount', 'memo', 'feeChoice', 'feeRate', 'selected', 'selectedSegwit']
 const pickPersisted = (snap) => Object.fromEntries(PERSISTED.map((k) => [k, snap[k]]))
 const draftSnapshot = computed(() => {
   const live = liveSnap()
@@ -1482,6 +1490,20 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
               </div>
             </div>
             <p class="text-dim text-xs" style="margin:4px 0 0">Select the coins to spend below — choose deliberately to avoid linking coins you'd rather keep separate.</p>
+            <!-- A note to yourself. Kept on this device and in your backup; it is
+                 not in the transaction and the recipient never sees it. Not
+                 offered while a swap is funding, where the payment is Boltz's. -->
+            <div v-if="!isSwapFunding" class="field">
+              <label>Memo <span class="text-dim text-xs">(optional)</span></label>
+              <input
+                class="input"
+                v-model="memo"
+                type="text"
+                :maxlength="MEMO_MAX"
+                autocomplete="off"
+                placeholder="What is this payment for?" />
+              <span class="text-dim text-xs">Only you see this · {{ memoLength(memo) }}/{{ MEMO_MAX }}</span>
+            </div>
             <div class="field">
               <label>Fee Rate</label>
               <div v-if="feeTiers" class="fee-tiers">
@@ -1733,6 +1755,7 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
           <div class="tx-detail-row"><span>Amount</span><span class="text-orange mono">{{ fmt(txResult.amount) }}</span></div>
           <div class="tx-detail-row"><span>Recipient</span><span class="mono" style="font-size:11px;word-break:break-all">{{ txResult.recipient }}</span></div>
           <div class="tx-detail-row"><span>Fee</span><span class="mono">{{ fmt(txResult.fee) }} ({{ txResult.fee_rate_used }} sat/vB)</span></div>
+          <div v-if="clampMemo(memo)" class="tx-detail-row"><span>Memo</span><span style="font-size:12px;word-break:break-word;text-align:right">{{ clampMemo(memo) }}</span></div>
           <!-- Last chance, and the first place a typed BitMail can be caught:
                planSelfSend comes from what /tx/prepare actually resolved. -->
           <div v-if="planSelfSend" class="alert alert-warn" style="margin-top:4px">

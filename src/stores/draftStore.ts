@@ -29,6 +29,8 @@ export interface SendDraft {
   selected: string[];
   amount: string;
   recipient: string;
+  /** The note to self typed on Send (services/memo.ts). */
+  memo?: string;
 }
 
 export interface TangoDraft {
@@ -52,7 +54,11 @@ interface DraftState {
  *  screen, and should not keep a wallet's row alive in the map. */
 export function sendDraftIsEmpty(d: SendDraft | undefined): boolean {
   return (
-    !d || (!d.selected.length && !d.amount.trim() && !d.recipient.trim())
+    !d ||
+    (!d.selected.length &&
+      !d.amount.trim() &&
+      !d.recipient.trim() &&
+      !(d.memo || '').trim())
   );
 }
 

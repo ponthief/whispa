@@ -44,6 +44,7 @@ import { usePlainWatch } from './hooks/usePlainWatch';
 import { useTangoWatch } from './hooks/useTangoWatch';
 import { useNavStore, TabKey as NavTabKey } from '@stores/navStore';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useTxMemoStore } from '@stores/txMemoStore';
 import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import { colors, fonts, DEVICE_TRUST_ENABLED } from '@/theme';
@@ -148,6 +149,8 @@ function Shell() {
   // Device-only transaction labels: read once from the keystore so the wallet
   // list can render them synchronously.
   const loadTxLabels = useTxLabelStore((s) => s.load);
+  // And the memos typed on Send, which are kept the same way.
+  const loadTxMemos = useTxMemoStore((s) => s.load);
   // Same for the plain chain's own send history, which no server holds.
   const loadPlainHistory = usePlainHistory((s) => s.load);
   // And what each SegWit address was handed out for, so a coin row can say
@@ -155,9 +158,10 @@ function Shell() {
   const loadSegwitLabels = useSegwitLabels((s) => s.load);
   useEffect(() => {
     loadTxLabels();
+    loadTxMemos();
     loadPlainHistory();
     loadSegwitLabels();
-  }, [loadTxLabels, loadPlainHistory, loadSegwitLabels]);
+  }, [loadTxLabels, loadTxMemos, loadPlainHistory, loadSegwitLabels]);
   const ActiveScreen =
     TABS.find((t) => t.key === active)?.Screen ?? WalletScreen;
 

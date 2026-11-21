@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { useAuthStore } from '@stores/authStore';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useTxMemoStore } from '@stores/txMemoStore';
 import * as api from '@services/api';
 import { MixRow } from '@services/tangoTurns';
 import { PlainSendRecord } from '@services/plainHistory';
@@ -84,6 +85,8 @@ export default function TxDetailModal({
   const [labelError, setLabelError] = useState<string | null>(null);
   const setLocalLabel = useTxLabelStore((s) => s.setLabel);
   const localLabel = useTxLabelStore((s) => (txid ? s.labels[txid] : undefined));
+  // The note typed on Send, if there was one.
+  const memo = useTxMemoStore((s) => (txid ? s.memos[txid] : undefined));
   // A label needs a coin of ours to attach to on the server; without one it is
   // kept locally instead.
   const ownsCoin = !!detail?.own_outputs?.length;
@@ -171,6 +174,14 @@ export default function TxDetailModal({
               Outside the `detail` gate on purpose: it is already in hand, and a
               send still in the mempool is exactly when the explorer lookup is
               likeliest to come back with nothing. */}
+          {memo ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Memo</Text>
+              <Text style={styles.value} selectable>
+                {memo}
+              </Text>
+            </View>
+          ) : null}
           {localSend ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>

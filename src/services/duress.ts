@@ -6,6 +6,7 @@ import { wipePendingLabels } from '@services/pendingLabelsStore';
 import { wipeTangoCommits } from '@services/tangoCommit';
 import { useSeedBackup } from '@stores/seedBackup';
 import { useTxLabelStore } from '@stores/txLabelStore';
+import { useTxMemoStore } from '@stores/txMemoStore';
 import { usePlainHistory } from '@stores/plainHistoryStore';
 import { useSegwitLabels } from '@stores/segwitLabelStore';
 import { resetCatchUp } from '@/hooks/useCatchUpScan';
@@ -42,6 +43,12 @@ export async function runDuress(
   // history is the same kind of thing, and the only copy of it anywhere.
   try {
     await useTxLabelStore.getState().clearAll();
+  } catch {
+    /* best-effort */
+  }
+  // What each payment was FOR is the same kind of thing as who it was to.
+  try {
+    await useTxMemoStore.getState().clearAll();
   } catch {
     /* best-effort */
   }

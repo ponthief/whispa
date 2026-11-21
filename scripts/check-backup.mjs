@@ -1997,7 +1997,7 @@ console.log('the SP labels on the server travel in the file too');
   const RNB = readFileSync(new URL('../src/services/backupData.ts', import.meta.url), 'utf8');
   ok('and neither does the phone',
     /SERVER_SECTIONS = \['coinLabels', 'addressLabels'\]/.test(RNB) &&
-    /KNOWN_SECTIONS = \['txLabels', 'segwitLabels', \.\.\.SERVER_SECTIONS\]/.test(RNB),
+    /KNOWN_SECTIONS = \['txLabels', 'txMemos', 'segwitLabels', \.\.\.SERVER_SECTIONS\]/.test(RNB),
     'a section that WAS restored must not be reported as dropped');
 }
 
@@ -2482,8 +2482,12 @@ console.log('the phone collector reads labels and nothing else');
   // the collector cannot go and FETCH key material — is unchanged.
   ok('it imports the label services and the shared backup modules, nothing else',
     JSON.stringify([...new Set(imports)]) ===
-      JSON.stringify(['backup', 'segwitLabels', 'txLabels', 'walletBackup']),
+      JSON.stringify(['backup', 'memo', 'segwitLabels', 'txLabels', 'txMemos', 'walletBackup']),
     `imports: ${[...new Set(imports)].join(', ')}`);
+  // `txMemos` and `memo` joined the list on 2026-11-21 with the memo on Send.
+  // txMemos is another device-only note store read through its own service,
+  // exactly like txLabels; memo is a pure function (clampMemo) that bounds what
+  // a restored file may put there. Neither reaches key material.
   // The keystore is never read by the collector. The derived keys come back
   // from the phrase, the phrase is the file's key rather than its cargo, and
   // the lock secrets are about this device rather than about the wallet.

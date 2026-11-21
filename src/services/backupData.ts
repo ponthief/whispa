@@ -3,6 +3,8 @@ import type { BackupWalletRef } from './backup';
 import { countRestorableWallets } from './walletBackup';
 import { loadSegwitLabels, persistSegwitLabels } from './segwitLabels';
 import { loadTxLabels, persistTxLabels } from './txLabels';
+import { loadTxMemos, persistTxMemos } from './txMemos';
+import { clampMemo } from './memo';
 
 // What the phone puts in a backup, and what it will take back out.
 //
@@ -35,6 +37,8 @@ export type BackupWallet = BackupWalletRef;
 
 export type BackupSections = {
   txLabels?: Record<string, string>;
+  /** txid -> the note the sender typed on Send. Device-only; see services/memo.ts. */
+  txMemos?: Record<string, string>;
   segwitLabels?: Record<string, Record<string, string>>;
   [k: string]: unknown;
 };
@@ -56,7 +60,7 @@ export type BackupPayloadShape = {
 // client never writes (labelled SP addresses are a web feature) but must not
 // claim to have dropped.
 const SERVER_SECTIONS = ['coinLabels', 'addressLabels'];
-const KNOWN_SECTIONS = ['txLabels', 'segwitLabels', ...SERVER_SECTIONS];
+const KNOWN_SECTIONS = ['txLabels', 'txMemos', 'segwitLabels', ...SERVER_SECTIONS];
 
 export async function collectBackup(
   source: 'android' | 'ios' = 'android',
@@ -68,12 +72,14 @@ export async function collectBackup(
   // are only backing up labels, it's not really a wallet backup" was about.
   serverSections: BackupSections = {},
 ): Promise<BackupPayloadShape> {
-  const [txLabels, segwitLabels] = await Promise.all([
+  const [txLabels, txMemos, segwitLabels] = await Promise.all([
     loadTxLabels(),
+    loadTxMemos(),
     loadSegwitLabels(),
   ]);
   const sections: BackupSections = { ...(serverSections || {}) };
   if (txLabels && Object.keys(txLabels).length) sections.txLabels = txLabels;
+  if (txMemos && Object.keys(txMemos).length) sections.txMemos = txMemos;
   if (segwitLabels && Object.keys(segwitLabels).length) sections.segwitLabels = segwitLabels;
 
   // Recorded for every wallet on the account, whether or not it has labels:
@@ -168,6 +174,28 @@ export async function applyBackup(
     }
     if (added) await persistTxLabels(existing);
     report.txLabels = { added, kept };
+  }
+
+  if (sections.txMemos) {
+    // Keyed on a txid like the labels, so no remapping either. The file wins
+    // where both hold the same txid, and a memo written since is left alone.
+    const existing = await loadTxMemos();
+    let added = 0;
+    let kept = 0;
+    for (const [txid, memo] of Object.entries(sections.txMemos)) {
+      // Only text, and only as much as the field allows: a hand-edited file
+      // must not park an unbounded string in the keystore.
+      if (typeof memo !== 'string') continue;
+      const clean = clampMemo(memo);
+      if (!clean) continue;
+      if (existing[txid] === clean) kept++;
+      else {
+        existing[txid] = clean;
+        added++;
+      }
+    }
+    if (added) await persistTxMemos(existing);
+    report.txMemos = { added, kept };
   }
 
   if (sections.segwitLabels) {

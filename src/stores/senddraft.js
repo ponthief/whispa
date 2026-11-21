@@ -32,6 +32,7 @@ const _drafts = {}
 function _tabIsEmpty(t) {
   const noAmount = t.amount === null || t.amount === undefined || t.amount === ''
   return !(t.recipient || '').trim()
+    && !(t.memo || '').trim()
     && noAmount
     && !(t.selected && t.selected.length)
     && !(t.selectedSegwit && t.selectedSegwit.length)
@@ -50,6 +51,7 @@ export function setSendDraft(walletId, draft) {
     tabs: tabs.map((t) => ({
       source: t.source,
       recipient: t.recipient,
+      memo: t.memo || '',
       amount: t.amount,
       feeChoice: t.feeChoice,
       feeRate: t.feeRate,

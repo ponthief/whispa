@@ -6,6 +6,7 @@ import * as api from '@/api'
 import { useAmount } from '@/composables/useAmount'
 import { useCsvExport } from '@/composables/useCsvExport'
 import { getTxRecipientLabel, getSwapTxLabel } from '@/stores/txlabels'
+import { getTxMemo } from '@/stores/txmemos'
 import { pendingSends, sendKind } from '@/stores/pendingsends'
 import { scanWatchWallets } from '@/stores/scanwatch'
 import { listPlainSends } from '@/stores/plainhistory'
@@ -409,11 +410,20 @@ onMounted(() => {
                 <span v-if="getSwapTxLabel(tx.txid)" class="tx-label-badge" style="border-color:rgba(247,147,26,.4);color:var(--orange,#f7931a)">⚡ Lightning swap</span>
                 <span v-for="(lbl, i) in tx.labels" :key="i" class="tx-label-badge">🏷 {{ lbl }}</span>
               </div>
+              <!-- The memo the sender typed on Send, kept on this device. One
+                   line here, all of it in the detail below. -->
+              <div v-if="getTxMemo(tx.txid)" class="tx-memo" :title="getTxMemo(tx.txid)">{{ getTxMemo(tx.txid) }}</div>
             </div>
             <span class="tx-chevron">{{ expandedTxid === tx.txid ? '▾' : '▸' }}</span>
           </div>
 
           <div v-if="expandedTxid === tx.txid" class="tx-detail">
+            <div v-if="getTxMemo(tx.txid)" class="tx-detail-content">
+              <div class="tx-detail-row" style="align-items:flex-start">
+                <span class="tx-detail-label">Memo:</span>
+                <span class="tx-detail-value" style="font-size:12px;white-space:pre-wrap">{{ getTxMemo(tx.txid) }}</span>
+              </div>
+            </div>
             <!-- ONE ROW, because the destination is the only thing here that is
                  not already on screen. It carried the amount and the fee too,
                  which put a second Fee under the chain's own and said the same
@@ -586,6 +596,10 @@ onMounted(() => {
   padding: 1px 6px;
 }
 
+.tx-memo {
+  margin-top: 4px; font-size: 12px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .tx-chevron { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
 
 .tx-detail {

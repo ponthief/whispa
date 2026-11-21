@@ -1,4 +1,5 @@
 import { remapWalletIds } from '@/services/backup'
+import { clampMemo } from '@/services/memo'
 
 // What the web app puts in a backup, and what it will take back out.
 //
@@ -29,6 +30,7 @@ import { remapWalletIds } from '@/services/backup'
 // section name -> localStorage key
 export const BACKUP_KEYS = {
   txLabels: 'thrilla_tx_labels_v1',
+  txMemos: 'thrilla_tx_memos_v1',
   swapTxids: 'thrilla_swap_txids_v1',
   segwitLabels: 'thrilla_segwit_labels_v1',
   bitmailPins: 'thrilla_bitmail_pins_v1',
@@ -224,8 +226,17 @@ export function applyBackup(payload, live = []) {
   const remap = remapWalletIds(payload && payload.wallets, live)
 
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
-    const incoming = sections[name]
+    let incoming = sections[name]
     if (!incoming || typeof incoming !== 'object') continue
+    // A memo is text of a bounded length. A hand-edited file must not park an
+    // unbounded string in localStorage, or anything that is not text.
+    if (name === 'txMemos') {
+      incoming = Object.fromEntries(
+        Object.entries(incoming)
+          .map(([txid, m]) => [txid, typeof m === 'string' ? clampMemo(m) : ''])
+          .filter(([, m]) => m),
+      )
+    }
     const existing = readJson(key) || {}
     let added = 0
     let kept = 0

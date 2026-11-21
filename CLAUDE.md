@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:memo          # the Send memo: 200 characters, one line, device-only, in Activity and the backup
 npm run check:sendwatch     # the send watcher polls only what this account sent
 npm run check:spuri         # a BitMail record's SP key is its address's HRP: sp= mainnet, tsp= signet
 npm run check:activity      # Recipients only on a send; a confirmed row is not Pending
@@ -428,6 +429,46 @@ The old parser was `str.replace('sp=', '')`, and it does not merely miss `tsp=`:
 it turns `bitcoin:?tsp=tsp1…` into `bitcoin:?ttsp1…`. `check:spuri` and
 `tests/test_bip321.py` ban parsing the URI that way. That Sparrow reads `tsp=` is
 taken from the report and from BIP-321 — Sparrow's source was not read.
+
+## The memo on Send is a note to yourself
+
+Asked for 2026-11-21 (*"add a Memo field to the tnx.. on Send screen.. limit to
+200 chars.. show up in the activity tab.. check if we can backup/restore it"*).
+Both clients: a Memo field under the amount, the memo on the Activity row (one
+line) and all of it in the transaction detail, and a `txMemos` section in the
+backup file.
+
+**It is NOT sent to the recipient.** It is not in the transaction (an OP_RETURN
+would be on chain for good) and not in any message, so the recipient never sees
+it, and the field says "Only you see this" for that reason. A memo the other side
+could read would be a different feature with a different privacy cost.
+
+**It is device-only, beside the transaction labels and for the same reason** —
+a server-side map of txid to what the payment was for is the metadata this wallet
+exists to keep to itself. Web `stores/txmemos.js` (localStorage
+`thrilla_tx_memos_v1`), phone `services/txMemos.ts` (keystore service
+`com.thrilla.txmemos`, mirrored by `stores/txMemoStore.ts`). The duress wipe
+erases the phone's with the labels. `services/memo.ts` is the one rule both
+import: **200 characters, not bytes** (an emoji is one, and a cut never splits
+one), one line, trimmed, empty means none.
+
+**It rides in the backup as `txMemos`**, keyed by txid like `txLabels`, so no
+wallet-id remap. A restore merges and the **file wins** where both hold the same
+txid. What comes out of a FILE is clamped on both clients, because a hand-edited
+file must not park an unbounded or non-text value in storage. A build that
+predates the memo reports the section as skipped rather than dropping it
+silently. `check:backup`'s two exact-list pins (the section names, and the
+phone collector's imports) were extended deliberately; `check:memo` runs the
+rule, the web store and the web backup round trip, and pins the phone's half
+source-side (its collector reaches the keychain, so it cannot be imported).
+
+It is set at broadcast, for both the Silent Payments and the SegWit send, kept
+with each Send tab and the half-built draft, and cleared with the form. It is
+not offered while a swap is being funded, where the payment is Boltz's.
+
+**Deliberately not done:** editing a memo after the send (the label editor on the
+phone could take it), a Tango memo, and showing it on the receiver's side — the
+receiver has nothing to show, by design.
 
 ## Stealth mode hides an icon, not an app
 

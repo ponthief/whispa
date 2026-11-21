@@ -22,6 +22,8 @@ export interface TxItem {
   label: string;
   /** Appended after the date, for what the amount alone cannot say. */
   note?: string;
+  /** The sender's own note (services/memo.ts): one line here, all of it in the detail. */
+  memo?: string;
   timestamp: number | null; // unix seconds
   pending: boolean;
 }
@@ -115,6 +117,11 @@ export default function TransactionList({
                       .join(' · ')}
                   </Text>
                 )}
+                {tx.memo ? (
+                  <Text style={styles.rowMemo} numberOfLines={1}>
+                    {tx.memo}
+                  </Text>
+                ) : null}
               </View>
               <Text
                 style={[
@@ -190,6 +197,7 @@ const styles = StyleSheet.create({
   rowLeft: { flex: 1, marginRight: 12 },
   rowLabel: { fontSize: 15, color: colors.text, fontWeight: '500' },
   rowMeta: { fontSize: 12, color: colors.faint, marginTop: 2 },
+  rowMemo: { fontSize: 12, color: colors.text, marginTop: 2 },
   // The base colour is the neutral one a mix keeps; in/out override it.
   amount: { fontSize: 14, fontWeight: '600', color: colors.text },
   amountIn: { color: colors.green },

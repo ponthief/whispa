@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:sendwatch     # the send watcher polls only what this account sent
 npm run check:spuri         # a BitMail record's SP key is its address's HRP: sp= mainnet, tsp= signet
 npm run check:activity      # Recipients only on a send; a confirmed row is not Pending
 npm run check:matcher       # the matcher card: token write-only, one mode choice, honest states

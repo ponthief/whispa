@@ -320,9 +320,17 @@ if (typeof window !== 'undefined') window.__kickSwapPolling = kickSwapPolling
 // signal a refresh. Lightweight: one txid lookup per pending send (NOT a scan).
 // Polls only while sends are pending; sleeps otherwise.
 let sendWatch = null
+const notMine = new Set()   // `user:txid` pairs this session was refused for (403)
 async function pollSends() {
   if (!auth.isLoggedIn || !auth.adminkey) { sendWatch = null; return }
-  const pending = getPendingSends()
+  // ONLY WHAT THIS ACCOUNT SENT. The list is browser-wide and the poll uses this
+  // account's key, so another account's send answers 403 every 30 seconds — in
+  // the server log, against a transaction nobody here is waiting for. An entry
+  // that predates `owner` is tried once and, if refused, left alone for the rest
+  // of the session.
+  const pending = getPendingSends().filter(
+    (s) => (!s.owner || s.owner === auth.username) && !notMine.has(`${auth.username}:${s.txid}`),
+  )
   if (!pending.length) { sendWatch = null; return }   // nothing to watch: stop
   for (const s of pending) {
     try {
@@ -349,7 +357,11 @@ async function pollSends() {
         // asking for one spends scan budget on nothing.
         if (kind !== 'segwit') autoScanForChange(s.walletId, res.block_height)
       }
-    } catch { /* transient; retry next tick */ }
+    } catch (e) {
+      // 403 is "this wallet is not yours", which no retry will change.
+      if (e && e.status === 403) notMine.add(`${auth.username}:${s.txid}`)
+      /* anything else is transient; retry next tick */
+    }
   }
   sendWatch = setTimeout(pollSends, 30000)   // ~30s cadence while sends are pending
 }

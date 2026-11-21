@@ -718,6 +718,7 @@ async function broadcastTransaction() {
         // confirming block scanned; out to somebody else is an outgoing one
         // and has no SP output to find.
         self ? 'plain' : 'segwit',
+        auth.username,
       )
       try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
       await loadSegwitChain()
@@ -756,7 +757,7 @@ async function broadcastTransaction() {
     await loadUtxos()
     // Spending needs no scan. Register this send so the GLOBAL poller watches
     // its confirmation and toasts from any screen, then finalizes UTXOs/balance.
-    addPendingSend(res.txid, selectedWallet.value, amount.value)
+    addPendingSend(res.txid, selectedWallet.value, amount.value, 'send', auth.username)
     try { window.__kickSendWatch && window.__kickSendWatch() } catch { /* ignore */ }
   } catch (e) {
     broadcastError.value = friendlyBroadcastError(e.detail || e.message)

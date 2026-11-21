@@ -5,7 +5,13 @@ import { ref } from 'vue'
 // screen — not just SendView. Persisted to localStorage so a watch survives a
 // page reload (the tx is on-chain regardless of the app being open).
 //
-// Each entry: { txid, walletId, amount, since, kind }
+// Each entry: { txid, walletId, amount, since, kind, owner }
+//
+// `owner` is the username that made the send. localStorage is shared by every
+// account used in this browser, and the watcher polls with the CURRENT account's
+// key: an entry made by another account answers 403 on every poll, for as long as
+// it stays listed (reported 2026-11-21 after switching accounts mid-send). The
+// watcher skips what is not its own; the owner's next login watches it as usual.
 //
 // `kind` says what the row MEANS, and the Activity list cannot work it out for
 // itself:
@@ -35,11 +41,11 @@ function _save(list) {
 // Reactive mirror so views could show pending state if desired.
 export const pendingSends = ref(_load())
 
-export function addPendingSend(txid, walletId, amount, kind = 'send') {
+export function addPendingSend(txid, walletId, amount, kind = 'send', owner = null) {
   if (!txid || !walletId) return
   const list = _load()
   if (!list.some((s) => s.txid === txid)) {
-    list.push({ txid, walletId, amount: amount || null, since: Date.now(), kind })
+    list.push({ txid, walletId, amount: amount || null, since: Date.now(), kind, owner: owner || null })
     _save(list)
     pendingSends.value = list
   }

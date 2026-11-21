@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:spuri         # a BitMail record's SP key is its address's HRP: sp= mainnet, tsp= signet
 npm run check:activity      # Recipients only on a send; a confirmed row is not Pending
 npm run check:matcher       # the matcher card: token write-only, one mode choice, honest states
 npm run check:bitcoin       # the Bitcoin sign is drawn from one set of paths, never typed, and BitMail starts with it
@@ -398,6 +399,26 @@ the list is read and the web's Activity read it once. It now re-reads quietly
 when a scan of the wallet finishes, and a row the chain detail has said is
 confirmed is not shown as pending whatever the row says. The phone already
 reloads on `confirmedTick`. `check:activity` pins all of it.
+
+## A BitMail record's key is its address's HRP: `sp=` on mainnet, `tsp=` on signet
+
+Reported 2026-11-21: Sparrow, on signet, could not pay a WhiSPa BitMail. BIP-321
+(the BIP-21 successor BIP-353 points at) says a bech32 payment instruction uses
+its address format's Human Readable Part as the parameter key — a testnet SegWit
+address goes in `tb=`, never `bc=` — so a `tsp1…` address belongs in `tsp=`.
+WhiSPa wrote `sp=` for every network, which is why it resolved in WhiSPa and
+nowhere else.
+
+siLNt `helpers/bip321.py` writes the right key and reads **both**; the clients
+read through `services/spUri.ts`. Reading both is deliberate: every signet record
+issued before this carries `bitcoin:?sp=tsp1…` and must keep resolving. The
+admin action `POST /api/v1/bip353/admin/republish` rewrites issued records that
+differ from the spec only in the key, and leaves one pointing elsewhere alone.
+
+The old parser was `str.replace('sp=', '')`, and it does not merely miss `tsp=`:
+it turns `bitcoin:?tsp=tsp1…` into `bitcoin:?ttsp1…`. `check:spuri` and
+`tests/test_bip321.py` ban parsing the URI that way. That Sparrow reads `tsp=` is
+taken from the report and from BIP-321 — Sparrow's source was not read.
 
 ## Stealth mode hides an icon, not an app
 

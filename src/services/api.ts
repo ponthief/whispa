@@ -587,13 +587,6 @@ export interface FeeTiers {
   minimumFee?: number;
 }
 
-// Result of a server-side tx build.
-export interface BuiltTx {
-  tx_hex: string;
-  fee: number;
-  [k: string]: unknown;
-}
-
 // The wallet's UTXOs. Uses inkey (read).
 export async function getUtxos(inkey: string, walletId: string): Promise<Utxo[]> {
   const res = await req<any>(
@@ -679,35 +672,6 @@ export async function getRecommendedFees(
 ): Promise<FeeTiers> {
   const qs = network ? `?network=${encodeURIComponent(network)}` : '';
   return req(`${SILNT}/api/v1/fees/recommended${qs}`, { headers: apiKey(inkey) });
-}
-
-/**
- * DEPRECATED — this is the call that sends the spend key.
- *
- * Superseded by prepareTx + services/spSign.ts, which builds and signs on the
- * device. Nothing in this app reaches it any more: SendScreen.tsx moved across
- * with SendView.vue. It stays only so installed builds that have not updated
- * still work, and /tx/build stays on the backend for the same reason.
- */
-export async function buildTx(
-  adminkey: string,
-  data: {
-    wallet_id: string;
-    recipient: string;
-    amount: number;
-    fee_rate: number;
-    utxos: Array<
-      Pick<Utxo, 'txid' | 'vout' | 'amount' | 'priv_key_tweak' | 'pub_key'>
-    >;
-  },
-  spendKey: string,
-  scanSecret: string,
-): Promise<BuiltTx> {
-  return req(`${SILNT}/api/v1/tx/build`, {
-    method: 'POST',
-    headers: apiKey(adminkey),
-    body: JSON.stringify({ ...data, spend_key: spendKey, scan_secret: scanSecret }),
-  });
 }
 
 export interface PreparedTx {
@@ -807,7 +771,7 @@ export type {
   PlainPreview,
   BuiltPlainTx,
 } from './plainChain';
-import type { PlainPreview, BuiltPlainTx } from './plainChain';
+import type { PlainPreview } from './plainChain';
 
 // Which of these addresses have been used, and what's unspent on them. Uses
 // inkey. The backend caps the batch at 50.
@@ -870,37 +834,6 @@ export async function preparePlainSpend(
     body: JSON.stringify({
       wallet_id: walletId,
       addresses,
-      destination,
-      amount,
-      change_address: changeAddress,
-      fee_rate: feeRate,
-    }),
-  });
-}
-
-/**
- * DEPRECATED — this is the call that sends the plain chain's private keys.
- *
- * Each one empties the address it belongs to on its own. Superseded by
- * preparePlainSpend + services/plainSign.ts, which signs on the device.
- * Nothing in this app reaches it any more; it stays, with /plain/spend on the
- * backend, only so installed builds that have not updated still work.
- */
-export async function buildPlainSpend(
-  adminkey: string,
-  walletId: string,
-  keysHex: string[],
-  destination: string,
-  amount: number | null,
-  changeAddress: string | null,
-  feeRate: number,
-): Promise<BuiltPlainTx> {
-  return req(`${SILNT}/api/v1/plain/spend`, {
-    method: 'POST',
-    headers: apiKey(adminkey),
-    body: JSON.stringify({
-      wallet_id: walletId,
-      keys: keysHex,
       destination,
       amount,
       change_address: changeAddress,
@@ -1234,24 +1167,6 @@ export async function getBackendConfig(
 ): Promise<BackendConfig> {
   const qs = network ? `?network=${encodeURIComponent(network)}` : '';
   return req(`${SILNT}/api/v1/backend/config${qs}`, { headers: apiKey(inkey) });
-}
-
-// Re-derive scan_secret + spend_key for an EXISTING wallet from its mnemonic
-// (used to restore keys onto a device that doesn't have them). The server checks
-// the derived sp_address matches the wallet's, so a wrong seed is rejected.
-// `encryptedMnemonic` is AES-encrypted with String(lastHeight), same as import.
-export async function recoverWalletKeys(
-  inkey: string,
-  walletId: string,
-  encryptedMnemonic: string,
-  lastHeight: number,
-  passphrase: string | null = null,
-): Promise<{ scan_secret: string; spend_key: string }> {
-  return req(`${SILNT}/api/v1/wallet/${walletId}/recover-keys`, {
-    method: 'POST',
-    headers: apiKey(inkey),
-    body: JSON.stringify({ mnemonic: encryptedMnemonic, last_height: lastHeight, passphrase }),
-  });
 }
 
 // Create a Silent-Payments wallet. Omitting `mnemonic` tells the server to

@@ -376,21 +376,21 @@ console.log('the wallet passphrase is not stored, and does not leave');
     persisted.length === 0,
     persisted.join(', '));
 
-  // AND THE LEGACY SERVER PATHS ARE UNREACHABLE. `recoverWalletKeys` posts an
-  // encrypted mnemonic AND the passphrase so the server can derive — which is
-  // how it worked before both clients derived on-device. The functions are
-  // still in both api modules for older callers; what must stay true is that
-  // nothing in either client calls them, or the passphrase goes over the wire
-  // to be used and discarded by somebody else's process.
-  const callers = [];
+  // AND THE LEGACY SERVER PATH IS GONE. `recoverWalletKeys` posted an encrypted
+  // mnemonic AND the passphrase so the server could derive — which is how it
+  // worked before both clients derived on-device. It was kept, uncalled, for
+  // older builds until 2026-11-21, when it was removed from both api modules
+  // along with the endpoint (siLNt tests/test_no_key_endpoints.py); check:keywire
+  // holds the same line across every key-sending function. What must stay true
+  // is that nothing in either client posts the passphrase to be used and
+  // discarded by somebody else's process.
+  const back = [];
   for (const file of walk('src')) {
-    if (/api\/index\.js$|services\/api\.ts$/.test(file)) continue;
-    const body = strip(readFileSync(file, 'utf8'));
-    if (/recoverWalletKeys\s*\(/.test(body)) callers.push(file.replace('src/', ''));
+    if (/recoverWalletKeys\b|recover-keys/.test(strip(readFileSync(file, 'utf8')))) back.push(file.replace('src/', ''));
   }
-  ok('no client calls the server-side key derivation',
-    callers.length === 0,
-    callers.join(', ') + ' — derive on the device and the passphrase stays on it');
+  ok('no client has the server-side key derivation',
+    back.length === 0,
+    back.join(', ') + ' — derive on the device and the passphrase stays on it');
 
   // The create payload is the other one. The web derives in the browser and
   // sends only the ADDRESS; a payload carrying the passphrase would have the

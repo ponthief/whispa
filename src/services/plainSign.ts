@@ -1,8 +1,8 @@
 // Client-side building and signing for the plain BIP-84 chain.
 //
-// WHY THIS EXISTS. /api/v1/plain/spend takes the private keys for the addresses
-// being spent, signs with them and returns the transaction. They are not stored
-// and not logged, but they cross the network, and unlike a Silent Payments
+// WHY THIS EXISTS. /api/v1/plain/spend (removed 2026-11-21) took the private keys
+// for the addresses being spent, signed with them and returned the transaction.
+// They were not stored and not logged, but they crossed the network, and unlike a Silent Payments
 // spend key they are whole keys on their own — whoever holds one can empty that
 // address, with nothing else needed. spSign.ts removed that exposure from the
 // Silent Payments path; this removes it from the other one.
@@ -257,7 +257,7 @@ function signEcdsaGrind(sighash: Uint8Array, priv: Uint8Array): Uint8Array {
 /**
  * Build and sign a plain-chain spend, entirely on this device.
  *
- * The drop-in replacement for POST /api/v1/plain/spend: same result, no private
+ * The replacement for POST /api/v1/plain/spend (removed): same result, no private
  * key on the wire. The transaction goes to /api/v1/plain/broadcast, which
  * already takes a tx_hex.
  *

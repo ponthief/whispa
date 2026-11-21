@@ -508,8 +508,8 @@ export function taprootSighash(
 /**
  * Build and sign a Silent Payments transaction, entirely on this device.
  *
- * The drop-in replacement for POST /api/v1/tx/build: same inputs, same output,
- * no spend key on the wire. The result goes to /api/v1/tx/broadcast, which
+ * The replacement for POST /api/v1/tx/build (removed 2026-11-21): same inputs,
+ * same output, no spend key on the wire. The result goes to /api/v1/tx/broadcast, which
  * already takes tx_hex.
  */
 export function buildSignedTx(opts: {

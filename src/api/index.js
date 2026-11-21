@@ -286,23 +286,6 @@ export async function prepareTx(adminkey, { walletId, recipient, amount, feeRate
   })
 }
 
-// DEPRECATED — this is the call that sends the spend key. Neither client calls
-// it any more (both build and sign on the device through prepareTx + spSign.ts);
-// it stays only so a build that predates that still has something to talk to,
-// with /tx/build on the backend (siLNt models.py BuildTxRequest). check:keywire
-// refuses a caller.
-export async function buildTx(adminkey, data, spendKey, scanSecret) {
-  return req(`${SILNT}/api/v1/tx/build`, {
-    method: 'POST',
-    headers: keyHeaders(adminkey),
-    body: JSON.stringify({
-      ...data,
-      spend_key:   spendKey,
-      scan_secret: scanSecret,   // needed to derive m=1 change address
-    }),
-  })
-}
-
 export async function broadcastTx(adminkey, txHex, walletId, spentOutpoints = [], meta = {}) {
   return req(`${SILNT}/api/v1/tx/broadcast`, {
     method: 'POST',
@@ -593,31 +576,6 @@ export async function preparePlainSpend(
   })
 }
 
-/**
- * DEPRECATED — this is the call that sends the plain chain's private keys.
- *
- * Each one empties the address it belongs to on its own. Superseded by
- * preparePlainSpend + services/plainSign.ts. Nothing in this app reaches it any
- * more; it stays, with /plain/spend on the backend, only so an older client
- * still works.
- */
-export async function buildPlainSpend(
-  adminkey, walletId, keysHex, destination, amount, changeAddress, feeRate,
-) {
-  return req(`${SILNT}/api/v1/plain/spend`, {
-    method: 'POST',
-    headers: keyHeaders(adminkey),
-    body: JSON.stringify({
-      wallet_id: walletId,
-      keys: keysHex,
-      destination,
-      amount,
-      change_address: changeAddress,
-      fee_rate: feeRate,
-    }),
-  })
-}
-
 // Separate from broadcastTx: these coins were never tracked in the wallet, so
 // there are no input UTXOs to mark spent.
 //
@@ -679,14 +637,6 @@ export async function getTurnstileConfig(adminkey) {
 export async function updateTurnstileConfig(adminkey, data) {
   return req(`${SILNT}/api/v1/turnstile/config`, {
     method: 'PUT', headers: keyHeaders(adminkey), body: JSON.stringify(data),
-  })
-}
-
-export async function recoverWalletKeys(inkey, walletId, encryptedMnemonic, lastHeight, passphrase = null) {
-  return req(`${SILNT}/api/v1/wallet/${walletId}/recover-keys`, {
-    method: 'POST',
-    headers: keyHeaders(inkey),
-    body: JSON.stringify({ mnemonic: encryptedMnemonic, last_height: lastHeight, passphrase }),
   })
 }
 

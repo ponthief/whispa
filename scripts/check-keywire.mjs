@@ -6,15 +6,20 @@
 //
 // THE ANSWER AT THE TIME: neither client sends one. Both build and sign on the
 // device and the wire carries outpoints, public scripts, a signed hex and
-// signatures. What the audit also found is that nothing PINNED that. Both api
-// modules still contain three functions that serialise a private key —
+// signatures. What the audit also found is that nothing PINNED that: both api
+// modules still contained three functions that serialised a private key —
 // `buildTx` (`spend_key`), `buildPlainSpend` (`keys`, the BIP-84 chain's
 // private keys) and `recoverWalletKeys` (an encrypted mnemonic and the
-// passphrase) — and the backend still accepts all three for older builds. Only
-// the last had a guard (`check:seed`). So the first caller anybody added to
-// `buildTx`, or to `buildPlainSpend`, would have put a spend key on the wire
-// with every other check green: a signed transaction still comes out the other
-// end, which is exactly why nothing notices.
+// passphrase) — with the backend accepting all three for older builds, and only
+// the last had a guard. A first caller of either of the others would have put a
+// spend key on the wire with every other check green, because a signed
+// transaction still comes out the far end.
+//
+// THEY WERE REMOVED THE SAME DAY (2026-11-21, on the user's instruction), with
+// the three backend endpoints (/tx/build, /plain/spend, .../recover-keys; siLNt
+// `tests/test_no_key_endpoints.py` holds the server half). This check now holds
+// the client half: the functions must not come back, and nothing may name the
+// routes.
 //
 // Three things are checked and each fails a different way:
 //
@@ -22,12 +27,14 @@
 //      swap, a Tango round or a wallet create goes through is called against a
 //      capturing fetch — with sentinel secrets planted where a careless caller
 //      could pass them (a coin object carrying `priv_key_tweak`, a `meta`
-//      carrying a key). The body must hold none. A control calls the legacy
-//      function the same way and requires the sentinel to APPEAR, so a capture
-//      that sees nothing cannot pass for a clean wire.
-//   2. CALLERS. No file but the api modules mentions a function that sends a
-//      key. This is what makes "deprecated, nothing calls it" a property of the
-//      tree instead of a comment.
+//      carrying a key). The body must hold none. A control sends a key through
+//      a pass-through body (the Tango sign call takes one as given) and
+//      requires the sentinel to APPEAR, so a capture that sees nothing cannot
+//      pass for a clean wire.
+//   2. ABSENCE. No file defines or mentions a function that sends a key, and
+//      none names the three routes that took one. A function that "nothing
+//      calls" is one commit from having a caller; one that does not exist is
+//      not.
 //   3. CALL SITES. The object literals handed to the Tango, PayJoin and wallet
 //      create calls name no key. Those bodies are built in the views, which
 //      the wire test cannot reach.
@@ -71,8 +78,8 @@ function walk(dir, out = []) {
   return out;
 }
 
-// Functions that serialise a private key, in both api modules. Adding to this
-// list is the deliberate act that admits another.
+// Functions that serialised a private key. Removed 2026-11-21; this list is what
+// must stay absent, and the routes below are what no source may name.
 const KEY_SENDERS = ['buildTx', 'buildPlainSpend', 'recoverWalletKeys'];
 // Functions that may send the SCAN key (can detect, cannot spend).
 const ALLOWED_SCAN = new Set([
@@ -81,6 +88,7 @@ const ALLOWED_SCAN = new Set([
 // What a field must look like to count as private key material in a body.
 const SECRET_FIELD = /\b(spend_key|spendKey|mnemonic|passphrase|xprv|sweepAccount|sweep_account|priv_key_tweak|privKey|private_key|wif|keys\s*:)\b/;
 
+const REMOVED_ROUTES = ['/api/v1/tx/build', '/api/v1/plain/spend', '/recover-keys'];
 const API_FILES = ['src/api/index.js', 'src/services/api.ts'];
 
 // ── load the real modules ───────────────────────────────────────────────────
@@ -166,46 +174,41 @@ async function exercise(label, mod, shape) {
   ok('control: the scan key does appear in a scan request (allowed by design)',
     captured.some((c) => c.body.includes('SCAN_SECRET_VALUE')));
   // CONTROL — the capture must be able to see a leak, or all of the above is
-  // a test of nothing.
-  const bad = await wire(mod, 'buildTx', shape.buildTx());
-  ok('control: the legacy buildTx DOES put the spend key on the wire',
+  // a test of nothing. The Tango sign call sends its body as given, so a key
+  // handed to it is what a leaking caller would look like.
+  const bad = await wire(mod, shape.passthrough, ['adm', 'rid', { witnesses: {}, spend_key: SPEND }]);
+  ok('control: a key handed to a pass-through body DOES appear on the wire',
     bad.includes(SPEND), 'if this fails the capture is blind and the checks above prove nothing');
-  const badPlain = await wire(mod, 'buildPlainSpend', ['adm', 'wid', ['PLAINKEY'], 'd', 1, 'c', 1]);
-  ok('control: the legacy buildPlainSpend DOES send keys', badPlain.includes('PLAINKEY'));
 }
 
 const webMod = await load('src/api/index.js', '.mjs');
 await exercise('web', webMod, {
   prepareTx: () => ['adm', { walletId: 'wid', recipient: 'r', amount: 1, feeRate: 1, utxos: [coin] }],
-  buildTx: () => ['adm', { wallet_id: 'wid', recipient: 'r', amount: 1, fee_rate: 1, utxos: [coin] }, SPEND, 'scan'],
+  passthrough: 'tangoSign',
 });
 const phoneMod = await load('src/services/api.ts', '.ts');
 await exercise('phone', phoneMod, {
   prepareTx: () => ['adm', { walletId: 'wid', recipient: 'r', amount: 1, feeRate: 1, utxos: [coin] }],
-  buildTx: () => ['adm', { wallet_id: 'wid', recipient: 'r', amount: 1, fee_rate: 1, utxos: [coin] }, SPEND, 'scan'],
+  passthrough: 'signTango',
 });
 
-// ── 2. nothing calls a function that sends a key ────────────────────────────
-console.log('\ncallers: the key-sending functions are defined and never used');
-const files = ['src', 'scripts'].flatMap((d) => walk(d)).filter((f) => !API_FILES.includes(f) && !/check-keywire/.test(f));
+// ── 2. the functions and the routes are gone ───────────────────────────────
+console.log('\nabsence: the key-sending functions and their routes do not exist');
+// `src` only: the checks under scripts/ name these functions to assert their
+// absence, which is exactly what this scan would then report.
+const everywhere = walk('src');
 for (const fn of KEY_SENDERS) {
-  const hits = files.filter((f) => new RegExp(`\\b${fn}\\s*\\(`).test(strip(read(f))));
-  ok(`nothing outside the api modules calls ${fn}`, hits.length === 0,
-    hits.join(', ') + ' — this would send a private key; derive and sign on the device');
+  const hits = everywhere.filter((f) => new RegExp(`\\b${fn}\\b`).test(strip(read(f))));
+  ok(`nothing defines or mentions ${fn}`, hits.length === 0,
+    hits.join(', ') + ' — it sent a private key; derive and sign on the device');
 }
-// and inside the api modules, nothing calls one from another function
-for (const f of API_FILES) {
-  const body = strip(read(f));
-  for (const fn of KEY_SENDERS) {
-    const defs = (body.match(new RegExp(`function\\s+${fn}\\b`, 'g')) || []).length;
-    const uses = (body.match(new RegExp(`\\b${fn}\\s*\\(`, 'g')) || []).length;
-    ok(`${f}: ${fn} is not called from inside the module`, uses <= defs,
-      `${uses} call-shaped mentions for ${defs} definition(s)`);
-  }
+for (const route of REMOVED_ROUTES) {
+  const hits = everywhere.filter((f) => strip(read(f)).includes(route));
+  ok(`no source names ${route}`, hits.length === 0, hits.join(', '));
 }
 
 // ── 2b. only the named functions put a key in a request ─────────────────────
-console.log('\napi modules: a request body names a key only in the legacy functions');
+console.log('\napi modules: no request body names a key');
 for (const f of API_FILES) {
   const body = strip(read(f));
   const parts = body.split(/\n(?=export (?:async )?function )/);

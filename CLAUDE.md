@@ -152,15 +152,31 @@ stores in `silnt.utxos` — it is `t_k`, and the output's private key is
 `b_spend + t_k`, so it spends nothing without the spend key. Background scan
 stores the scan key server-side only after the user turns it on.
 
-**Not done, and wanting a decision:** the three legacy functions are still in
-both api modules and the three endpoints (`/tx/build`, `/plain/spend`,
-`/wallet/{id}/recover-keys`) still accept keys on the backend. Removing them
-strands any installed build that has not updated, and this file's standing rule
-is not to remove anything unasked. Until they go, a client that did call one
-would be refused by `check:keywire`, but a **script posting to the server could
-still hand it a key** — the server accepts, uses and discards it. Closing the
-endpoints, once old builds have aged out, is what makes "the server never sees a
-spend key" true of the server and not only of our two clients.
+**Removed the same day, on the user's instruction (*"yes, remove them"*):** the
+three functions in both api modules, and the three backend endpoints they called
+— `POST /tx/build`, `POST /plain/spend`, `POST /wallet/{id}/recover-keys` — with
+their request models. That makes "the server never sees a spend key" true of the
+server and not only of our two clients: a script holding an admin key can no
+longer hand it one, it would be a 404. The cost is the one that was named: an
+installed build that predates on-device signing can no longer send, and must
+update. siLNt `tests/test_no_key_endpoints.py` holds the server half (the routes
+and models stay gone, and no handler reads `data.spend_key` or `data.keys`);
+`check:keywire` now holds the client half as **absence** rather than "nothing
+calls it", and still drives the live paths against a capturing fetch.
+
+The signing **helpers stay** — `build_transaction`, `build_plain_transaction`,
+`plain_address_for_key`. `helpers/_*_signing_fixtures.py` runs them to generate
+the vectors `check:signing` holds both clients to; they are the reference
+implementation, not the endpoint.
+
+**Still there, and a separate decision:** the *create* path that derives on the
+server. `POST /wallet` still accepts a `mnemonic` and `passphrase` when a client
+sends one (the old server-derive flow) and answers with `scan_secret`,
+`spend_key` and `mnemonic`, and the phone's `createSilntWallet` still has the
+optional `mnemonic` parameter and the response type for it. Neither client sends
+either any more (`check:seed` pins the payloads), so it is the same shape as the
+three that went — an old door that nothing here uses and a script could — and it
+is the next thing to close, not done here because it was not asked for.
 
 ## WhiSPa is not a Lightning wallet
 

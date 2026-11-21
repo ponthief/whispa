@@ -448,16 +448,14 @@ export function pickSilntWallet(wallets: SilntWallet[]): SilntWallet | null {
   return wallets.find((w) => w.network === lock) ?? null;
 }
 
-// A freshly created SP wallet. On generate the server mints the mnemonic + keys
-// and returns them once — the client must show the mnemonic so the user can back
-// it up (everything is recoverable from it).
+// A freshly created SP wallet: public fields only. The server derives nothing
+// and holds no key — the seed phrase and keys are made on this device before the
+// call, and only the address goes up. (It used to answer with scan_secret,
+// spend_key and the mnemonic for a client that let the server derive; removed
+// 2026-11-21.)
 export interface CreatedWallet {
   wallet_id: string;
   sp_address: string;
-  scan_secret: string;
-  spend_key: string;
-  mnemonic: string;
-  passphrase: string | null;
   last_height: number;
   network: string;
   generated: boolean;
@@ -1169,21 +1167,16 @@ export async function getBackendConfig(
   return req(`${SILNT}/api/v1/backend/config${qs}`, { headers: apiKey(inkey) });
 }
 
-// Create a Silent-Payments wallet. Omitting `mnemonic` tells the server to
-// generate a fresh seed; it derives the keys/address server-side. For import,
-// pass `mnemonic` AES-encrypted with String(last_height) as the key (matching
-// the backend's decrypt_mnemonic) — see encryptMnemonicForImport in the modal.
+// Create a Silent-Payments wallet from the address this device derived (see
+// services/spKeys). There is no seed phrase or passphrase parameter: the server
+// refuses a body carrying either, and answers 400 without an address.
 export async function createSilntWallet(
   inkey: string,
   data: {
     title: string;
     network?: string;
-    passphrase?: string;
     last_height?: number;
-    mnemonic?: string;
-    // Client-derived SP address: when set, the seed/keys were derived on-device
-    // and the server never sees the mnemonic (see services/spKeys).
-    sp_address?: string;
+    sp_address: string;
   },
 ): Promise<CreatedWallet> {
   return req(`${SILNT}/api/v1/wallet`, {

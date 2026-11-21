@@ -258,6 +258,21 @@ for (const [file, callees] of SITES) {
     ok(`${file}: ${callee} is handed no key`, bad.length === 0, bad.map((c) => c.slice(0, 160)).join(' | '));
   }
 }
+// The create function and its answer. The server derives nothing and refuses a
+// body carrying a seed phrase or passphrase (siLNt test_no_key_endpoints), and
+// the phone's types must not offer either — a parameter nobody passes is still
+// a parameter somebody can.
+{
+  const api = strip(read('src/services/api.ts'));
+  const fn = api.slice(api.indexOf('export async function createSilntWallet'));
+  const sig = fn.slice(0, fn.indexOf('): Promise<CreatedWallet>'));
+  ok('the phone createSilntWallet takes an address and no secret',
+    /sp_address: string/.test(sig) && !/mnemonic|passphrase/.test(sig), sig.slice(0, 200));
+  const iface = api.slice(api.indexOf('export interface CreatedWallet'));
+  const shape = iface.slice(0, iface.indexOf('}'));
+  ok('and the wallet it returns carries no key',
+    !/scan_secret|spend_key|mnemonic|passphrase/.test(shape), shape.slice(0, 200));
+}
 // The create payload of the web is pinned to its exact shape by check:seed;
 // this adds the phone's, which that check does not read.
 {

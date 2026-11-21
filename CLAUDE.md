@@ -169,14 +169,26 @@ The signing **helpers stay** — `build_transaction`, `build_plain_transaction`,
 the vectors `check:signing` holds both clients to; they are the reference
 implementation, not the endpoint.
 
-**Still there, and a separate decision:** the *create* path that derives on the
-server. `POST /wallet` still accepts a `mnemonic` and `passphrase` when a client
-sends one (the old server-derive flow) and answers with `scan_secret`,
-`spend_key` and `mnemonic`, and the phone's `createSilntWallet` still has the
-optional `mnemonic` parameter and the response type for it. Neither client sends
-either any more (`check:seed` pins the payloads), so it is the same shape as the
-three that went — an old door that nothing here uses and a script could — and it
-is the next thing to close, not done here because it was not asked for.
+**The create path went too (2026-11-21, *"yes, remove the create path too"*).**
+`POST /wallet` used to derive on the server when a client sent no `sp_address`: it
+took a `mnemonic` (or generated one) and a `passphrase`, and answered with
+`scan_secret`, `spend_key` and the `mnemonic`. It now needs an address and
+answers 400 without one, returns `{ wallet_id, sp_address, last_height, network }`
+and nothing else, and `CreateWallet` **refuses** a body carrying a non-empty
+`mnemonic` or `passphrase` with a 422 that says to update the app — refuses
+rather than ignores, because ignoring would still have carried the secret here.
+`PUT /wallet/{id}` takes the same model and the same refusal. The phone's
+`createSilntWallet` lost its `mnemonic` and `passphrase` parameters and
+`CreatedWallet` its key fields; the web's is a pass-through, and `check:keywire`
+pins both. An empty `passphrase` still passes, so a build that always sends the
+field does not break. siLNt `tests/test_no_key_endpoints.py` runs the model for
+real and reads the handler.
+
+**What is still server-derived, and is not a user wallet:** the admin's
+*Generate payout address* for the **instance's own** Tango change address
+(`/admin/tango/change-address`, shown in `AdminView.vue`). The operator gets a
+mnemonic for the instance's address and the server discards the spend key. That
+is the instance's key, shown once to its operator, not somebody's wallet.
 
 ## WhiSPa is not a Lightning wallet
 
@@ -963,11 +975,12 @@ each one a chance to keep it "just for this session". `check:seed` scans `src/`
 for a write whose value is a passphrase-named binding, matched on the WRITE
 rather than on the word, because the word itself is all over the copy.
 
-It must not go over the wire either. `recoverWalletKeys` posts an encrypted
-mnemonic **and** the passphrase so the server can derive — the pre-on-device
-path — and both api modules still carry it for older callers; the check pins
-that nothing in either client calls it, and that the web's create payload is
-`{ title, network, sp_address }` with no secret in it.
+It must not go over the wire either. `recoverWalletKeys` posted an encrypted
+mnemonic **and** the passphrase so the server could derive — the pre-on-device
+path. It and its endpoint were removed 2026-11-21 (see "Signing sends no key"),
+and `check:seed` now pins that no client has it, and that the web's create
+payload is `{ title, network, sp_address }` with no secret in it — a payload the
+server would now refuse if it had.
 
 The phone's reveal is **unchanged** and still asks for the app PIN (or
 biometrics): that is a device gate, not an account password, and the duress
@@ -1125,8 +1138,8 @@ would look like it worked:
 pydantic v2 will not convert one to the other** (2026-11-14: *"on web trying to
 import a wallet and got error: last_height, msg: Input should be valid
 string"*). `CreateWallet.last_height` in siLNt `models.py` was declared `str`
-because the legacy server-derive path uses `str(height)` as the mnemonic's
-key; both clients, and `restoreWallets`, send a JSON number. Pydantic v1
+because the server-derive path (removed 2026-11-21) used `str(height)` as the
+mnemonic's key; both clients, and `restoreWallets`, send a JSON number. Pydantic v1
 coerced it silently, so nothing ever noticed the mismatch, and the LNbits
 upgrade to v2 turned every import and restore - web and phone - into a 422.
 The model now takes a number or plain digits through a `before` validator and

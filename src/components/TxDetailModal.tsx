@@ -49,6 +49,14 @@ interface Props {
    * Recipients as somebody it paid.
    */
   localSend?: PlainSendRecord | null;
+  /**
+   * True when this wallet RECEIVED the transaction. On a receive the outputs
+   * that are not this wallet's are the sender's own (their change), so
+   * Recipients must not list them: the screen showed the sender's change
+   * under "Recipients" with the wrong amount. Unknown (undefined) shows the
+   * list, as before.
+   */
+  incoming?: boolean;
   onClose: () => void;
   onLabelSaved?: () => void;
 }
@@ -60,6 +68,7 @@ export default function TxDetailModal({
   initialLabel = '',
   mix = null,
   localSend = null,
+  incoming = false,
   onClose,
   onLabelSaved,
 }: Props) {
@@ -308,7 +317,7 @@ export default function TxDetailModal({
                   SegWit spend has none in it — so its own change address comes
                   back listed as somebody it paid. The record above names the
                   one output that was a payment. */}
-              {detail.recipients?.length && !mix && !localSend ? (
+              {detail.recipients?.length && !mix && !localSend && !incoming ? (
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Recipients</Text>
                   {detail.recipients.map((r, i) => (

@@ -454,6 +454,10 @@ export default function WalletScreen() {
     detailTx && !detailMix && !['Sent', 'Received'].includes(detailTx.label)
       ? detailTx.label
       : '';
+  // A receive lists the SENDER's outputs as "not ours"; the modal needs to know
+  // so it does not call them recipients.
+  const detailIncoming =
+    spRawTxs.find((t) => t.txid === detailTxid)?.kind === 'receive';
   // Present only for a send this DEVICE made out of the SegWit chain. Kept for
   // 25 sends a wallet, so an older one degrades to the chain detail alone — the
   // same posture as a label.
@@ -797,6 +801,7 @@ export default function WalletScreen() {
         initialLabel={detailLabel}
         mix={detailMix}
         localSend={detailLocal}
+        incoming={detailIncoming}
         onClose={() => setDetailTxid(null)}
         onLabelSaved={load}
       />

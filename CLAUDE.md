@@ -88,6 +88,7 @@ npm run check:send          # SegWit resolves a BitMail, Send keeps a draft, a T
 npm run check:payout        # the Tango change payout says what it takes
 npm run check:vue           # a .vue file importing what it calls, and its CSS classes existing
 npm run check:admin         # the payout ledger reports earnings and debts apart
+npm run check:activity      # Recipients only on a send; a confirmed row is not Pending
 npm run check:matcher       # the matcher card: token write-only, one mode choice, honest states
 npm run check:bitcoin       # the Bitcoin sign is drawn from one set of paths, never typed, and BitMail starts with it
 npm run check:lock          # unlocking asks every time
@@ -376,6 +377,27 @@ page, so the health timers do not restart and nothing remounts.
 - The route pattern must stay closed: an open `:section` would swallow
   `/requests` and `/accounts`.
 - `/` is Infra, so an old bookmark keeps working.
+
+## Activity: Recipients belong to a send, and Pending is a cache
+
+Reported 2026-11-21 against signet `8ace2165…`: the **receiver's** detail listed
+a Recipient — BitMail label, taproot address, **982** — where **5,482** had
+arrived, and a row kept "⌛ Pending" after its detail said Confirmed.
+
+`get_wallet_transaction_detail` returns every output that is not one of this
+wallet's SP coins. For the sender that is the payment; for the **receiver** it is
+the *sender's change* (the 982), and the web then stuck this browser's BitMail
+label on the first output. Both clients show Recipients only for a send now
+(`tx.kind === 'send'` on the web, the `incoming` prop on the phone). The server
+is unchanged: the list is still true of the transaction, it is the label
+"Recipients" that was wrong for half of the readers.
+
+The pending badge was stale because `confirmed` on a server row is computed when
+the list is read and the web's Activity read it once. It now re-reads quietly
+(without collapsing the open row) when a watched send leaves `pendingSends` and
+when a scan of the wallet finishes, and a row the chain detail has said is
+confirmed is not shown as pending whatever the row says. The phone already
+reloads on `confirmedTick`. `check:activity` pins all of it.
 
 ## Stealth mode hides an icon, not an app
 

@@ -7,6 +7,7 @@ import { useAmount } from '@/composables/useAmount'
 import { useCsvExport } from '@/composables/useCsvExport'
 import { getTxRecipientLabel, getSwapTxLabel } from '@/stores/txlabels'
 import { pendingSends, sendKind } from '@/stores/pendingsends'
+import { scanWatchWallets } from '@/stores/scanwatch'
 import { listPlainSends } from '@/stores/plainhistory'
 import { mixFeeNote } from '@/services/tangoTurns'
 
@@ -59,8 +60,10 @@ function localRecord(txid) {
 // A send made while this page is open writes the record and the watch entry
 // together, and only the watch entry is reactive. Re-read the record so the new
 // row can name its destination without a reload.
-watch(pendingSends, () => {
+watch(pendingSends, (now, before) => {
   if (selectedWallet.value) localSends.value = listPlainSends(selectedWallet.value)
+  // An entry leaving the watch list is a send that confirmed.
+  if ((now || []).length < (before || []).length) reloadQuietly()
 })
 
 async function loadWallets() {
@@ -77,11 +80,51 @@ async function loadWallets() {
   } catch (e) { error.value = e.message }
 }
 
+// THE LIST IS A SNAPSHOT, AND A PENDING BADGE IS THE PART OF IT THAT GOES STALE
+// (reported 2026-11-21: the detail said Confirmed while the row above it still
+// said Pending with the hourglass). `confirmed` on a server row is computed when
+// the page is read; the send watcher in App.vue flips it server-side later and
+// nothing here read the list again. Two repairs, because either alone leaves a
+// way to see it:
+//
+//  - the list is re-read, quietly, when a watched send leaves the watch list
+//    (that is the confirmation) and when a scan finishes;
+//  - and anything the chain detail has said is confirmed is not called pending,
+//    whatever the row says — the detail is a fresh read of the chain, the row is
+//    a cache of one.
+const chainConfirmed = ref(new Set())
+function isPending(tx) {
+  return tx.confirmed === false && !chainConfirmed.value.has(tx.txid)
+}
+
+async function reloadQuietly() {
+  if (!selectedWallet.value || loading.value) return
+  try {
+    const offset = page.value * PAGE_SIZE
+    const res = await api.listWalletTransactions(auth.inkey, selectedWallet.value, PAGE_SIZE + 1, offset)
+    const rows = res.transactions || []
+    hasNext.value = rows.length > PAGE_SIZE
+    transactions.value = rows.slice(0, PAGE_SIZE)
+    // The server has caught up with those, so its word is the row's again.
+    chainConfirmed.value = new Set(
+      [...chainConfirmed.value].filter((id) => transactions.value.some((t) => t.txid === id && t.confirmed === false)),
+    )
+  } catch { /* the list on screen is still true as of when it was read */ }
+}
+
+// A scan finishing is when a confirmed send's inputs are reconciled and its
+// change lands, so it is the other moment this list can have gone stale.
+watch(scanWatchWallets, (now, before) => {
+  const id = selectedWallet.value
+  if (id && before && before.has(id) && !now.has(id)) reloadQuietly()
+})
+
 async function loadTxs() {
   if (!selectedWallet.value) return
   loading.value = true; error.value = null
   expandedTxid.value = null; expandedDetail.value = null
   localSends.value = listPlainSends(selectedWallet.value)
+  chainConfirmed.value = new Set()
   try {
     // Fetch one extra row to know whether a next page exists, without needing a
     // total-count endpoint. Show PAGE_SIZE; the (PAGE_SIZE+1)th only signals more.
@@ -201,6 +244,9 @@ async function toggleExpand(tx) {
   loadingDetail.value = true
   try {
     expandedDetail.value = await api.getWalletTransaction(auth.inkey, selectedWallet.value, tx.txid)
+    if (expandedDetail.value && expandedDetail.value.confirmed === true && tx.confirmed === false) {
+      chainConfirmed.value = new Set([...chainConfirmed.value, tx.txid])
+    }
   } catch (e) {
     expandedDetail.value = { error: e.message }
   } finally {
@@ -358,7 +404,7 @@ onMounted(() => {
               <div class="tx-line2">
                 <span class="tx-age">{{ fmtAge(tx.timestamp) }}</span>
                 <span class="mono text-dim tx-txid">{{ tx.txid.slice(0, 12) }}…{{ tx.txid.slice(-8) }}</span>
-                <span v-if="tx.confirmed === false" class="badge badge-warn" title="Spending transaction not yet confirmed">⌛ Pending</span>
+                <span v-if="isPending(tx)" class="badge badge-warn" title="Spending transaction not yet confirmed">⌛ Pending</span>
                 <span v-if="tangoNote(tx)" class="tx-label-badge" style="border-color:rgba(249,115,22,.4)">⇄ {{ tangoNote(tx) }}</span>
                 <span v-if="getSwapTxLabel(tx.txid)" class="tx-label-badge" style="border-color:rgba(247,147,26,.4);color:var(--orange,#f7931a)">⚡ Lightning swap</span>
                 <span v-for="(lbl, i) in tx.labels" :key="i" class="tx-label-badge">🏷 {{ lbl }}</span>
@@ -443,7 +489,14 @@ onMounted(() => {
                    comes back listed as somebody it paid. The local record above
                    is the answer instead; it names the one output that was a
                    payment. -->
-              <div v-if="expandedDetail.recipients && expandedDetail.recipients.length && !mixOf(tx) && !localRecord(tx.txid)"
+              <!-- AND ONLY FOR A SEND (2026-11-21). On a RECEIVE the outputs that
+                   are not this wallet's are the SENDER's — their change, in the
+                   reported case 982 of a 6,464 input — and listing them under
+                   "Recipients" read as the payment, with this browser's BitMail
+                   label stuck on the first of them. The amount actually received
+                   is the row's own figure; a receive reports nothing about the
+                   counterparty, same as a round does not report on the partner. -->
+              <div v-if="tx.kind === 'send' && expandedDetail.recipients && expandedDetail.recipients.length && !mixOf(tx) && !localRecord(tx.txid)"
                    class="tx-detail-section">
                 <div class="tx-detail-section-title">Recipients</div>
                 <div v-for="(r, i) in expandedDetail.recipients" :key="i" class="tx-detail-recipient">

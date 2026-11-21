@@ -736,7 +736,7 @@ console.log('\nthe browser does all of it too');
      /!mixOf\(tx\) && !localRecord\(tx\.txid\)/.test(ACTIVITY), ACTIVITY);
   const DETAIL = read2('src/components/TxDetailModal.tsx');
   ok('the phone suppresses it too',
-     /!mix && !localSend \?/.test(DETAIL), DETAIL);
+     /!mix && !localSend(?: && !incoming)? \?/.test(DETAIL), DETAIL);
   ok('and names the destination from its own record',
      /localSend\.destination/.test(DETAIL), DETAIL);
 

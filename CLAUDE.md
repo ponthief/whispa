@@ -3521,6 +3521,28 @@ F-Droid's server has no NDK of that version, which is not known and not somethin
 sandbox can check; installing the NDK in CI makes the two builds do the same thing
 whatever the server has.
 
+### The "check apk" job, and the 0.6.4 pipeline that passed (2026-11-22)
+
+After `rewritemeta`, the MR's **check apk** job failed on 0.6.3: `fdroid scanner --exit-code`
+over the APK that `Binaries:` names found *"extra signing block 'Dependency metadata'"*. AGP
+puts the app's dependency list, encrypted for Google Play, into the APK Signing Block by
+default (block id `0x504b4453`). It is in the signature and not among the APK's entries, so
+no entry-by-entry comparison sees it, and a build that works and installs carries it.
+`android { dependenciesInfo { includeInApk = false; includeInBundle = false } }` in
+`android/app/build.gradle` is the documented opt-out, and `check:fdroid` pins it. Proof it took
+is parsing a built APK's signing block, since **this container's `fdroid scanner` cannot see
+the block** (fdroidserver 2.4.5 against androguard 4.1.4 compares objects with ids and never
+matches): the 0.6.3 asset has ids `0x7109871a, 0x504b4453, 0x42726577`, the 0.6.4 asset
+`0x7109871a, 0x42726577` (padding and the v2 signature). The fix changes the app's build, so
+only a new release carries it: **0.6.4**.
+
+**With 0.6.4 the MR's whole pipeline passed**: `fdroid build`, `rewritemeta`, `check apk`,
+`lint` and `checkupdates`. The chain that got there, in the order the jobs found it: scanner
+deletions (`scanignore`), JDK 21 / AGP / Kotlin, `ndk:` and the strip, a literal block that
+`rewritemeta` cannot keep, and the signing block. **Each was reproduced locally with the real
+tool before it was fixed**, and each earlier claim that a recipe was fine was wrong exactly
+where the check used something other than the tool the pipeline uses.
+
 ## The Bitcoin sign is drawn, and BitMail starts with it
 
 Asked for 2026-11-15 (*"in web app there is not a single page with Bitcoin

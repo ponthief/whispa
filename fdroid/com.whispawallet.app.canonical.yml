@@ -33,7 +33,7 @@ Builds:
 
 AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd1d4562f
 
-AutoUpdateMode: Version
-UpdateCheckMode: Tags
+AutoUpdateMode: None
+UpdateCheckMode: None
 CurrentVersion: 0.6.1
 CurrentVersionCode: 601

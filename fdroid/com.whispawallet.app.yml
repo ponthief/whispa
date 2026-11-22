@@ -92,7 +92,7 @@ Builds:
     # field should be the full hash. Please don't use tag or branch in commit."
     # — and `fdroid lint` does not enforce it, so `commit: v0.5.0` passed every
     # local check and only a reviewer saw it. This is `git rev-parse
-    # v0.6.1^{commit}`; UpdateCheckMode: Tags still finds the next release.
+    # v0.6.1^{commit}`; each release is bumped by hand in the MR (UpdateCheckMode is None).
     commit: 39cbb196e0d3a0b79a9a35f926dd6a1e7d7cad83
     subdir: android/app
     ndk: r25b
@@ -172,7 +172,19 @@ Builds:
 # to Android — it cannot be rotated without every user reinstalling.
 AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd1d4562f
 
-AutoUpdateMode: Version
-UpdateCheckMode: Tags
+# NONE, NOT Tags, and not by preference (2026-11-22, the first real pipeline).
+# `UpdateCheckMode: Tags` reads versionName and versionCode as LITERALS out of
+# build.gradle (checkupdates.py check_tags -> parse_androidmanifests), and ours
+# are derived from package.json on purpose (src/version.ts), so the job fails
+# with "Couldn't find any version information". UpdateCheckData cannot rescue
+# it: the code is matched out of a file as an integer and ours is
+# x*10000 + y*100 + z. The cost is that F-Droid no longer proposes new versions
+# by itself; every release is bumped by hand in the MR, which RELEASING.md
+# already describes. check:fdroid fails if this goes back to Tags while
+# build.gradle still has no literal versionCode. The other way out is a literal
+# version-code file that gradle asserts equal to the derived one - a third thing
+# to bump per release.
+AutoUpdateMode: None
+UpdateCheckMode: None
 CurrentVersion: 0.6.1
 CurrentVersionCode: 601

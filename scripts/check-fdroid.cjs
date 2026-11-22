@@ -452,6 +452,35 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
   }
 }
 
+// ── checkupdates can only read a LITERAL version out of build.gradle ──────────
+// First real pipeline, 2026-11-22: `UpdateCheckMode: Tags` failed with "Couldn't
+// find any version information". It parses versionName and versionCode as
+// literals out of build.gradle; ours are derived from package.json on purpose,
+// so it found none, and UpdateCheckData cannot help because the code has to be
+// matched out of a file as an integer. So the recipe says None - unless
+// build.gradle has grown a literal versionCode, in which case Tags is allowed.
+console.log('\nthe update-check mode can actually read this build\'s version');
+{
+  const canonR = read('fdroid/com.whispawallet.app.canonical.yml') || '';
+  const annotR = read('fdroid/com.whispawallet.app.yml') || '';
+  const gradle = (read('android/app/build.gradle') || '')
+    .split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const literal = /(^|[^\w])versionCode\s*=?\s*['"]?\d+['"]?/m.test(gradle);
+  const mode = (t) => (/^UpdateCheckMode: (\S+)/m.exec(t) || [])[1];
+  const auto = (t) => (/^AutoUpdateMode: (\S+)/m.exec(t) || [])[1];
+
+  ok('the canonical recipe sets an update-check mode', !!mode(canonR));
+  ok('and the annotated copy says the same',
+    mode(canonR) === mode(annotR) && auto(canonR) === auto(annotR),
+    `canonical ${auto(canonR)}/${mode(canonR)}, annotated ${auto(annotR)}/${mode(annotR)}`);
+  ok('Tags (or any mode that reads build.gradle) only with a literal versionCode there',
+    mode(canonR) === 'None' || mode(canonR) === 'Static' || literal,
+    `mode ${mode(canonR)}, but build.gradle derives versionCode, so checkupdates finds no version`);
+  ok('and an automatic update mode only with a mode that can check',
+    !(auto(canonR) && auto(canonR) !== 'None' && (mode(canonR) === 'None')),
+    'AutoUpdateMode needs an UpdateCheckMode that finds versions');
+}
+
 console.log(
   failures
     ? `\n${failures} check(s) failed`

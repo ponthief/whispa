@@ -3369,11 +3369,14 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   Tags` reads `versionName`/`versionCode` as **literals** out of `build.gradle`,
   and ours are derived from `package.json` on purpose (see `src/version.ts`), so
   it finds none. `UpdateCheckData` cannot help: the version code must be matched
-  out of a file as an integer, and ours is `x*10000 + y*100 + z`. **Open**, and
-  wanting a decision: either `UpdateCheckMode: None` (new versions are bumped by
-  hand in the MR, which is what RELEASING.md already describes), or a literal
-  version-code file that gradle asserts equal to the derived one - a third thing
-  to bump per release.
+  out of a file as an integer, and ours is `x*10000 + y*100 + z`. **Decided
+  2026-11-22, on the user's choice: `UpdateCheckMode: None` and `AutoUpdateMode:
+  None`.** Every release is bumped by hand in the MR (as RELEASING.md already
+  says), and F-Droid no longer proposes new versions by itself - a reviewer may
+  ask about that. The other way out, not taken: a literal version-code file that
+  gradle asserts equal to the derived one, a third thing to bump per release.
+  `check:fdroid` fails if the recipe goes back to `Tags` while `build.gradle`
+  still has no literal `versionCode`.
 
 ## The Bitcoin sign is drawn, and BitMail starts with it
 

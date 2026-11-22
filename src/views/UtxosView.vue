@@ -378,6 +378,13 @@ watch(selectedWallet, () => { loadSegwit() })
 
     <div v-if="error" class="alert alert-error" style="margin-bottom:16px">⚠ {{ error }}</div>
 
+    <!-- Named, because the SegWit section below is hidden whenever that side
+         holds nothing: with it gone this table is the whole page, and a page
+         of coins with no heading reads as every coin the wallet has. The
+         Pending figure above is this table's, too — a SegWit send in progress
+         leaves no row here, the server never held those coins. -->
+    <h2 v-if="selectedWallet && !loading" style="font-size:15px;margin-bottom:10px">Silent Payments coins</h2>
+
     <div v-if="!selectedWallet" class="card">
       <div class="card-body" style="text-align:center;padding:40px;color:var(--text-dim)">
         Select a wallet to view its coins
@@ -390,7 +397,7 @@ watch(selectedWallet, () => { loadSegwit() })
 
     <div v-else-if="!filtered.length" class="card">
       <div class="card-body" style="text-align:center;padding:40px;color:var(--text-dim)">
-        No coins found{{ stateFilter !== 'all' ? ` with state "${stateFilter}"` : '' }}.
+        No Silent Payments coins found{{ stateFilter !== 'all' ? ` with state "${stateFilter}"` : '' }}.
       </div>
     </div>
 

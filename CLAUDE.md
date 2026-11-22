@@ -3514,6 +3514,17 @@ stop, and the headline total would silently fall back to the SP side alone —
 no error, no blank space, just a wrong number on the page that exists to say
 what you own.
 
+**The Coins list is titled "Silent Payments coins" on both clients** (2026-11-22:
+*"maybe we should make it clearer on the Coins page that those are SP coins?"*).
+The SegWit section hides when that side holds nothing, which left the list as the
+whole page with no heading, and the stats above it are the list's too. Reported
+with one SegWit coin mid-send: one SP coin and a Pending figure for it, and the
+SegWit send nowhere. Nothing was wrong - the server never holds SegWit coins, so a
+SegWit send leaves no `unconfirmed_spent` row, and it shows in Activity (the client
+registers it as pending). The heading is what makes that readable; the Pending stat
+still does not include a SegWit send in progress, which is a gap and not a decision.
+`check:plain` pins the heading and that it does not depend on a SegWit holding.
+
 Coins keeps the breakdown on both clients: `CoinsScreen.tsx`'s stats row and
 its **SegWit addresses** section, `UtxosView.vue`'s equivalent.
 

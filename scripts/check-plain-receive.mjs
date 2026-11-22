@@ -632,6 +632,32 @@ console.log('\nspendable means unfrozen, and says so, on both');
   ok('nor on the receive card', !/#\$\{row\.index\}/.test(CARD2), CARD2);
 }
 
+console.log('\nthe coin list says it is the Silent Payments coins, on both');
+{
+  const fs = await import('node:fs');
+  const read2 = (rel) =>
+    strip(fs.readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
+  const PHONE = read2('src/screens/CoinsScreen.tsx');
+  const WEB = read2('src/views/UtxosView.vue');
+  // The SegWit section is hidden when that side holds nothing, which leaves
+  // the list as the whole page. Reported 2026-11-22 with one SegWit coin
+  // mid-send: the page showed one coin and a Pending figure for it, and nothing
+  // said those were the Silent Payments ones, so the SegWit send looked lost.
+  // The server never holds SegWit coins, so it leaves no row here whatever
+  // happens to it; the heading is what makes that readable.
+  ok('the web titles the coin list',
+     /<h2[^>]*>Silent Payments coins<\/h2>/.test(WEB), WEB);
+  ok('and its empty state names them',
+     /No Silent Payments coins found/.test(WEB), WEB);
+  ok('the phone titles the coin list',
+     />Silent Payments coins<\/Text>/.test(PHONE), PHONE);
+  ok('and its empty state names them',
+     /No Silent Payments coins in this view/.test(PHONE), PHONE);
+  // Not conditional on the SegWit side being there: that is the case it is for.
+  ok('the web heading does not depend on a SegWit holding',
+     !/<h2[^>]*v-if="[^"]*segwit[^"]*"[^>]*>Silent Payments coins/i.test(WEB), WEB);
+}
+
 console.log('\nthe browser does all of it too');
 {
   const fs = await import('node:fs');

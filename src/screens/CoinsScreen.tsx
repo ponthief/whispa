@@ -402,6 +402,11 @@ export default function CoinsScreen({ visible, onClose }: Props) {
             </TouchableOpacity>
           ) : null}
 
+          {/* Named, because the SegWit section below is hidden whenever that
+              side holds nothing, and a list with no heading reads as every
+              coin the wallet has. */}
+          <Text style={[styles.sectionLabel, { marginTop: 4 }]}>Silent Payments coins</Text>
+
           <View style={styles.filterRow}>
             {STATE_FILTERS.map((f) => {
               const active = stateFilter === f.key;
@@ -424,7 +429,7 @@ export default function CoinsScreen({ visible, onClose }: Props) {
           {loading ? (
             <ActivityIndicator style={{ marginTop: 24 }} color={PRIMARY} />
           ) : displayed.length === 0 && !error ? (
-            <Text style={styles.empty}>No coins in this view.</Text>
+            <Text style={styles.empty}>No Silent Payments coins in this view.</Text>
           ) : (
             pageRows.map((u) => {
               const k = key(u);

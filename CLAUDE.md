@@ -3451,7 +3451,7 @@ prefix, and a first JDK fix that only covered the plugin's own build.
 It talks to Maven Central through a shared egress address that answers **HTTP 429**; the
 script retries on that and only that, and Gradle's cache means a retry resumes.
 
-### What is still open: the build will now succeed, and F-Droid will still say "binary does not match"
+### What is still open: the build succeeds, and F-Droid will say "binary does not match" until a release is built the same way
 
 Measured, not guessed: the F-Droid-shaped build and our published
 `whispa-mainnet-fdroid.apk` (v0.6.1) agree on **579 of 590 entries** - `resources.arsc`,
@@ -3466,15 +3466,29 @@ the output and **the toolchain is the whole difference**.
 
 `Binaries:` makes F-Droid compare its build against ours, so v0.6.1 **cannot** pass: the
 asset on that release was built by a workflow that predates the patches and cannot be
-rebuilt without changing the tagged commit. Getting it to pass means our CI builds
-`whispa-mainnet-fdroid.apk` with the same toolchain the recipe produces (JDK 21 and the
-same edits to the Gradle plugin), and a new release carrying that. **Not done, and
-wanting a decision** - it changes the CI that produces the asset and the release process.
-The recipe's patch commands would need to live in one place that both use (a script in
-the repo called from the recipe's `prebuild` and from the workflow), which also shortens
-the recipe. Unverified: that GitHub's Ubuntu runner and Debian's JDK 21 produce the same
-bytes as this container's (Ubuntu's 21.0.12 against Debian's 21.0.13) - the dex and the
-`.so` are where it would show.
+rebuilt without changing the tagged commit.
+
+**CI builds the asset the same way now (2026-11-22, on the user's "yes").** The F-Droid
+step in `build-android.yml` sets up **JDK 21** (a second `setup-java`, after the standard
+APK is built and published) and runs `scripts/fdroid-toolchain.sh` first, which makes the
+same edits to `node_modules` as the recipe's `prebuild` block: AGP 8.2.2, Kotlin 1.9.22,
+no `jvmToolchain(17)`, an explicit Java 17 target. It fails the step if it is not on JDK 21
+or an edit matched nothing. The edits are in `node_modules` in place, which is safe only
+because the standard APK was built before it; **do not move that step above the standard
+build**, or the push APK is built on the F-Droid toolchain.
+
+The recipe keeps its own copy of the lines, deliberately: it is pinned to a `commit:` and
+runs from a checkout that may predate the script. `check:fdroid` fails if the script's
+lines and the recipe's literal block differ by a character. Once a release contains the
+script the recipe can call it instead and shrink; until then change both together.
+
+**Still not verified, and only a real release shows it:** that GitHub's runner (Temurin
+21) produces the same bytes as Debian's JDK 21 (21.0.13 here). Local evidence is that the
+same patches give 590 of 590 equal entries with and without F-Droid's scanner; the dex and
+`libconceal.so` are where a vendor difference would show. **Next step is a release (0.6.2):
+cut it, then run `scripts/fdroid-rehearse.sh --compare` against the new
+`whispa-mainnet-fdroid.apk` and move the MR's `commit:`, versions and `Binaries:` to it.**
+If the comparison lists entries, that is the answer, whatever F-Droid says.
 
 ## The Bitcoin sign is drawn, and BitMail starts with it
 

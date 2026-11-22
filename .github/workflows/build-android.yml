@@ -772,12 +772,28 @@ jobs:
       # build, not here. This job only guarantees what can be checked in the
       # file: same key as the standard APK, and no Firebase, MLKit or Play
       # Services in it.
+      # JDK 21 AND THE SAME EDITS AS F-DROID'S RECIPE. F-Droid's buildserver has
+      # no JDK 17, so its recipe moves AGP to 8.2.2 and Kotlin to 1.9.22 and drops
+      # the plugin's JDK 17 pin. Built on 17 / 8.1.1 / 1.8.0 this file differed from
+      # F-Droid's build in 11 of 590 entries (the dex, the Kotlin metadata, the
+      # baseline profiles, libconceal.so), and `Binaries:` would say "does not
+      # match". `scripts/fdroid-toolchain.sh` holds the edits; check:fdroid fails if
+      # it and the recipe's prebuild ever differ. It edits node_modules in place,
+      # which is safe HERE only because the standard APK above is already built.
+      - uses: actions/setup-java@v4
+        if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
+        with:
+          java-version: '21'
+          distribution: temurin
+
       - name: Build the F-Droid (no-push) mainnet APK
         id: fdroid_build
         if: matrix.flavor == 'mainnet' && steps.params.outputs.type == 'release' && steps.signing.outputs.mode == 'release'
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g
         run: |
+          java -version 2>&1 | grep -q 'version "21' || { echo "::error::the F-Droid build must run on JDK 21, as F-Droid's does"; exit 1; }
+          scripts/fdroid-toolchain.sh
           rm -f android/app/google-services.json
           ( cd android && ./gradlew clean && ./gradlew --stop )
           # --stop so the build below starts a daemon whose environment is this

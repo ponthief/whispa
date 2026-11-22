@@ -278,6 +278,17 @@ console.log('\nthe F-Droid asset is built, signed and published the way F-Droid 
       ok('after a clean, so nothing carries over from the push build',
         /gradlew clean/.test(build) && build.indexOf('gradlew clean') < runAt);
       ok('through apk:fdroid, which sets WHISPA_NO_PUSH', runAt >= 0);
+      // The asset must be built the way F-Droid's recipe builds it, or `Binaries:`
+      // says "does not match" (11 toolchain entries differ on JDK 17 / AGP 8.1.1).
+      const jdkAt = WF.indexOf("java-version: '21'");
+      const buildAt = WF.indexOf('- name: Build the F-Droid (no-push) mainnet APK');
+      ok('the F-Droid build runs on JDK 21, set up before it and after the standard APK',
+        jdkAt >= 0 && jdkAt < buildAt
+          && WF.slice(jdkAt - 400, jdkAt).includes('setup-java'),
+        'F-Droid\'s buildserver has only JDK 21; a JDK 17 build differs in the dex');
+      ok('it applies scripts/fdroid-toolchain.sh before gradle runs',
+        build.indexOf('scripts/fdroid-toolchain.sh') >= 0 && build.indexOf('scripts/fdroid-toolchain.sh') < build.indexOf('gradlew clean'));
+      ok('and checks it really is on JDK 21', /version "21/.test(build));
       ok('with the default ABIs, as F-Droid builds them',
         !/reactNativeArchitectures/.test(build.replace(/#.*$/gm, '')),
         'a -PreactNativeArchitectures here makes the asset differ from F-Droid\'s build');
@@ -583,6 +594,14 @@ console.log('\nthe recipe deals with the plugin\'s JDK, AGP and Kotlin assumptio
     !/s\/17\/21\//.test(script) && !/VERSION_21/.test(script));
   ok('and the annotated copy runs exactly the same commands',
     commandsOf(recipeList(annotR, 'prebuild')) === script && script !== '');
+  {
+    const sh = read('scripts/fdroid-toolchain.sh') || '';
+    const shCmds = sh.split('\n').filter((l) => /^(rm -rf node_modules|RNGP=|sed -i )/.test(l)).join('\n');
+    const block = recipeList(canonR, 'prebuild').filter((e) => e.literal).map((e) => commandsOf([e])).join('\n');
+    ok('CI\'s scripts/fdroid-toolchain.sh holds exactly the recipe\'s edit lines',
+      shCmds !== '' && shCmds === block,
+      'the F-Droid asset is only reproducible while CI applies the edits F-Droid applies\nscript:\n' + shCmds + '\nrecipe:\n' + block);
+  }
   ok('and neither recipe tries to apt-install a JDK 17 that trixie does not have',
     !/apt-get install[^\n]*openjdk-17/.test(canonR) && !/apt-get install[^\n]*openjdk-17/.test(annotR));
 

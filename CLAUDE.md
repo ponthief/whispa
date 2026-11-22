@@ -3525,6 +3525,20 @@ registers it as pending). The heading is what makes that readable; the Pending s
 still does not include a SegWit send in progress, which is a gap and not a decision.
 `check:plain` pins the heading and that it does not depend on a SegWit holding.
 
+**A SegWit send in progress is visible only on the device that made it** (2026-11-22,
+asked as *"the same account I have logged on in mobile shows no Segwit send in
+progress.. that is as per design?"* - yes, and left that way on the user's
+instruction). The only record of one is what the sending client writes at
+broadcast: `thrilla_pending_sends_v1` in the browser's `localStorage`, the
+phone's own store. The server never receives a SegWit transaction, so there is
+nothing for another device to read. A second device sees the balance change from
+its chain walk and nothing that says why. Silent Payments sends do not have this
+gap, because the server records them. Not built, and what building it would take:
+asking Fulcrum for the mempool and history of each walked address to find a coin
+spent by an unconfirmed transaction - real work, and more queries on a walk the
+server already holds to 30 a minute (`check_plain_preview_allowed`). Revisit only
+if somebody sends SegWit from one device and watches it from another.
+
 Coins keeps the breakdown on both clients: `CoinsScreen.tsx`'s stats row and
 its **SegWit addresses** section, `UtxosView.vue`'s equivalent.
 

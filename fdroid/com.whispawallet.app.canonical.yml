@@ -15,9 +15,9 @@ Binaries:
   https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
-  - versionName: 0.6.3
-    versionCode: 603
-    commit: 995ea1727255dc8cb0642633d6265860b720b2a7
+  - versionName: 0.6.4
+    versionCode: 604
+    commit: f41660c24959f33f60118049da5fdfc54c89a68e
     subdir: android/app
     sudo:
       - apt-get update
@@ -41,5 +41,5 @@ AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd
 
 AutoUpdateMode: None
 UpdateCheckMode: None
-CurrentVersion: 0.6.3
-CurrentVersionCode: 603
+CurrentVersion: 0.6.4
+CurrentVersionCode: 604

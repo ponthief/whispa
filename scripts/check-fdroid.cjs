@@ -694,6 +694,27 @@ console.log('\nthe update-check mode can actually read this build\'s version');
     'AutoUpdateMode needs an UpdateCheckMode that finds versions');
 }
 
+// ── the APK named by Binaries: is scanned for extra signing blocks ───────────
+// The MR's "check apk" job runs `fdroid scanner --exit-code` over that APK and fails
+// on 'Dependency metadata' (2026-11-22, pipeline 3100225958): AGP puts the dependency
+// list, encrypted for Google Play, into the APK Signing Block by default. It is not an
+// entry in the APK, so no comparison of entries sees it, and a build that works and
+// installs carries it. `dependenciesInfo { includeInApk = false }` is the opt-out; the
+// proof that it took is parsing the signing block of a built APK (block id 0x504b4453),
+// which is not something this source-side check can do.
+console.log('\nthe APK carries no dependency-metadata signing block');
+{
+  const gradle = (read('android/app/build.gradle') || '')
+    .split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  const blk = /dependenciesInfo\s*\{([^}]*)\}/.exec(gradle);
+  ok('app/build.gradle has a dependenciesInfo block',
+    !!blk, 'AGP then signs in a "Dependency metadata" block that fdroid scanner refuses');
+  ok('that turns includeInApk off',
+    !!blk && /includeInApk\s*=\s*false/.test(blk[1]) && !/includeInApk\s*=\s*true/.test(blk[1]));
+  ok('and includeInBundle too',
+    !!blk && /includeInBundle\s*=\s*false/.test(blk[1]));
+}
+
 console.log(
   failures
     ? `\n${failures} check(s) failed`

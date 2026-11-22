@@ -192,6 +192,20 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.thrilla_btc.thrilla"
+
+    // AGP signs every APK with a "Dependency metadata" block: the dependency list,
+    // encrypted with a Google Play public key, in the APK Signing Block. Nothing here
+    // reads it and it is no use outside Play. F-Droid's `fdroid scanner` treats it as
+    // a PROBLEM in the APK named by `Binaries:` and fails the MR's "check apk" job
+    // ("Found extra signing block 'Dependency metadata'", 2026-11-22, pipeline
+    // 3100225958), and F-Droid's own docs ask for exactly this opt-out. It lives in
+    // the signing block, not in the APK's entries, so it does not affect the
+    // reproducibility comparison; it is the one thing in the signature F-Droid refuses.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     defaultConfig {
         applicationId "com.whispawallet.app"
         minSdkVersion rootProject.ext.minSdkVersion

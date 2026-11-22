@@ -13,6 +13,18 @@ first line of the body, where a reader looks anyway.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-22
+
+Released as **WhiSPa 0.3.2-beta**.
+
+### Changed
+
+- **No change to the app.** This release exists so that the F-Droid build of
+  WhiSPa can be reproduced: the F-Droid APK attached to it is now built with
+  the same JDK, Android Gradle Plugin and Kotlin versions as f-droid.org's own
+  build, which 0.6.1's was not. Installing it over 0.6.1 changes nothing you
+  can see.
+
 ## [0.6.1] - 2026-11-22
 
 Released as **WhiSPa 0.3.1-beta**.

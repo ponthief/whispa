@@ -86,14 +86,14 @@ Binaries:
   https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
-  - versionName: 0.6.2
-    versionCode: 602
+  - versionName: 0.6.3
+    versionCode: 603
     # THE FULL HASH, not the tag. The checklist is explicit — "The `commit`
     # field should be the full hash. Please don't use tag or branch in commit."
     # — and `fdroid lint` does not enforce it, so `commit: v0.5.0` passed every
     # local check and only a reviewer saw it. This is `git rev-parse
-    # v0.6.2^{commit}`; each release is bumped by hand in the MR (UpdateCheckMode is None).
-    commit: 16c7c00523626b300c18d3e7e3f3430db87e0fd3
+    # v0.6.3^{commit}`; each release is bumped by hand in the MR (UpdateCheckMode is None).
+    commit: 995ea1727255dc8cb0642633d6265860b720b2a7
     subdir: android/app
     ndk: r25b
 
@@ -240,5 +240,5 @@ AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd
 # to bump per release.
 AutoUpdateMode: None
 UpdateCheckMode: None
-CurrentVersion: 0.6.2
-CurrentVersionCode: 602
+CurrentVersion: 0.6.3
+CurrentVersionCode: 603

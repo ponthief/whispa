@@ -508,6 +508,89 @@ it turns `bitcoin:?tsp=tsp1…` into `bitcoin:?ttsp1…`. `check:spuri` and
 `tests/test_bip321.py` ban parsing the URI that way. That Sparrow reads `tsp=` is
 taken from the report and from BIP-321 — Sparrow's source was not read.
 
+## BitMail resolution verifies DNSSEC itself, up to the root
+
+Asked 2026-11-22, after Cake Wallet's BIP-353 handling was written up
+(`uncensoredtech.substack.com/p/pwnedcakecash`): *"can you check that we are not
+doing the same as cake wallet regarding bip353"*. **Not the same bug, and still a
+BIP-353 violation.** Cake took the address from Google's DoH answer and verified a
+proof it never compared with it. Here the address and the verdict had always come
+from ONE response — but the verdict was the resolver's **AD flag**, from
+1.1.1.1 / 8.8.8.8 / 9.9.9.9 over plain UDP/TCP, which anyone on the path can set.
+BIP-353 says a client "MUST fully validate DNSSEC signatures leading to the DNS
+root" and "MUST NOT trust a remote resolver to validate DNSSEC records on their
+behalf". Nothing here verified a signature.
+
+**It does now.** siLNt `helpers/dnssec_chain.py` (a pure module — no socket, the
+fetch is injected) takes the TXT record, follows CNAME/DNAME, checks every RRSIG
+against its zone's DNSKEY, proves that DNSKEY set from the DS in the parent, and
+stops at the root DNSKEY set, which must match an anchor written into the file
+(IANA `root-anchors.xml`: 20326 and 38696; 19036 retired 2019). The chain is
+walked by the RRSIG **signer names**, not by guessing zone cuts. The resolvers are
+transport only, asked with CD set so they return the data whether or not they
+could validate it; their AD flag is not read anywhere, and a test pins that.
+
+What it refuses, each a way a forged answer gets in:
+
+- **An answer the name does not lead to.** The records used are found by following
+  the name that was ASKED, so a validly signed record for another name is not
+  taken for this one — the Cake finding *"a valid proof for any other signed name
+  passes"*. Tested against the BIP's own proof.
+- **SHA-1 signatures and RSA keys under 1024 bits** (BIP MUST NOT). SHA-1 *DS*
+  digests are accepted — the BIP says a resolver MAY, and a domain with only a
+  SHA-1 DS would otherwise be unpayable.
+- **A wildcard-expanded answer.** Accepting one needs an NSEC/NSEC3 proof that no
+  closer name exists; that is **not implemented**, so such answers are refused
+  rather than trusted on the signature. This is the one thing the BIP allows that
+  we do not: a BitMail published by wildcard cannot be paid (the BIP's own
+  `cname_wild` vector is refused for this reason). Implementing the NSEC3 proof is
+  the way to lift it.
+- A signature outside its validity window, a zone with no DS in its parent, an
+  unsigned record, an unsigned CNAME (the CNAME a resolver synthesises from a
+  DNAME is unsigned by construction and is ignored; the substitution is computed
+  from the signed DNAME).
+
+`bip353_resolve` also applies the BIP's record rules, which it did not: ignore TXT
+records not starting with `bitcoin:` (any case), **refuse more than one that does**
+(taking the first lets whoever can add a record choose), and join the
+character-strings of ONE record, never across records. The payer sees two
+different refusals — *"isn't signed with DNSSEC"* and *"failed DNSSEC
+verification, so it may have been altered"* — and the second is never softened
+into a typo. A `bitcoin:?sp=…&sp=…` URI was already refused as ambiguous
+(`sp_from_uri`), so Cake's "a query parameter overrides the address" does not apply.
+
+**Tests** (`tests/test_dnssec_chain.py`, 40) run on the BIP's five real vectors
+(siLNt `fixtures/bip353-proofs.json`, signed by the real root, valid only inside
+their own windows), on attacks against them, and on zones the test signs itself.
+That is the only thing that proves the anchors are right. Nine mutations of the
+validator (no signature check, any key trusted, wrong-name binding, wildcards,
+SHA-1, no time window, weak RSA, missing DS, unsigned records) each fail a test; a
+the first suite let a mutation of the record-level time check survive, because
+every signature in the fixtures shared one window and the zone-key check caught the
+expiry first, so a test where only the TXT signature is out of its window was
+added; and one fixture test swapped a zone that has no key and passed vacuously —
+**every manipulation test now asserts it changed something**. They need a working
+`cryptography`; where it is broken (this container's system Python panics) they
+fail with the same pyo3 error as the six existing collection errors.
+
+**Not done, and not verified.** This sandbox's DNS is intercepted, so it was **not
+run against real DNS** — only against signed fixtures and the BIP's real proofs.
+Check one live lookup of a BitMail on your own domain after deploying; a failure
+logs `DNSSEC validation FAILED` with the reason. Also: **negative answers
+(NXDOMAIN / no record) are unauthenticated**, so they can deny a payment but never
+redirect one; **the clients still trust siLNt's answer** (resolution is server-side,
+not on the device); the server's plain-DNS queries show the name to the path and
+the resolver (BIP-353 discusses this); a leading `₿` is not stripped; the other
+`bip353_resolve` callers (wallet BitMail check, tamper sweep, admin) are still
+synchronous inside async handlers — only the send-time and resolve-endpoint paths
+were moved off the event loop; and the cache holds validated DNSKEY sets only, up
+to an hour.
+
+**The anchors are a maintenance item.** When ICANN rolls the root KSK, a new
+anchor must be added to `ROOT_ANCHORS` *before* the old one stops signing, or
+every BitMail refuses. Both current ones are there; take any new one from
+`https://data.iana.org/root-anchors/root-anchors.xml`.
+
 ## The memo on Send is a note to yourself
 
 Asked for 2026-11-21 (*"add a Memo field to the tnx.. on Send screen.. limit to

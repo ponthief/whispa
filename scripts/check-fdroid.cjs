@@ -225,7 +225,15 @@ console.log('\nthe F-Droid asset is built, signed and published the way F-Droid 
   const ASSET = 'whispa-mainnet-fdroid.apk';
   const CI_ASSET = 'whispa-mainnet-fdroid-release.apk';
 
-  const binaries = canonR && /^Binaries: .*\/v%v\/(\S+)$/m.exec(canonR);
+  // fdroiddata's CI `rewritemeta` wraps a value over 80 characters onto an
+  // indented second line and leaves a trailing space after the key. Pipeline
+  // 3099720372 failed its rewritemeta job on the one-line form, so the wrapped
+  // form is the canonical one and is pinned as such.
+  const binaries = canonR &&
+    /^Binaries:[ \t]*(?:\n[ \t]+)?\S*\/v%v\/(\S+)$/m.exec(canonR);
+  ok('Binaries: is in the form fdroiddata\'s rewritemeta produces (wrapped)',
+    !!canonR && /^Binaries: \n  https:\/\/\S+$/m.test(canonR),
+    'expected "Binaries: " (trailing space), then the URL on the next line, indented two');
   ok('the recipe\'s Binaries: names the F-Droid asset, not the push build',
     !!binaries && binaries[1] === ASSET,
     binaries ? `it names ${binaries[1]}` : 'no Binaries: line');
@@ -327,6 +335,119 @@ console.log('\nthe F-Droid asset is built, signed and published the way F-Droid 
       ok('both recipes carry the same top-level fields',
         fields(canon) === fields(annot),
         `canonical: ${fields(canon)}\n      annotated: ${fields(annot)}`);
+    }
+  }
+}
+
+// ── F-Droid's scanner deletes build.gradle files, and the RN CLI reads them ──
+// First real F-Droid build, 2026-11-22: "No package name found", five seconds
+// into Gradle. F-Droid's scanner os.remove()s any build.gradle that mentions
+// com.google.mlkit, com.google.firebase or Play Services — including the ones
+// inside node_modules — and the React Native CLI evaluates EVERY dependency's
+// Android config before it applies react-native.config.js, which only
+// overrides the result afterwards. With the file present that evaluation reads
+// a namespace, finds no native module class and returns null, so our own CI
+// never saw it. With the file gone, and a manifest with no package=, it
+// throws. Nothing in a source-side check can see that: it takes the real CLI
+// against a tree shaped the way the scanner leaves it.
+//
+// So this runs the CLI. It COPIES the four packages the scanner touches (never
+// writes into node_modules), deletes their build.gradle files, and requires:
+//   - the CLI FAILS as it did in the build (the control, so a harness that
+//     cannot fail cannot pass), and
+//   - it SUCCEEDS once the recipe's own prebuild removal is applied. The path
+//     is read out of the recipe, so the check follows the recipe rather than
+//     asserting a path of its own.
+console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to node_modules');
+{
+  const os = require('os');
+  const { spawnSync } = require('child_process');
+  const canonR = read('fdroid/com.whispawallet.app.canonical.yml') || '';
+  const annotR = read('fdroid/com.whispawallet.app.yml') || '';
+
+  const RM = /^\s*- cd \.\.\/\.\. && npm ci && rm -rf (node_modules\/\S+)\s*$/m;
+  const inCanon = RM.exec(canonR);
+  const inAnnot = RM.exec(annotR);
+  ok('the recipe removes that package\'s android/ in the SAME prebuild entry as npm ci',
+    !!inCanon, 'prebuild runs as one script with ; between entries, so a separate rm would run in whatever directory the cd left behind');
+  ok('and the annotated copy says the same',
+    !!inAnnot && !!inCanon && inAnnot[1] === inCanon[1]);
+
+  const NM = path.join(ROOT, 'node_modules');
+  const CLI = path.join(NM, '@react-native-community/cli/build/bin.js');
+  if (!fs.existsSync(CLI)) {
+    ok('the React Native CLI is installed (run npm ci)', false, CLI);
+  } else if (inCanon) {
+    const touched = [
+      '@capacitor-mlkit/barcode-scanning',
+      '@react-native-firebase/app',
+      '@react-native-firebase/messaging',
+      'react-native-camera-kit',
+    ];
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'whispa-rncli-'));
+    try {
+      fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(tmp, 'package.json'));
+      // What the recipe's first prebuild line does to the config.
+      fs.writeFileSync(path.join(tmp, 'react-native.config.js'),
+        read('react-native.config.js').replace("process.env.WHISPA_NO_PUSH === '1'", 'true'));
+      fs.mkdirSync(path.join(tmp, 'android'));
+
+      const scopes = new Set(touched.filter((t) => t.startsWith('@')).map((t) => t.split('/')[0]));
+      const own = new Set(touched.map((t) => t.split('/')[0]));
+      fs.mkdirSync(path.join(tmp, 'node_modules'));
+      for (const e of fs.readdirSync(NM)) {
+        if (e.startsWith('.')) continue;
+        const skip = scopes.has(e) ? new Set(touched.filter((t) => t.startsWith(e + '/')).map((t) => t.split('/')[1])) : null;
+        if (!own.has(e)) { fs.symlinkSync(path.join(NM, e), path.join(tmp, 'node_modules', e)); continue; }
+        if (skip) {            // a scope: link its other packages, copy the touched ones
+          fs.mkdirSync(path.join(tmp, 'node_modules', e));
+          for (const c of fs.readdirSync(path.join(NM, e))) {
+            const src = path.join(NM, e, c), dst = path.join(tmp, 'node_modules', e, c);
+            if (skip.has(c)) fs.cpSync(src, dst, { recursive: true });
+            else fs.symlinkSync(src, dst);
+          }
+        } else {
+          fs.cpSync(path.join(NM, e), path.join(tmp, 'node_modules', e), { recursive: true });
+        }
+      }
+
+      // The scanner's removeproblem(): os.remove on the file.
+      let deleted = 0;
+      for (const t of touched) {
+        const g = path.join(tmp, 'node_modules', t, 'android', 'build.gradle');
+        if (fs.existsSync(g)) { fs.rmSync(g); deleted++; }
+      }
+      ok('the harness deleted the build.gradle files it is meant to (not vacuous)',
+        deleted >= 1, `deleted ${deleted}`);
+
+      const run = () => {
+        const r = spawnSync(process.execPath, [path.join(tmp, 'node_modules/@react-native-community/cli/build/bin.js'), 'config'],
+          { cwd: tmp, encoding: 'utf8', timeout: 120000, env: { ...process.env, WHISPA_NO_PUSH: '1' } });
+        const out = (r.stdout || '') + (r.stderr || '');
+        let json = null;
+        try { json = JSON.parse(r.stdout); } catch { /* an error is plain text */ }
+        return { out, json };
+      };
+
+      const before = run();
+      ok('CONTROL: without the removal the CLI fails exactly as it did in F-Droid\'s build',
+        !before.json && /No package name found/.test(before.out),
+        before.json ? 'it succeeded, so this harness does not reproduce the failure' : before.out.slice(0, 200));
+
+      fs.rmSync(path.join(tmp, inCanon[1]), { recursive: true, force: true });
+      const after = run();
+      ok('with the recipe\'s removal applied, the CLI answers',
+        !!after.json && !!after.json.dependencies, after.out.slice(0, 200));
+      if (after.json) {
+        const dep = after.json.dependencies || {};
+        ok('and still leaves the excluded packages out of Android autolinking',
+          ['@capacitor-mlkit/barcode-scanning', '@capacitor/core', 'react-native-camera-kit',
+            '@react-native-firebase/app', '@react-native-firebase/messaging']
+            .every((n) => !dep[n] || !dep[n].platforms || !dep[n].platforms.android),
+          JSON.stringify(Object.keys(dep).filter((n) => dep[n].platforms && dep[n].platforms.android)));
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   }
 }

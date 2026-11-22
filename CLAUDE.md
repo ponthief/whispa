@@ -3340,6 +3340,41 @@ Not verified, and only F-Droid's own build can: that its rebuild is
 byte-identical (different node and JDK from CI's). That is the failure to
 expect first.
 
+### The first real F-Droid pipeline, and what it found (2026-11-22)
+
+fdroiddata MR 54187's pipeline had never run (no runner) until the account was
+verified; its first run failed three jobs, all readable from the public job logs
+at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
+
+- **`fdroid build`: "No package name found".** F-Droid's scanner **deletes**
+  (`os.remove`) any `build.gradle` that mentions `com.google.mlkit`, Firebase or
+  Play Services, including inside `node_modules` - here
+  `@capacitor-mlkit/barcode-scanning`'s. The React Native CLI evaluates every
+  dependency's Android config **before** it applies `react-native.config.js`,
+  which only overrides the result afterwards, so `android: null` never
+  prevented it. With the file present that evaluation finds a namespace, sees no
+  native module class and returns null, which is why our own CI never saw this;
+  with it gone the manifest has no `package=` either and the CLI throws. The
+  recipe's `prebuild` now removes that package's `android/` in the **same entry**
+  as `npm ci` (prebuild is one `bash -e` script, so the `cd ../..` carries over).
+  The package is the Vue app's QR scanner and the React Native app never imports
+  it. `check:fdroid` runs the real CLI against a copy of the four packages with
+  their `build.gradle` files deleted: it must fail without the removal and
+  answer with it, and the path is read out of the recipe. Verified only as far as
+  autolinking - nothing after that point in F-Droid's build has run.
+- **`fdroid rewritemeta`.** CI wants a value over 80 characters wrapped: `Binaries: `
+  (trailing space) and the URL indented on the next line. The recipe used to say
+  that form was local-version skew; CI is the authority. Pinned by `check:fdroid`.
+- **`checkupdates`: "Couldn't find any version information".** `UpdateCheckMode:
+  Tags` reads `versionName`/`versionCode` as **literals** out of `build.gradle`,
+  and ours are derived from `package.json` on purpose (see `src/version.ts`), so
+  it finds none. `UpdateCheckData` cannot help: the version code must be matched
+  out of a file as an integer, and ours is `x*10000 + y*100 + z`. **Open**, and
+  wanting a decision: either `UpdateCheckMode: None` (new versions are bumped by
+  hand in the MR, which is what RELEASING.md already describes), or a literal
+  version-code file that gradle asserts equal to the derived one - a third thing
+  to bump per release.
+
 ## The Bitcoin sign is drawn, and BitMail starts with it
 
 Asked for 2026-11-15 (*"in web app there is not a single page with Bitcoin

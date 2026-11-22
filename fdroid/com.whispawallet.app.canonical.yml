@@ -11,12 +11,13 @@ AutoName: WhiSPa
 
 RepoType: git
 Repo: https://github.com/ponthief/whispa.git
-Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
+Binaries: 
+  https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
-  - versionName: 0.5.0
-    versionCode: 500
-    commit: 4b16735e0b52d2ebfd4900e53948951b91ec57e6
+  - versionName: 0.6.1
+    versionCode: 601
+    commit: 39cbb196e0d3a0b79a9a35f926dd6a1e7d7cad83
     subdir: android/app
     sudo:
       - apt-get update
@@ -25,7 +26,7 @@ Builds:
       - mainnet
     prebuild:
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
-      - cd ../.. && npm ci
+      - cd ../.. && npm ci && rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
     scandelete:
       - node_modules
     ndk: r25b
@@ -34,5 +35,5 @@ AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.5.0
-CurrentVersionCode: 500
+CurrentVersion: 0.6.1
+CurrentVersionCode: 601

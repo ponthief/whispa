@@ -14,12 +14,14 @@
 # `AuthorName` sorts between `License` and `WebSite` — taken from the tool, not
 # guessed, since nothing else states the order.
 #
-# DO NOT COMMIT THE OUTPUT OF A LOCAL 2.4.5 REWRITE. That version wraps long
-# values onto a second line AND leaves a trailing space where it breaks, which
-# .canonical.yml beside this file does not have — so the formatting is version
-# skew against fdroiddata's CI rather than the canonical form. The canonical
-# copy here is kept byte-for-byte in the style the fork produced; if CI ever
-# disagrees, its rewrite is the authority, not ours.
+# THE CANONICAL FORM WRAPS A LONG VALUE, and fdroiddata's CI is the authority on
+# that. A value over 80 characters goes on an indented second line and the key
+# keeps a trailing space ("Binaries: " then the URL). This file said the
+# opposite until 2026-11-22 - that a wrapped value was local-version skew - and
+# merge request 54187's rewritemeta job failed on the one-line form, printing
+# exactly that diff. .canonical.yml beside this file is now byte-for-byte what
+# CI printed, and check:fdroid pins the wrapped form. If CI ever disagrees
+# again, its rewrite is the authority, not ours.
 #
 # Checked against fdroidserver 2.4.5 with fdroiddata's own config/categories.yml:
 # `fdroid readmeta` and `fdroid lint com.whispawallet.app` both pass clean —
@@ -80,17 +82,18 @@ Repo: https://github.com/ponthief/whispa.git
 # versionName, versionCode and commit below move with every release. They are
 # changed by hand after cut-release.sh, in the MR, and they have to name a tag
 # whose release HAS that asset: 0.5.0 and 0.6.0 predate it.
-Binaries: https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
+Binaries: 
+  https://github.com/ponthief/whispa/releases/download/v%v/whispa-mainnet-fdroid.apk
 
 Builds:
-  - versionName: 0.5.0
-    versionCode: 500
+  - versionName: 0.6.1
+    versionCode: 601
     # THE FULL HASH, not the tag. The checklist is explicit — "The `commit`
     # field should be the full hash. Please don't use tag or branch in commit."
     # — and `fdroid lint` does not enforce it, so `commit: v0.5.0` passed every
     # local check and only a reviewer saw it. This is `git rev-parse
-    # v0.5.0^{commit}`; UpdateCheckMode: Tags still finds the next release.
-    commit: 4b16735e0b52d2ebfd4900e53948951b91ec57e6
+    # v0.6.1^{commit}`; UpdateCheckMode: Tags still finds the next release.
+    commit: 39cbb196e0d3a0b79a9a35f926dd6a1e7d7cad83
     subdir: android/app
     ndk: r25b
 
@@ -126,7 +129,33 @@ Builds:
       # and prebuild's own environment does not reach the later gradle step, so
       # the flag cannot be passed — it has to be burned into the file.
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
-      - cd ../.. && npm ci
+      #
+      # THE LAST ENTRY DOES TWO THINGS ON ONE LINE, and the one line is the
+      # point: prebuild runs as a single `bash -e` script with `;` between the
+      # entries, so the `cd ../..` carries over, and a separate `rm` entry would
+      # run in whatever directory that left behind.
+      #
+      # WHY THE ANDROID DIRECTORY OF @capacitor-mlkit/barcode-scanning GOES
+      # (first real build, 2026-11-22, "No package name found"). F-Droid's
+      # scanner DELETES a build.gradle that mentions com.google.mlkit —
+      # scanner.py removeproblem() is os.remove() — and this package's does,
+      # because it is Google's ML Kit wrapper. The React Native CLI then asks
+      # every dependency for its Android config BEFORE it applies the root
+      # react-native.config.js, which only overrides the result afterwards
+      # (cli-config loadConfig.js getDependencyConfig: dependencyConfig() runs
+      # first, merge() with the user's `android: null` second). With the file
+      # present that evaluation finds a namespace, sees no native module class
+      # and returns null — which is why our own CI never saw it. With the file
+      # gone the manifest has no package= either, so it throws and the build
+      # dies in settings.gradle's autolinking, five seconds into Gradle.
+      #
+      # Without an android/ directory the CLI returns null at once ("no source
+      # dir"), which is what `android: null` always meant. Nothing is lost: the
+      # package is the Vue web app's QR scanner, the React Native app never
+      # imports it, and it is excluded from Android autolinking already. Tried
+      # and not needed: the Firebase and camera-kit packages lose their
+      # build.gradle the same way and do not throw.
+      - cd ../.. && npm ci && rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
 
     # node_modules carries prebuilt binaries that the scanner rejects; they are
     # build-time only and nothing from them is packaged.
@@ -145,5 +174,5 @@ AllowedAPKSigningKeys: 3a7546982c4d256c6024f410d94b9209bafdf1fcf8df7b8f0a9f344fd
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.5.0
-CurrentVersionCode: 500
+CurrentVersion: 0.6.1
+CurrentVersionCode: 601

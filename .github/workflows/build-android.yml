@@ -793,6 +793,16 @@ jobs:
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g
         run: |
           java -version 2>&1 | grep -q 'version "21' || { echo "::error::the F-Droid build must run on JDK 21, as F-Droid's does"; exit 1; }
+          # THE NDK, BECAUSE F-DROID'S RECIPE INSTALLS ONE (`ndk: r25b`). Without it
+          # AGP says "Unable to strip the following libraries, packaging them as they
+          # are" and ships libconceal.so as it came in the AAR, while F-Droid's build
+          # strips it: same size, different section-name order, so 0.6.2's asset
+          # differed from a local F-Droid-shaped build in exactly those two files.
+          # The version is read from the build, not repeated here.
+          NDK="$(sed -n 's/.*ndkVersion = "\([0-9.]*\)".*/\1/p' android/build.gradle | head -1)"
+          test -n "$NDK" || { echo "::error::no ndkVersion in android/build.gradle"; exit 1; }
+          sdkmanager --install "ndk;$NDK" >/dev/null
+          test -d "$ANDROID_HOME/ndk/$NDK" || { echo "::error::NDK $NDK did not install"; exit 1; }
           scripts/fdroid-toolchain.sh
           rm -f android/app/google-services.json
           ( cd android && ./gradlew clean && ./gradlew --stop )

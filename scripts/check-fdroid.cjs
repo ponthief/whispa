@@ -289,6 +289,20 @@ console.log('\nthe F-Droid asset is built, signed and published the way F-Droid 
       ok('it applies scripts/fdroid-toolchain.sh before gradle runs',
         build.indexOf('scripts/fdroid-toolchain.sh') >= 0 && build.indexOf('scripts/fdroid-toolchain.sh') < build.indexOf('gradlew clean'));
       ok('and checks it really is on JDK 21', /version "21/.test(build));
+      // Without the NDK AGP cannot strip, and libconceal.so ships as the AAR had it
+      // while F-Droid's build (which installs `ndk:`) strips it: 2 of 590 entries.
+      const bg = read('android/build.gradle') || '';
+      const ndkV = /ndkVersion = "([\d.]+)"/.exec(bg);
+      const canon = read('fdroid/com.whispawallet.app.canonical.yml') || '';
+      const rN = /^ {4}ndk: r(\d+)([a-z]?)\s*$/m.exec(canon);
+      const R_TO_V = { '25b': '25.1.8937393', '25c': '25.2.9519653', '25': '25.0.8775105' };
+      ok('the F-Droid build installs the NDK the build pins, before gradle runs',
+        !!ndkV && /sdkmanager --install "ndk;\$NDK"/.test(build)
+          && build.indexOf('sdkmanager --install') < build.indexOf('npm run apk:fdroid'),
+        'no NDK: AGP cannot strip, and libconceal.so differs from F-Droid\'s build');
+      ok('and that is the NDK the recipe asks F-Droid for (ndk: ' + (rN ? 'r' + rN[1] + rN[2] : 'none') + ')',
+        !!ndkV && !!rN && R_TO_V[rN[1] + rN[2]] === ndkV[1],
+        'build.gradle pins ' + (ndkV && ndkV[1]) + '; a different NDK in the recipe is a different strip');
       ok('with the default ABIs, as F-Droid builds them',
         !/reactNativeArchitectures/.test(build.replace(/#.*$/gm, '')),
         'a -PreactNativeArchitectures here makes the asset differ from F-Droid\'s build');

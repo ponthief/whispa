@@ -3482,13 +3482,26 @@ runs from a checkout that may predate the script. `check:fdroid` fails if the sc
 lines and the recipe's literal block differ by a character. Once a release contains the
 script the recipe can call it instead and shrink; until then change both together.
 
-**Still not verified, and only a real release shows it:** that GitHub's runner (Temurin
-21) produces the same bytes as Debian's JDK 21 (21.0.13 here). Local evidence is that the
-same patches give 590 of 590 equal entries with and without F-Droid's scanner; the dex and
-`libconceal.so` are where a vendor difference would show. **Next step is a release (0.6.2):
-cut it, then run `scripts/fdroid-rehearse.sh --compare` against the new
-`whispa-mainnet-fdroid.apk` and move the MR's `commit:`, versions and `Binaries:` to it.**
-If the comparison lists entries, that is the answer, whatever F-Droid says.
+**0.6.2 was the first asset built that way, and it matched 588 of 590** (compared with
+`scripts/fdroid-rehearse.sh --compare` against the published file). The Temurin-versus-Debian
+JDK worry did not materialise: the dex, the Kotlin metadata and the baseline profiles are
+byte-identical. What differed was `lib/{arm64-v8a,armeabi-v7a}/libconceal.so` - same size,
+the **section-name table in a different order**. CI's log said why: *"Unable to strip the
+following libraries, packaging them as they are: … libconceal.so …"*. AGP strips with the
+NDK's `llvm-strip`, the runner has no NDK 25.1.8937393 (nothing in this build needs one, so
+nothing installs it), and F-Droid's recipe says `ndk: r25b`, so F-Droid's build **does**
+strip. CI's copy is the AAR's file untouched (`cmp` against `conceal-1.1.3.aar` is equal);
+the F-Droid-shaped one is that file passed through strip. The F-Droid step now installs the
+NDK `android/build.gradle` pins before building, and `check:fdroid` holds that version to
+the recipe's `ndk:` (r25b is 25.1.8937393; the table is in the check). **The asset that
+carries the fix has not been built yet**: 0.6.2's cannot be redone without moving the tag,
+so the next release is the one to compare, and until then `Binaries:` will name those two
+files.
+
+**Do not drop `ndk: r25b` from the recipe to make 0.6.2 match instead.** It would, if
+F-Droid's server has no NDK of that version, which is not known and not something this
+sandbox can check; installing the NDK in CI makes the two builds do the same thing
+whatever the server has.
 
 ## The Bitcoin sign is drawn, and BitMail starts with it
 

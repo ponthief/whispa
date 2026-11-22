@@ -13,6 +13,18 @@ first line of the body, where a reader looks anyway.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-22
+
+Released as **WhiSPa 0.3.4-beta**.
+
+### Changed
+
+- **No change to what the app does.** The APK no longer carries the "dependency
+  metadata" block that Android's build tools add to its signature by default (an
+  encrypted list of the app's libraries, readable only by Google Play), which
+  f-droid.org refuses in a published binary. Installing it over 0.6.3 changes
+  nothing you can see.
+
 ## [0.6.3] - 2026-11-22
 
 Released as **WhiSPa 0.3.3-beta**.

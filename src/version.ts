@@ -23,7 +23,7 @@
 // Going forward past it is what makes the check work for the people who
 // already have the wrong number.
 
-export const APP_VERSION = '0.6.3';
+export const APP_VERSION = '0.6.4';
 
 /**
  * What this build is CALLED, when that differs from what it is numbered.
@@ -48,7 +48,7 @@ export const APP_VERSION = '0.6.3';
  * that reports only one of them is a build somebody will mis-report in a bug
  * thread.
  */
-export const PRERELEASE_LABEL = '0.3.3-beta';
+export const PRERELEASE_LABEL = '0.3.4-beta';
 
 /**
  * The git tag that carries this build. NUMBERED, NEVER NAMED.

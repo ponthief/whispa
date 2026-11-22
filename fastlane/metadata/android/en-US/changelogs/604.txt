@@ -1,0 +1,3 @@
+No change to what the app does.
+
+The APK no longer carries Google Play's dependency metadata block in its signature, which f-droid.org does not accept.

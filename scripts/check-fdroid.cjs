@@ -339,6 +339,37 @@ console.log('\nthe F-Droid asset is built, signed and published the way F-Droid 
   }
 }
 
+// A small reader for the stanzas of a fdroiddata recipe this check needs. The
+// recipe has a fixed shape, and js-yaml is only a TRANSITIVE dev dependency here
+// (adding one would change the lockfile), so this reads exactly: a list under a
+// `    <key>:` of the first Build, whose items are one-line `- text` entries or
+// `- |` literal blocks. A literal block is returned as ONE entry, comments kept.
+function recipeList(text, key) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l === `    ${key}:`);
+  if (start < 0) return [];
+  const out = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === '' ) { continue; }
+    const indent = l.length - l.trimStart().length;
+    if (indent <= 4 && !l.trimStart().startsWith('#')) break;
+    if (/^ {6}- \|\s*$/.test(l)) {
+      const body = [];
+      while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^ {8}/.test(lines[i + 1]))) {
+        i++; body.push(lines[i].replace(/^ {8}/, ''));
+      }
+      out.push({ text: body.join('\n').replace(/\n+$/, ''), literal: true });
+    } else if (/^ {6}- /.test(l)) {
+      out.push({ text: l.replace(/^ {6}- /, ''), literal: false });
+    }
+  }
+  return out;
+}
+// The commands only: shell comment lines and blanks are the annotated copy's.
+const commandsOf = (entries) => entries.map((e) => e.text.split('\n')
+  .filter((l) => l.trim() !== '' && !/^\s*#/.test(l)).join('\n')).join('\n');
+
 // ── F-Droid's scanner deletes build.gradle files, and the RN CLI reads them ──
 // First real F-Droid build, 2026-11-22: "No package name found", five seconds
 // into Gradle. F-Droid's scanner os.remove()s any build.gradle that mentions
@@ -366,33 +397,31 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
   const annotR = read('fdroid/com.whispawallet.app.yml') || '';
 
   // prebuild is one `bash -e` script with `;` between the entries, so the
-  // entry that cd's to the root decides where every later one runs. The list is
-  // read as a list, because fdroiddata's CI also REWRITES it (see the width rule
-  // below) and the entries have to survive that unchanged.
-  const prebuildOf = (t) => {
-    const m = /^ {4}prebuild:\n((?: {6}(?:- .*|#.*)\n)+)/m.exec(t);
-    return m ? m[1].split('\n').filter((l) => /^ {6}- /.test(l)).map((l) => l.replace(/^ {6}- /, '')) : [];
-  };
+  // entry that cd's to the root decides where every later one runs.
   const CD = 'cd ../.. && npm ci';
-  const RMRE = /^rm -rf (node_modules\/\S+)$/;
-  const canonEntries = prebuildOf(canonR);
-  const annotEntries = prebuildOf(annotR);
-  const cdAt = canonEntries.indexOf(CD);
-  const rmAt = canonEntries.findIndex((e) => RMRE.test(e));
-  const inCanon = rmAt >= 0 ? RMRE.exec(canonEntries[rmAt]) : null;
-  const inAnnot = annotEntries.map((e) => RMRE.exec(e)).find(Boolean) || null;
-  ok('the recipe removes that package\'s android/ in a prebuild entry AFTER the one that cd\'s to the root',
-    !!inCanon && cdAt >= 0 && rmAt > cdAt,
-    `entries: ${JSON.stringify(canonEntries)}`);
-  ok('and the annotated copy says the same',
-    !!inAnnot && !!inCanon && inAnnot[1] === inCanon[1]);
+  const canonEntries = recipeList(canonR, 'prebuild');
+  const annotEntries = recipeList(annotR, 'prebuild');
+  const cdAt = canonEntries.findIndex((e) => e.text === CD);
+  const afterCd = canonEntries.slice(cdAt + 1).map((e) => e.text).join('\n');
+  const RMRE = /^rm -rf (node_modules\/\S+)$/m;
+  const inCanon = cdAt >= 0 ? RMRE.exec(afterCd) : null;
+  ok('the recipe removes that package\'s android/ AFTER the entry that cd\'s to the root',
+    !!inCanon && cdAt >= 0,
+    `entries: ${JSON.stringify(canonEntries.map((e) => e.text.split('\n')[0]))}`);
+  ok('and the annotated copy runs exactly the same commands (its comments are shell comments)',
+    commandsOf(canonEntries) === commandsOf(annotEntries) && commandsOf(canonEntries) !== '',
+    `canonical:\n${commandsOf(canonEntries)}\nannotated:\n${commandsOf(annotEntries)}`);
   // fdroiddata's `fdroid rewritemeta` job fails on ANY difference, and ruamel.yaml
-  // folds a plain scalar at the first space past column 80. The two long entries
-  // that have passed CI had no space after that column; a chained one that has
-  // one is rewritten onto two lines and fails the job on formatting alone.
-  const wide = canonEntries.map((e) => '      - ' + e).filter((l) => l.lastIndexOf(' ') >= 80);
-  ok('no prebuild entry has a space past column 80 (rewritemeta would fold it)',
+  // folds a plain scalar at the first space past column 80 (0.18.6 and 0.18.10,
+  // the versions that reproduce what CI did to every earlier recipe). One-line
+  // entries must stay short; a literal block is preserved as written, which is
+  // why the long commands are in one.
+  const wide = canonEntries.filter((e) => !e.literal)
+    .map((e) => '      - ' + e.text).filter((l) => l.lastIndexOf(' ') >= 80);
+  ok('no one-line prebuild entry has a space past column 80 (rewritemeta would fold it)',
     wide.length === 0, wide.map((l) => l.slice(0, 70) + '…').join('\n         '));
+  ok('and the long commands are in a literal block, which rewritemeta leaves alone',
+    canonEntries.some((e) => e.literal && /jvmToolchain/.test(e.text)));
 
   const NM = path.join(ROOT, 'node_modules');
   const CLI = path.join(NM, '@react-native-community/cli/build/bin.js');
@@ -466,6 +495,43 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
             '@react-native-firebase/app', '@react-native-firebase/messaging']
             .every((n) => !dep[n] || !dep[n].platforms || !dep[n].platforms.android),
           JSON.stringify(Object.keys(dep).filter((n) => dep[n].platforms && dep[n].platforms.android)));
+
+        // THE RULE THIS WHOLE BLOCK EXISTS FOR, applied to what is actually
+        // autolinked. fdroidserver's scanner flags a gradle file that declares a
+        // maven repo outside a short list of https ones (the regex and the list are
+        // scanner.py's own), and `scandelete: node_modules` turns every finding
+        // into a deletion - handleproblem checks scanignore first. A library the
+        // app builds that loses its build.gradle becomes an empty Gradle project
+        // and the app fails to resolve it (third real build). So: every Android
+        // library the CLI autolinks, whose build.gradle the scanner would flag,
+        // has to be in scanignore.
+        const MAVEN = /\smaven\s*(?:{.*?(?:setUrl|url)|\(\s*(?:url)?)\s*=?\s*(?:uri|URI|Uri\.create)?\(?\s*["']?([^\s"']+)["']?[^})]*[)}]/gs;
+        const ALLOWED = [
+          'repo1.maven.org/maven2', 'jitpack.io', 'www.jitpack.io', 'repo.maven.apache.org/maven2',
+          'oss.jfrog.org/artifactory/oss-snapshot-local', 'oss.sonatype.org/content/repositories/snapshots',
+          'oss.sonatype.org/content/repositories/releases', 'oss.sonatype.org/content/groups/public',
+          'oss.sonatype.org/service/local/staging/deploy/maven2', 's01.oss.sonatype.org/content/repositories/snapshots',
+          's01.oss.sonatype.org/content/repositories/releases', 's01.oss.sonatype.org/content/groups/public',
+          's01.oss.sonatype.org/service/local/staging/deploy/maven2', 'clojars.org/repo', 'repo.clojars.org',
+          's3.amazonaws.com/repo.commonsware.com', 'plugins.gradle.org/m2', 'maven.google.com',
+        ].map((r) => new RegExp('^https://' + r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/*'));
+        const ignore = recipeList(canonR, 'scanignore').map((e) => e.text);
+        const autolinked = Object.keys(dep).filter((n) => dep[n].platforms && dep[n].platforms.android);
+        const exposed = [];
+        for (const n of autolinked) {
+          const root = dep[n].root;
+          const gradle = path.join(root, 'android', 'build.gradle');
+          if (!fs.existsSync(gradle)) continue;
+          const text = fs.readFileSync(gradle, 'utf8')
+            .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+          const flagged = [...text.matchAll(MAVEN)].map((m) => m[1]).filter((u) => !ALLOWED.some((r) => r.test(u)));
+          const rel = 'node_modules/' + n + '/android/build.gradle';
+          if (flagged.length && !ignore.some((i) => rel.startsWith(i))) exposed.push(`${rel}  (${flagged[0]})`);
+        }
+        ok('every Android-autolinked library whose build.gradle the scanner would flag is in scanignore',
+          exposed.length === 0, exposed.join('\n         '));
+        ok('and the autolinked set is not empty, so that rule was applied to something',
+          autolinked.length >= 5, `autolinked: ${autolinked.join(', ')}`);
       }
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -474,47 +540,77 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
 }
 
 // ── the React Native Gradle plugin asks for a JDK the build server lacks ─────
-// Second real F-Droid build, 2026-11-22: "No matching toolchains found for
-// requested specification: {languageVersion=17}" on :gradle-plugin:compileKotlin.
-// The plugin says `kotlin { jvmToolchain(17) }`; F-Droid's server is Debian
-// trixie, which has no openjdk-17 (21 and 25 only), runs Gradle on JDK 21 and
-// does not auto-download one. Our own CI has JDK 17, so it cannot see this. The
-// recipe deletes that line (the plugin targets Java 11 bytecode regardless, so
-// the toolchain only picks the compiler). This holds the recipe to it, and holds
-// the line it deletes to still BEING there: a React Native upgrade that changes
-// it makes the sed a silent no-op and the failure comes back in a build nobody
-// is watching.
-console.log('\nthe recipe deals with the plugin\'s JDK 17 toolchain request');
+// F-Droid's buildserver is Debian trixie: JDK 21 only (no openjdk-17 in trixie),
+// no Gradle toolchain download, Gradle 8.3 from our wrapper. Our own CI uses
+// setup-java 17 and so cannot see any of what follows. Each item was found by
+// building a tree shaped like F-Droid's - fdroidserver's real scanner, Gradle 8.3,
+// JDK 21 - and each fails that build without its line:
+//   * the plugin's own jvmToolchain(17): "No matching toolchains found";
+//   * AGP 8.1.1 on JDK 21: jlink "ModuleTarget is malformed: platformString
+//     missing delimiter: android" (fixed in AGP 8.2);
+//   * Kotlin 1.8.0 on JDK 21: "Unknown Kotlin JVM target: 21" (needs 1.9.20+);
+//   * the app and every library's jvmToolchain(17) from JdkConfiguratorUtils.
+// F-Droid's own template bumps 17 to 21 instead of what the recipe does, and that
+// fails here: the modules then compile to Java 21 bytecode and Gradle 8.3 cannot
+// read it ("Unsupported class file major version 65"). The recipe keeps Java 17
+// and sets Kotlin's jvmTarget explicitly.
+// Every one of these is a `sed` against a file in node_modules, so a React Native
+// upgrade can turn it into a silent no-op. This holds the recipe to each edit and
+// holds the line each one rewrites to still being there.
+console.log('\nthe recipe deals with the plugin\'s JDK, AGP and Kotlin assumptions');
 {
   const canonR = read('fdroid/com.whispawallet.app.canonical.yml') || '';
   const annotR = read('fdroid/com.whispawallet.app.yml') || '';
-  const plugin = read('node_modules/@react-native/gradle-plugin/build.gradle.kts');
-  const SEDRE = /^sed -i '\/jvmToolchain\((\d+)\)\/d' (node_modules\/@react-native\/gradle-plugin\/build\.gradle\.kts)$/;
-  const prebuildOf2 = (t) => {
-    const m = /^ {4}prebuild:\n((?: {6}(?:- .*|#.*)\n)+)/m.exec(t);
-    return m ? m[1].split('\n').filter((l) => /^ {6}- /.test(l)).map((l) => l.replace(/^ {6}- /, '')) : [];
-  };
-  const ce = prebuildOf2(canonR);
-  const sedAt = ce.findIndex((e) => SEDRE.test(e));
-  const inCanon = sedAt >= 0 ? SEDRE.exec(ce[sedAt]) : null;
-  ok('the canonical recipe deletes the plugin\'s jvmToolchain line',
-    !!inCanon, 'without it F-Droid\'s build fails on :gradle-plugin:compileKotlin');
-  ok('in a prebuild entry after the one that cd\'s to the repository root',
-    sedAt > ce.indexOf('cd ../.. && npm ci') && ce.indexOf('cd ../.. && npm ci') >= 0);
-  ok('and the annotated copy says the same', prebuildOf2(annotR).some((e) => SEDRE.test(e)));
-  ok('and the recipe does not try to apt-install a JDK 17 that trixie does not have',
+  const RNGP = 'node_modules/@react-native/gradle-plugin';
+  const kts = read(`${RNGP}/build.gradle.kts`);
+  const toml = read(`${RNGP}/gradle/libs.versions.toml`);
+  const jdku = read(`${RNGP}/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt`);
+  const script = commandsOf(recipeList(canonR, 'prebuild'));
+  const count = (text, re) => (text.match(re) || []).length;
+
+  ok('the recipe deletes the plugin\'s own jvmToolchain(17) and stops warnings being errors',
+    /sed -i '\/jvmToolchain\(17\)\/d;s\/allWarningsAsErrors = true\/allWarningsAsErrors = false\/' \$RNGP\/build\.gradle\.kts/.test(script));
+  const agp = /s\/\^agp = "8\.1\.1"\/agp = "([\d.]+)"\//.exec(script);
+  const kot = /s\/\^kotlin = "1\.8\.0"\/kotlin = "([\d.]+)"\//.exec(script);
+  const ver = (v) => v.split('.').map(Number).reduce((n, x) => n * 1000 + x, 0);
+  ok('it moves AGP to 8.2 or later (8.1.x fails jlink on JDK 21)',
+    !!agp && ver(agp[1]) >= ver('8.2.0'), agp ? `AGP ${agp[1]}` : 'no AGP edit in the recipe');
+  ok('and Kotlin to 1.9.20 or later (1.8.0 has no JVM target 21)',
+    !!kot && ver(kot[1]) >= ver('1.9.20'), kot ? `Kotlin ${kot[1]}` : 'no Kotlin edit in the recipe');
+  ok('it replaces the toolchain pin in JdkConfiguratorUtils with an explicit Kotlin jvmTarget of 17',
+    /sed -i 's\|project\.extensions\.getByType\(KotlinTopLevelExtension::class\.java\)\.jvmToolchain\(17\)\|project\.tasks\.withType\(.*KotlinJvmCompile.*JVM_17.*\|' \$RNGP\/src\/main\/kotlin\/com\/facebook\/react\/utils\/JdkConfiguratorUtils\.kt/.test(script));
+  ok('and does NOT take the template\'s 17-to-21 bump, which makes Java 21 bytecode Gradle 8.3 cannot read',
+    !/s\/17\/21\//.test(script) && !/VERSION_21/.test(script));
+  ok('and the annotated copy runs exactly the same commands',
+    commandsOf(recipeList(annotR, 'prebuild')) === script && script !== '');
+  ok('and neither recipe tries to apt-install a JDK 17 that trixie does not have',
     !/apt-get install[^\n]*openjdk-17/.test(canonR) && !/apt-get install[^\n]*openjdk-17/.test(annotR));
-  if (plugin === null) {
-    ok('the plugin is installed (run npm ci)', false, 'node_modules/@react-native/gradle-plugin');
-  } else if (inCanon) {
-    const found = plugin.match(/jvmToolchain\((\d+)\)/g) || [];
-    ok('the line the recipe deletes is still in the installed plugin, exactly once',
-      found.length === 1 && found[0] === `jvmToolchain(${inCanon[1]})`,
-      `plugin has ${JSON.stringify(found)}; the recipe deletes jvmToolchain(${inCanon[1]}). After a React Native upgrade, re-check the F-Droid build.`);
-    ok('and the plugin still targets Java 11 bytecode, which is why deleting it is safe',
-      /jvmTarget = "11"/.test(plugin) && /targetCompatibility = JavaVersion\.VERSION_11/.test(plugin),
+
+  if (kts === null || toml === null || jdku === null) {
+    ok('the plugin is installed (run npm ci)', false, RNGP);
+  } else {
+    ok('the plugin still has the jvmToolchain(17) line the recipe deletes, exactly once',
+      count(kts, /jvmToolchain\(17\)/g) === 1, `found ${count(kts, /jvmToolchain\(17\)/g)}`);
+    ok('and the warnings-as-errors line, exactly once',
+      count(kts, /allWarningsAsErrors = true/g) === 1);
+    ok('and still targets Java 11 bytecode, which is why deleting the toolchain is safe',
+      /jvmTarget = "11"/.test(kts) && /targetCompatibility = JavaVersion\.VERSION_11/.test(kts),
       'if the plugin now targets a newer Java, the toolchain may matter and the removal needs re-testing');
+    ok('and the AGP and Kotlin pins the recipe rewrites, each exactly once',
+      count(toml, /^agp = "8\.1\.1"$/gm) === 1 && count(toml, /^kotlin = "1\.8\.0"$/gm) === 1,
+      toml.split('\n').filter((l) => /^(agp|kotlin) =/.test(l)).join(' | '));
+    ok('and the two jvmToolchain(17) statements in JdkConfiguratorUtils, each rewritten',
+      count(jdku, /project\.extensions\.getByType\(KotlinTopLevelExtension::class\.java\)\.jvmToolchain\(17\)/g) === 2,
+      `found ${count(jdku, /project\.extensions\.getByType\(KotlinTopLevelExtension::class\.java\)\.jvmToolchain\(17\)/g)}`);
+    ok('and its Java compileOptions still at 17, which the recipe relies on staying 17',
+      count(jdku, /JavaVersion\.VERSION_17/g) === 2);
   }
+  // scanignore: the files that must survive the scanner's deletions.
+  const ignore = recipeList(canonR, 'scanignore').map((e) => e.text);
+  ok('scanignore keeps the Hermes compiler (the scanner deletes it, and the JS bundle step needs it)',
+    ignore.includes('node_modules/react-native/sdks/hermesc/linux64-bin/hermesc'));
+  ok('and the annotated copy lists the same files',
+    JSON.stringify(recipeList(annotR, 'scanignore').map((e) => e.text)) === JSON.stringify(ignore) && ignore.length >= 4);
 }
 
 // ── checkupdates can only read a LITERAL version out of build.gradle ──────────

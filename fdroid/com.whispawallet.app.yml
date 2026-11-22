@@ -130,69 +130,86 @@ Builds:
       # the flag cannot be passed — it has to be burned into the file.
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
       - cd ../.. && npm ci
-      #
-      # THE TWO ENTRIES BELOW RUN IN THE REPOSITORY ROOT, and they are SEPARATE
-      # ENTRIES for a reason that cost two failed CI jobs to learn. prebuild is one
-      # `bash -e` script with `;` between the entries, so the `cd ../..` above
-      # carries over and these paths are relative to the root. They are not chained
-      # onto that line with && because fdroiddata's CI runs `fdroid rewritemeta`
-      # and fails the job on any difference: ruamel.yaml folds a plain scalar at
-      # the first space past column 80, so a long chained entry is rewritten onto
-      # two lines and the job fails on formatting alone. An entry whose last space
-      # falls before column 80 is left alone - the sed line above this block is 88
-      # characters and has always passed. Tested by round-tripping this file through
-      # ruamel.yaml 0.18.6 and 0.18.10, the two versions that reproduce what CI did
-      # to the earlier recipes (0.19.1 folds things CI accepted, so it is not the
-      # same dumper); both leave the canonical copy unchanged. The cost is that
-      # these entries depend on the one above having done the cd; check:fdroid pins
-      # the order.
-      #
-      # WHY THE ANDROID DIRECTORY OF @capacitor-mlkit/barcode-scanning GOES
-      # (first real build, 2026-11-22, "No package name found"). F-Droid's
-      # scanner DELETES a build.gradle that mentions com.google.mlkit —
-      # scanner.py removeproblem() is os.remove() — and this package's does,
-      # because it is Google's ML Kit wrapper. The React Native CLI then asks
-      # every dependency for its Android config BEFORE it applies the root
-      # react-native.config.js, which only overrides the result afterwards
-      # (cli-config loadConfig.js getDependencyConfig: dependencyConfig() runs
-      # first, merge() with the user's `android: null` second). With the file
-      # present that evaluation finds a namespace, sees no native module class
-      # and returns null — which is why our own CI never saw it. With the file
-      # gone the manifest has no package= either, so it throws and the build
-      # dies in settings.gradle's autolinking, five seconds into Gradle.
-      #
-      # Without an android/ directory the CLI returns null at once ("no source
-      # dir"), which is what `android: null` always meant. Nothing is lost: the
-      # package is the Vue web app's QR scanner, the React Native app never
-      # imports it, and it is excluded from Android autolinking already. Tried
-      # and not needed: the Firebase and camera-kit packages lose their
-      # build.gradle the same way and do not throw.
-      #
-      - rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
-      #
-      # AND THE RN GRADLE PLUGIN'S JDK 17 TOOLCHAIN IS DELETED (second real
-      # build, 2026-11-22: "No matching toolchains found for requested
-      # specification: {languageVersion=17 ...}", task
-      # :gradle-plugin:compileKotlin). node_modules/@react-native/gradle-plugin
-      # says `kotlin { jvmToolchain(17) }`, which asks Gradle for a JDK 17 to
-      # COMPILE the plugin with. The buildserver is Debian trixie, which has no
-      # openjdk-17 at all (only 21 and 25 - checked against Debian's own package
-      # data; bookworm is the last release with it), installs JDK 21, and does
-      # not let Gradle download one. Our CI never sees it: setup-java gives it 17.
-      # The recipe therefore cannot apt-install what the plugin asks for.
-      #
-      # Deleting the line makes Gradle compile the plugin with the JDK it is
-      # already running on. Tested by building the real plugin with Gradle 8.3
-      # (the version F-Droid used) on JDK 21 with no JDK 17 present and
-      # auto-download off: it fails exactly as F-Droid's did with the line, and
-      # without it compiles and packs a jar of Java 11 bytecode (class major 55) -
-      # the plugin already sets jvmTarget and targetCompatibility to 11, so the
-      # toolchain only chose the compiler, not the output. It is build tooling and
-      # is not in the APK. Why delete rather than say jvmToolchain(21): Kotlin 1.8.0
-      # sits under this plugin, and naming 21 makes every future JDK change a
-      # recipe change. Tested only as far as the plugin; the rest of the Android
-      # build under JDK 21 is not something this container can run.
-      - sed -i '/jvmToolchain(17)/d' node_modules/@react-native/gradle-plugin/build.gradle.kts
+      # ONE LITERAL BLOCK, root-relative (prebuild is a single `bash -e` script
+      # with `;` between the entries, so the `cd ../..` above carries over), and
+      # not a list of one-line entries, for a reason that cost two failed CI jobs:
+      # fdroiddata's `fdroid rewritemeta` job fails on ANY difference, and
+      # ruamel.yaml folds a plain scalar at the first space past column 80. A long
+      # one-line entry is rewritten onto two lines and the job fails on formatting
+      # alone; a literal block is left exactly as written. Round-tripped through
+      # ruamel.yaml 0.18.6 and 0.18.10, the two versions that reproduce what CI
+      # did to the earlier recipes (0.19.1 folds things CI accepted, so it is not
+      # the same dumper); both leave the canonical copy unchanged. The comments
+      # below are SHELL comments inside the block, so they travel with the
+      # commands; the canonical copy has the same commands without them, and
+      # check:fdroid holds the two equal.
+      - |
+        # 1. @capacitor-mlkit/barcode-scanning's android/ goes (first real build,
+        #    2026-11-22, "No package name found"). F-Droid's scanner DELETES a
+        #    build.gradle that mentions com.google.mlkit (scanner.py removeproblem()
+        #    is os.remove()), and this package's does. The React Native CLI asks
+        #    EVERY dependency for its Android config BEFORE it applies the root
+        #    react-native.config.js, which only overrides the result afterwards, so
+        #    `android: null` never prevented it: with the file present the
+        #    evaluation finds a namespace, sees no native module class and returns
+        #    null (which is why our own CI never saw this); with it gone the
+        #    manifest has no package= either and it throws. Without an android/
+        #    directory the CLI returns null at once. The package is the Vue app's QR
+        #    scanner and the React Native app never imports it.
+        rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+        RNGP=node_modules/@react-native/gradle-plugin
+        # 2. The next three lines exist because F-Droid's buildserver is Debian
+        #    trixie: JDK 21 only (no openjdk-17 in trixie - checked against Debian's
+        #    package data), no Gradle toolchain download, Gradle 8.3 from our
+        #    wrapper. Our CI uses setup-java 17 and so cannot see any of it. Each was
+        #    found by building a tree shaped like F-Droid's with fdroidserver's REAL
+        #    scanner and Gradle 8.3 on JDK 21, and each fails that build without it:
+        #    a. The plugin's own `jvmToolchain(17)` asks Gradle for a JDK 17 to
+        #       compile the plugin with ("No matching toolchains found"). Deleted: it
+        #       then compiles with the JDK it is running on, to the Java 11 bytecode it
+        #       already targets (class major 55). allWarningsAsErrors goes off because
+        #       Kotlin 1.9.22 (below) warns where 1.8.0 did not.
+        #    b. AGP 8.1.1 (RNGP's pin) + JDK 21 fails in JdkImageTransform: jlink
+        #       "ModuleTarget is malformed: platformString missing delimiter: android".
+        #       AGP 8.2.2 fixes it. Kotlin 1.8.0 cannot run on JDK 21 either ("Unknown
+        #       Kotlin JVM target: 21" - it derives the target from the JDK), so Kotlin
+        #       moves to 1.9.22 in the same file.
+        #    c. JdkConfiguratorUtils pins jvmToolchain(17) on the app and every Android
+        #       library. F-Droid's own template sed (17 -> 21) is NOT used: it makes the
+        #       modules compile to Java 21 bytecode, which Gradle 8.3 cannot read
+        #       ("Unsupported class file major version 65"). The toolchain pin is
+        #       replaced by an explicit Kotlin jvmTarget of 17, and the Java 17
+        #       compileOptions stay, so output is Java 17 as in CI.
+        sed -i '/jvmToolchain(17)/d;s/allWarningsAsErrors = true/allWarningsAsErrors = false/' $RNGP/build.gradle.kts
+        sed -i 's/^agp = "8.1.1"/agp = "8.2.2"/;s/^kotlin = "1.8.0"/kotlin = "1.9.22"/' $RNGP/gradle/libs.versions.toml
+        sed -i 's|project.extensions.getByType(KotlinTopLevelExtension::class.java).jvmToolchain(17)|project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile::class.java).configureEach { it.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }|' $RNGP/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+
+    # SCANIGNORE, because scandelete: node_modules (below) turns every scanner
+    # finding under node_modules into a DELETION of the file (handleproblem checks
+    # scanignore first, then scandelete). Four files must survive it:
+    #   - three libraries' build.gradle declare the standard React Native
+    #     `maven { url "$rootDir/../node_modules/react-native/android" }`, which the
+    #     scanner calls an "unknown maven repo". Deleted, the library is an empty
+    #     Gradle project and the app fails to resolve it: "No matching configuration
+    #     of project :react-native-svg" (third real build, 2026-11-22). The path is a
+    #     local directory inside the source tree, not a remote repository, and is the
+    #     same repo our own CI build resolves against. Other React Native apps in
+    #     fdroiddata list the same files, and fdroiddata's own React Native template
+    #     says "Add other build.gradle files here if local maven repo for react-native
+    #     is used".
+    #   - Hermes' compiler binary. The scanner deletes it as a prebuilt binary, and
+    #     React Native compiles the JS bundle with it, so the build would fail at the
+    #     bundle step. The template says "Binaries for react-native, JSC and Hermes
+    #     can be ignored currently". The bundle that comes out is byte-identical to
+    #     the one our CI builds with the same file.
+    # Other libraries whose build.gradle the scanner removes are excluded from
+    # Android autolinking (camera-kit, Firebase, the Capacitor scanner), so losing
+    # theirs costs nothing; check:fdroid asserts that for every autolinked library.
+    scanignore:
+      - node_modules/react-native-get-random-values/android/build.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+      - node_modules/react-native-svg/android/build.gradle
+      - node_modules/react-native/sdks/hermesc/linux64-bin/hermesc
 
     # node_modules carries prebuilt binaries that the scanner rejects; they are
     # build-time only and nothing from them is packaged.

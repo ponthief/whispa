@@ -3355,13 +3355,13 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   prevented it. With the file present that evaluation finds a namespace, sees no
   native module class and returns null, which is why our own CI never saw this;
   with it gone the manifest has no `package=` either and the CLI throws. The
-  recipe's `prebuild` now removes that package's `android/` in the **same entry**
-  as `npm ci` (prebuild is one `bash -e` script, so the `cd ../..` carries over).
+  recipe's `prebuild` removes that package's `android/` (in its literal block, which
+  runs in the repository root: prebuild is one `bash -e` script, so the `cd ../..`
+  carries over).
   The package is the Vue app's QR scanner and the React Native app never imports
   it. `check:fdroid` runs the real CLI against a copy of the four packages with
   their `build.gradle` files deleted: it must fail without the removal and
-  answer with it, and the path is read out of the recipe. Verified only as far as
-  autolinking - nothing after that point in F-Droid's build has run.
+  answer with it, and the path is read out of the recipe.
 - **`fdroid rewritemeta`.** CI wants a value over 80 characters wrapped: `Binaries: `
   (trailing space) and the URL indented on the next line. The recipe used to say
   that form was local-version skew; CI is the authority. Pinned by `check:fdroid`.
@@ -3377,37 +3377,104 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   gradle asserts equal to the derived one, a third thing to bump per release.
   `check:fdroid` fails if the recipe goes back to `Tags` while `build.gradle`
   still has no literal `versionCode`.
-- **`fdroid build` again: "No matching toolchains found for requested
-  specification: {languageVersion=17}"** on `:gradle-plugin:compileKotlin`, the
-  next failure down once autolinking passed. The React Native Gradle plugin says
-  `kotlin { jvmToolchain(17) }`; F-Droid's server is Debian **trixie, which has no
-  `openjdk-17`** (21 and 25 only; checked against Debian's package data),
-  installs JDK 21 and does not let Gradle download one. Our CI uses
-  `setup-java` 17, so it cannot see this. The recipe deletes that line with
-  `sed` instead of installing a JDK it cannot get. Tested by building the real
-  plugin with Gradle 8.3 (F-Droid's version) on JDK 21 with no 17 and
-  auto-download off: it fails as F-Droid's did with the line, and compiles
-  without it to Java 11 bytecode (class major 55) - the plugin already sets
-  `jvmTarget` and `targetCompatibility` to 11, so the toolchain only picked the
-  compiler. Deleting rather than naming 21 keeps it independent of the next JDK
-  the server ships. `check:fdroid` also fails if a React Native upgrade changes
-  that line (the sed would silently become a no-op) or stops targeting Java 11.
-  **Verified only as far as the plugin**: nothing later in the Android build under
-  JDK 21 has run, so another failure there is expected until proven otherwise.
-- **`rewritemeta` is a byte-for-byte job, and it folds long entries.** A second
-  trip through it: the first fix chained the `rm` and the `sed` onto the `npm ci`
-  entry to keep them in one place, and ruamel.yaml folds a plain scalar at the
-  first space past column 80, so CI would have rewritten that onto two lines and
-  failed the job on formatting. The entries are separate now, and run in the
-  repository root because `prebuild` is one `bash -e` script and the `cd ../..`
-  carries over. **Only ruamel.yaml 0.18.6 and 0.18.10 reproduce what CI did to
-  every earlier recipe** (they wrap a one-line `Binaries:` and leave the accepted
-  files unchanged); 0.17.21 and 0.19.1 do not, and 0.18.14 folds something CI
-  accepted. The recipe is a fixed point of a round trip through both.
-  `check:fdroid` pins "no prebuild entry has a space past column 80" and that the
-  entries come after the `cd`; it cannot run ruamel (not a dependency here), so a
-  new kind of long value should be round-tripped by hand with
-  `ruamel.yaml.YAML(typ='rt')`, `indent(mapping=2, sequence=4, offset=2)`.
+- **`fdroid build`, third failure: "Could not resolve project
+  :react-native-svg"** (and `-safe-area-context`, `-get-random-values`). The same
+  mechanism as the first, one layer on. `scandelete: node_modules` turns every
+  scanner finding under it into a **deletion**, and the scanner flags any
+  `build.gradle` that declares a maven repo outside a short list of https ones -
+  including the standard React Native `maven { url
+  "$rootDir/../node_modules/react-native/android" }` that three of our libraries
+  carry. Deleted, a library is an empty Gradle project with no configurations, and
+  the app cannot resolve it. `handleproblem` checks `scanignore` **before**
+  `scandelete`, so the recipe lists those three files under `scanignore`, which is
+  the convention (fdroiddata's own React Native template: "Add other build.gradle
+  files here if local maven repo for react-native is used"; other apps list the same
+  files). `check:fdroid` applies the scanner's own regex and allow-list to the
+  `build.gradle` of **every Android-autolinked library**, so a new library with the
+  same repo line cannot slip through.
+- **The scanner also deletes the Hermes compiler** (`react-native/sdks/hermesc/
+  linux64-bin/hermesc`, a prebuilt binary), and React Native compiles the JS bundle
+  with it. This was not in any pipeline log - the build never got that far - and
+  was found only by rehearsing (below). It is in `scanignore`, as the template
+  says ("Binaries for react-native, JSC and Hermes can be ignored currently"), and
+  the bundle that comes out is byte-identical to the one our CI builds.
+- **JDK 21, AGP and Kotlin: four failures in a row, each behind the last.**
+  F-Droid's server is Debian **trixie: JDK 21 only, no `openjdk-17`**, no Gradle
+  toolchain download, and Gradle 8.3 from our wrapper. Our CI uses `setup-java` 17
+  and cannot see any of it. In the order Gradle reaches them: (1) the plugin's own
+  `jvmToolchain(17)` ("No matching toolchains found") - deleted, and
+  `allWarningsAsErrors` turned off because Kotlin 1.9.22 warns where 1.8.0 did not;
+  (2) `JdkConfiguratorUtils` pins `jvmToolchain(17)` on the app and every library,
+  with the same error; (3) **AGP 8.1.1 on JDK 21 fails in `JdkImageTransform`**:
+  jlink "ModuleTarget is malformed: platformString missing delimiter: android" -
+  fixed by AGP 8.2.2; (4) **Kotlin 1.8.0 on JDK 21**: "Unknown Kotlin JVM target:
+  21", because with no toolchain it takes the target from the JDK it runs on - so
+  Kotlin moves to 1.9.22. AGP and Kotlin are pinned in the Gradle plugin's
+  `libs.versions.toml`, which the recipe edits.
+  **fdroiddata's template line is not used**, and the reason is worth keeping: it
+  bumps every `17` to `21`, which makes the modules compile to Java 21 bytecode
+  (class major 65), and Gradle 8.3's own class reader fails on it ("Unsupported
+  class file major version 65"). It also breaks on Kotlin 1.8.0. The recipe keeps
+  Java 17 compileOptions and replaces the Kotlin toolchain pin with an explicit
+  `jvmTarget` of 17, so the output is Java 17 as in CI.
+- **`rewritemeta` is a byte-for-byte job, and it folds long entries.** The first
+  trip through it was `Binaries:` (wrapped, with a trailing space, as above); the
+  second was my own chained `prebuild` entry, which ruamel.yaml would have folded at
+  the first space past column 80. **Only ruamel.yaml 0.18.6 and 0.18.10 reproduce
+  what CI did to every earlier recipe** (they wrap a one-line `Binaries:` and leave
+  the accepted files unchanged); 0.17.21 and 0.19.1 do not, and 0.18.14 folds
+  something CI accepted. The long commands are therefore in a **literal block**
+  (`- |`), which ruamel preserves exactly, and the recipe is a fixed point of a round
+  trip through both versions. `check:fdroid` pins "no one-line `prebuild` entry has a
+  space past column 80" and that the long commands are in a literal block; it
+  cannot run ruamel (not a dependency here), so a new kind of long value should be
+  round-tripped by hand with `ruamel.yaml.YAML(typ='rt')`,
+  `indent(mapping=2, sequence=4, offset=2)`. The annotated copy keeps its comments
+  as **shell comments inside the block**, and `check:fdroid` holds both copies to
+  the same commands.
+
+### Rehearse the recipe, do not push it to find out
+
+Five of the failures above were found by **building a tree shaped like F-Droid's**,
+not by waiting for a pipeline: `scripts/fdroid-rehearse.sh` takes the canonical
+recipe, checks out its pinned `commit:`, runs its `prebuild`, runs **fdroidserver's
+real `scan_source`** with its `scandelete` and `scanignore`, then `assembleMainnetRelease`
+with Gradle 8.3 on JDK 21 and no toolchain download, and prints what came out (Hermes
+bytecode, no ML Kit/Firebase/Play Services) and, with `--compare`, how it differs from a
+published APK. **Run it before every push that touches `fdroid/`**; its header lists the
+prerequisites (JDK 21, Gradle 8.3, an Android SDK with NDK 25.1.8937393, fdroidserver 2.4.5).
+It reproduced the pipeline's failures exactly before any fix (the same three projects, the
+same message), which is what makes a pass mean something. Two of my own mistakes were
+caught by it and by nothing else: a shortened `sed` that lost its `project.extensions.`
+prefix, and a first JDK fix that only covered the plugin's own build.
+
+It talks to Maven Central through a shared egress address that answers **HTTP 429**; the
+script retries on that and only that, and Gradle's cache means a retry resumes.
+
+### What is still open: the build will now succeed, and F-Droid will still say "binary does not match"
+
+Measured, not guessed: the F-Droid-shaped build and our published
+`whispa-mainnet-fdroid.apk` (v0.6.1) agree on **579 of 590 entries** - `resources.arsc`,
+the Hermes bundle, the Hermes engine and every other native library included - and
+differ on 11, all toolchain: `classes.dex`/`classes3.dex` and the two baseline-profile
+files (Kotlin 1.9.22/AGP 8.2.2/JDK 21 against CI's 1.8.0/8.1.1/17), the four
+`kotlin/*.kotlin_builtins` files and `kotlin-tooling-metadata.json` (the Kotlin stdlib
+version), and `libconceal.so` in two ABIs (same size, different bytes; cause not
+established, probably AGP's strip step). Building the same patches **without** the
+scanner gives 590 of 590 equal to the scanned build, so F-Droid's scanner does not change
+the output and **the toolchain is the whole difference**.
+
+`Binaries:` makes F-Droid compare its build against ours, so v0.6.1 **cannot** pass: the
+asset on that release was built by a workflow that predates the patches and cannot be
+rebuilt without changing the tagged commit. Getting it to pass means our CI builds
+`whispa-mainnet-fdroid.apk` with the same toolchain the recipe produces (JDK 21 and the
+same edits to the Gradle plugin), and a new release carrying that. **Not done, and
+wanting a decision** - it changes the CI that produces the asset and the release process.
+The recipe's patch commands would need to live in one place that both use (a script in
+the repo called from the recipe's `prebuild` and from the workflow), which also shortens
+the recipe. Unverified: that GitHub's Ubuntu runner and Debian's JDK 21 produce the same
+bytes as this container's (Ubuntu's 21.0.12 against Debian's 21.0.13) - the dex and the
+`.so` are where it would show.
 
 ## The Bitcoin sign is drawn, and BitMail starts with it
 

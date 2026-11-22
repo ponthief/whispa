@@ -27,8 +27,17 @@ Builds:
     prebuild:
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
       - cd ../.. && npm ci
-      - rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
-      - sed -i '/jvmToolchain(17)/d' node_modules/@react-native/gradle-plugin/build.gradle.kts
+      - |
+        rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+        RNGP=node_modules/@react-native/gradle-plugin
+        sed -i '/jvmToolchain(17)/d;s/allWarningsAsErrors = true/allWarningsAsErrors = false/' $RNGP/build.gradle.kts
+        sed -i 's/^agp = "8.1.1"/agp = "8.2.2"/;s/^kotlin = "1.8.0"/kotlin = "1.9.22"/' $RNGP/gradle/libs.versions.toml
+        sed -i 's|project.extensions.getByType(KotlinTopLevelExtension::class.java).jvmToolchain(17)|project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile::class.java).configureEach { it.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }|' $RNGP/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+    scanignore:
+      - node_modules/react-native-get-random-values/android/build.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+      - node_modules/react-native-svg/android/build.gradle
+      - node_modules/react-native/sdks/hermesc/linux64-bin/hermesc
     scandelete:
       - node_modules
     ndk: r25b

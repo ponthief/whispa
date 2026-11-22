@@ -130,59 +130,60 @@ Builds:
       # the flag cannot be passed — it has to be burned into the file.
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
       - cd ../.. && npm ci
-      # ONE LITERAL BLOCK, root-relative (prebuild is a single `bash -e` script
-      # with `;` between the entries, so the `cd ../..` above carries over), and
-      # not a list of one-line entries, for a reason that cost two failed CI jobs:
-      # fdroiddata's `fdroid rewritemeta` job fails on ANY difference, and
-      # ruamel.yaml folds a plain scalar at the first space past column 80. A long
-      # one-line entry is rewritten onto two lines and the job fails on formatting
-      # alone; a literal block is left exactly as written. Round-tripped through
-      # ruamel.yaml 0.18.6 and 0.18.10, the two versions that reproduce what CI
-      # did to the earlier recipes (0.19.1 folds things CI accepted, so it is not
-      # the same dumper); both leave the canonical copy unchanged. The comments
-      # below are SHELL comments inside the block, so they travel with the
-      # commands; the canonical copy has the same commands without them, and
-      # check:fdroid holds the two equal.
-      - |
-        # 1. @capacitor-mlkit/barcode-scanning's android/ goes (first real build,
-        #    2026-11-22, "No package name found"). F-Droid's scanner DELETES a
-        #    build.gradle that mentions com.google.mlkit (scanner.py removeproblem()
-        #    is os.remove()), and this package's does. The React Native CLI asks
-        #    EVERY dependency for its Android config BEFORE it applies the root
-        #    react-native.config.js, which only overrides the result afterwards, so
-        #    `android: null` never prevented it: with the file present the
-        #    evaluation finds a namespace, sees no native module class and returns
-        #    null (which is why our own CI never saw this); with it gone the
-        #    manifest has no package= either and it throws. Without an android/
-        #    directory the CLI returns null at once. The package is the Vue app's QR
-        #    scanner and the React Native app never imports it.
-        rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
-        RNGP=node_modules/@react-native/gradle-plugin
-        # 2. The next three lines exist because F-Droid's buildserver is Debian
-        #    trixie: JDK 21 only (no openjdk-17 in trixie - checked against Debian's
-        #    package data), no Gradle toolchain download, Gradle 8.3 from our
-        #    wrapper. Our CI uses setup-java 17 and so cannot see any of it. Each was
-        #    found by building a tree shaped like F-Droid's with fdroidserver's REAL
-        #    scanner and Gradle 8.3 on JDK 21, and each fails that build without it:
-        #    a. The plugin's own `jvmToolchain(17)` asks Gradle for a JDK 17 to
-        #       compile the plugin with ("No matching toolchains found"). Deleted: it
-        #       then compiles with the JDK it is running on, to the Java 11 bytecode it
-        #       already targets (class major 55). allWarningsAsErrors goes off because
-        #       Kotlin 1.9.22 (below) warns where 1.8.0 did not.
-        #    b. AGP 8.1.1 (RNGP's pin) + JDK 21 fails in JdkImageTransform: jlink
-        #       "ModuleTarget is malformed: platformString missing delimiter: android".
-        #       AGP 8.2.2 fixes it. Kotlin 1.8.0 cannot run on JDK 21 either ("Unknown
-        #       Kotlin JVM target: 21" - it derives the target from the JDK), so Kotlin
-        #       moves to 1.9.22 in the same file.
-        #    c. JdkConfiguratorUtils pins jvmToolchain(17) on the app and every Android
-        #       library. F-Droid's own template sed (17 -> 21) is NOT used: it makes the
-        #       modules compile to Java 21 bytecode, which Gradle 8.3 cannot read
-        #       ("Unsupported class file major version 65"). The toolchain pin is
-        #       replaced by an explicit Kotlin jvmTarget of 17, and the Java 17
-        #       compileOptions stay, so output is Java 17 as in CI.
-        sed -i '/jvmToolchain(17)/d;s/allWarningsAsErrors = true/allWarningsAsErrors = false/' $RNGP/build.gradle.kts
-        sed -i 's/^agp = "8.1.1"/agp = "8.2.2"/;s/^kotlin = "1.8.0"/kotlin = "1.9.22"/' $RNGP/gradle/libs.versions.toml
-        sed -i 's|project.extensions.getByType(KotlinTopLevelExtension::class.java).jvmToolchain(17)|project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile::class.java).configureEach { it.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }|' $RNGP/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+      # ONE SCRIPT, NOT THE COMMANDS. They used to be a literal block here, and
+      # fdroiddata's `fdroid rewritemeta` job failed on it (2026-11-22, pipeline
+      # 3100225958): fdroidserver reads every prebuild entry as a plain string and
+      # writes it back, and a string with a newline in it comes out as ONE
+      # double-quoted scalar folded at column 80, "\n" escapes and all. A literal
+      # block cannot survive it; neither can any entry with a space past column 80.
+      # My earlier check ran ruamel.yaml on the file directly, which does keep a
+      # literal block, and so said the recipe was a fixed point when it was not: it
+      # never went through fdroidserver's own reader and writer. The check that
+      # does is scripts/fdroid-rewritemeta.sh, which runs the real `fdroid
+      # rewritemeta` and fails on any difference, and it reproduces CI's diff
+      # byte for byte against the literal-block recipe.
+      #
+      # The commands are in scripts/fdroid-toolchain.sh at the pinned commit, which
+      # CI also runs for the F-Droid asset, so the two cannot drift apart. Root-
+      # relative (prebuild is one `bash -e` script with `;` between the entries,
+      # so the `cd ../..` above carries over). What it does, and why:
+      #
+      # 1. @capacitor-mlkit/barcode-scanning's android/ goes (first real build,
+      #    2026-11-22, "No package name found"). F-Droid's scanner DELETES a
+      #    build.gradle that mentions com.google.mlkit (scanner.py removeproblem()
+      #    is os.remove()), and this package's does. The React Native CLI asks
+      #    EVERY dependency for its Android config BEFORE it applies the root
+      #    react-native.config.js, which only overrides the result afterwards, so
+      #    `android: null` never prevented it: with the file present the
+      #    evaluation finds a namespace, sees no native module class and returns
+      #    null (which is why our own CI never saw this); with it gone the
+      #    manifest has no package= either and it throws. Without an android/
+      #    directory the CLI returns null at once. The package is the Vue app's QR
+      #    scanner and the React Native app never imports it.
+      #
+      # 2. The next three lines exist because F-Droid's buildserver is Debian
+      #    trixie: JDK 21 only (no openjdk-17 in trixie - checked against Debian's
+      #    package data), no Gradle toolchain download, Gradle 8.3 from our
+      #    wrapper. Our CI uses setup-java 17 and so cannot see any of it. Each was
+      #    found by building a tree shaped like F-Droid's with fdroidserver's REAL
+      #    scanner and Gradle 8.3 on JDK 21, and each fails that build without it:
+      #    a. The plugin's own `jvmToolchain(17)` asks Gradle for a JDK 17 to
+      #       compile the plugin with ("No matching toolchains found"). Deleted: it
+      #       then compiles with the JDK it is running on, to the Java 11 bytecode it
+      #       already targets (class major 55). allWarningsAsErrors goes off because
+      #       Kotlin 1.9.22 (below) warns where 1.8.0 did not.
+      #    b. AGP 8.1.1 (RNGP's pin) + JDK 21 fails in JdkImageTransform: jlink
+      #       "ModuleTarget is malformed: platformString missing delimiter: android".
+      #       AGP 8.2.2 fixes it. Kotlin 1.8.0 cannot run on JDK 21 either ("Unknown
+      #       Kotlin JVM target: 21" - it derives the target from the JDK), so Kotlin
+      #       moves to 1.9.22 in the same file.
+      #    c. JdkConfiguratorUtils pins jvmToolchain(17) on the app and every Android
+      #       library. F-Droid's own template sed (17 -> 21) is NOT used: it makes the
+      #       modules compile to Java 21 bytecode, which Gradle 8.3 cannot read
+      #       ("Unsupported class file major version 65"). The toolchain pin is
+      #       replaced by an explicit Kotlin jvmTarget of 17, and the Java 17
+      #       compileOptions stay, so output is Java 17 as in CI.
+      - bash scripts/fdroid-toolchain.sh
 
     # SCANIGNORE, because scandelete: node_modules (below) turns every scanner
     # finding under node_modules into a DELETION of the file (handleproblem checks

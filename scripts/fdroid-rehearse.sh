@@ -8,6 +8,8 @@
 #   scripts/fdroid-rehearse.sh --compare whispa-mainnet-fdroid.apk   # and diff against a published APK
 #
 # WHAT IT DOES, in F-Droid's order, from fdroid/com.whispawallet.app.canonical.yml:
+#   0. fdroid rewritemeta over the recipe, failing on any difference (the MR's formatting job;
+#      needs ruamel.yaml 0.18.x in the fdroidserver venv, see scripts/fdroid-rewritemeta.sh);
 #   1. the source at the recipe's `commit:` (git archive, not your working tree);
 #   2. node_modules from that commit's lockfile (`npm ci`, or hardlinked from
 #      NODE_MODULES_FROM to skip the install);
@@ -72,6 +74,9 @@ print('scanignore=(%s)' % ' '.join(shlex.quote(x) for x in (b.get('scanignore') 
 print('scandelete=(%s)' % ' '.join(shlex.quote(x) for x in (b.get('scandelete') or [])))
 PY
 )"
+
+step "fdroid rewritemeta, the MR's formatting job, over the canonical recipe"
+"$repo/scripts/fdroid-rewritemeta.sh" "$recipe" || die "the MR's rewritemeta job would fail on this recipe"
 
 step "Source at $commit"
 git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null || die "commit $commit is not in this clone (git fetch --tags origin)"

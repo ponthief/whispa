@@ -3355,9 +3355,9 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   prevented it. With the file present that evaluation finds a namespace, sees no
   native module class and returns null, which is why our own CI never saw this;
   with it gone the manifest has no `package=` either and the CLI throws. The
-  recipe's `prebuild` removes that package's `android/` (in its literal block, which
-  runs in the repository root: prebuild is one `bash -e` script, so the `cd ../..`
-  carries over).
+  recipe's `prebuild` removes that package's `android/` (in `scripts/fdroid-toolchain.sh`,
+  the last entry, which runs in the repository root: prebuild is one `bash -e` script, so
+  the `cd ../..` carries over).
   The package is the Vue app's QR scanner and the React Native app never imports
   it. `check:fdroid` runs the real CLI against a copy of the four packages with
   their `build.gradle` files deleted: it must fail without the removal and
@@ -3417,21 +3417,34 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   class file major version 65"). It also breaks on Kotlin 1.8.0. The recipe keeps
   Java 17 compileOptions and replaces the Kotlin toolchain pin with an explicit
   `jvmTarget` of 17, so the output is Java 17 as in CI.
-- **`rewritemeta` is a byte-for-byte job, and it folds long entries.** The first
-  trip through it was `Binaries:` (wrapped, with a trailing space, as above); the
-  second was my own chained `prebuild` entry, which ruamel.yaml would have folded at
-  the first space past column 80. **Only ruamel.yaml 0.18.6 and 0.18.10 reproduce
-  what CI did to every earlier recipe** (they wrap a one-line `Binaries:` and leave
-  the accepted files unchanged); 0.17.21 and 0.19.1 do not, and 0.18.14 folds
-  something CI accepted. The long commands are therefore in a **literal block**
-  (`- |`), which ruamel preserves exactly, and the recipe is a fixed point of a round
-  trip through both versions. `check:fdroid` pins "no one-line `prebuild` entry has a
-  space past column 80" and that the long commands are in a literal block; it
-  cannot run ruamel (not a dependency here), so a new kind of long value should be
-  round-tripped by hand with `ruamel.yaml.YAML(typ='rt')`,
-  `indent(mapping=2, sequence=4, offset=2)`. The annotated copy keeps its comments
-  as **shell comments inside the block**, and `check:fdroid` holds both copies to
-  the same commands.
+- **`rewritemeta` is a byte-for-byte job, and it does not preserve a literal block.**
+  The MR's job fails on ANY difference between the recipe and what `fdroid rewritemeta`
+  writes. Three trips through it so far, each a different shape: `Binaries:` (wrapped
+  onto an indented line with a trailing space), a chained `prebuild` entry (ruamel.yaml
+  folds a plain scalar at the first space past column 80), and - the one that cost the
+  0.6.3 pipeline (2026-11-22, pipeline 3100225958) - **a `- |` literal block**.
+  fdroidserver reads each `prebuild` entry as a plain string and writes it back, so a
+  string with a newline in it comes out as ONE double-quoted scalar with `\n` escapes,
+  folded at column 80. The recipe was a literal block because **the check that said it
+  was safe ran ruamel.yaml on the file directly, which does keep one**, and so called the
+  file a fixed point when fdroidserver's own reader and writer would not. That is the
+  lesson: **only the real tool answers what the real tool does.** The fix is that every
+  `prebuild` entry is one short line and the long commands are a script in the repo,
+  `scripts/fdroid-toolchain.sh`, which CI runs as well (one copy, so the two cannot drift).
+  The recipe is pinned to a `commit:`, so the script must exist at that commit: it does
+  from 0.6.2 on.
+
+  `scripts/fdroid-rewritemeta.sh` runs the real `fdroid rewritemeta` over the canonical
+  recipe in a scratch repo and fails on any difference. Against the old literal-block
+  recipe it prints the job's own diff, blob ids included (`604021d..cf6a2a5`), which is how
+  it was shown to be the right harness before it was trusted. It needs fdroidserver 2.4.5
+  with **ruamel.yaml 0.18.x** in the venv (0.17.21, the version fdroidserver pins, wraps
+  `Binaries:` differently from CI; 0.18.6 and 0.18.10 agree with CI and with each other;
+  pip complains about the pin, and it is right to be ignored). `fdroid-rehearse.sh` runs it
+  first. `check:fdroid` cannot run it (not a dependency here), so it pins what it can:
+  no `prebuild` entry has a newline in it or a space past column 80, and the script is
+  the last entry, after the `cd`. **Run `scripts/fdroid-rewritemeta.sh` after ANY edit to
+  `fdroid/`**, and do not describe a recipe as a fixed point without having.
 
 ### Rehearse the recipe, do not push it to find out
 
@@ -3477,10 +3490,11 @@ or an edit matched nothing. The edits are in `node_modules` in place, which is s
 because the standard APK was built before it; **do not move that step above the standard
 build**, or the push APK is built on the F-Droid toolchain.
 
-The recipe keeps its own copy of the lines, deliberately: it is pinned to a `commit:` and
-runs from a checkout that may predate the script. `check:fdroid` fails if the script's
-lines and the recipe's literal block differ by a character. Once a release contains the
-script the recipe can call it instead and shrink; until then change both together.
+The recipe **calls that same script** (`bash scripts/fdroid-toolchain.sh`, its last
+`prebuild` entry) rather than carrying a copy: it did carry one, as a literal block, until
+the MR's `rewritemeta` job refused it (see the bullet above). One file means CI and
+F-Droid cannot disagree about which edits they apply, and `check:fdroid` pins that the
+recipe calls it and that CI runs it. The script exists at every commit from 0.6.2.
 
 **0.6.2 was the first asset built that way, and it matched 588 of 590** (compared with
 `scripts/fdroid-rehearse.sh --compare` against the published file). The Temurin-versus-Debian

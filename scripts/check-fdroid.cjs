@@ -395,6 +395,17 @@ function recipeList(text, key) {
 const commandsOf = (entries) => entries.map((e) => e.text.split('\n')
   .filter((l) => l.trim() !== '' && !/^\s*#/.test(l)).join('\n')).join('\n');
 
+// The recipe's last prebuild entry runs scripts/fdroid-toolchain.sh, which CI runs
+// too. A literal block used to hold these commands and fdroidserver's rewritemeta
+// cannot round-trip one (see scripts/fdroid-rewritemeta.sh), so what the recipe
+// EFFECTIVELY runs is its entries with that entry expanded to the script's own
+// command lines. The assertions about what the build does read that.
+const TOOLCHAIN_ENTRY = 'bash scripts/fdroid-toolchain.sh';
+const toolchainCmds = () => (read('scripts/fdroid-toolchain.sh') || '').split('\n')
+  .filter((l) => /^(rm -rf node_modules|RNGP=|sed -i )/.test(l));
+const expandEntries = (entries) => entries
+  .map((e) => (e.text === TOOLCHAIN_ENTRY ? toolchainCmds().join('\n') : e.text));
+
 // ── F-Droid's scanner deletes build.gradle files, and the RN CLI reads them ──
 // First real F-Droid build, 2026-11-22: "No package name found", five seconds
 // into Gradle. F-Droid's scanner os.remove()s any build.gradle that mentions
@@ -427,7 +438,7 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
   const canonEntries = recipeList(canonR, 'prebuild');
   const annotEntries = recipeList(annotR, 'prebuild');
   const cdAt = canonEntries.findIndex((e) => e.text === CD);
-  const afterCd = canonEntries.slice(cdAt + 1).map((e) => e.text).join('\n');
+  const afterCd = expandEntries(canonEntries.slice(cdAt + 1)).join('\n');
   const RMRE = /^rm -rf (node_modules\/\S+)$/m;
   const inCanon = cdAt >= 0 ? RMRE.exec(afterCd) : null;
   ok('the recipe removes that package\'s android/ AFTER the entry that cd\'s to the root',
@@ -436,17 +447,25 @@ console.log('\nthe React Native CLI survives what F-Droid\'s scanner does to nod
   ok('and the annotated copy runs exactly the same commands (its comments are shell comments)',
     commandsOf(canonEntries) === commandsOf(annotEntries) && commandsOf(canonEntries) !== '',
     `canonical:\n${commandsOf(canonEntries)}\nannotated:\n${commandsOf(annotEntries)}`);
-  // fdroiddata's `fdroid rewritemeta` job fails on ANY difference, and ruamel.yaml
-  // folds a plain scalar at the first space past column 80 (0.18.6 and 0.18.10,
-  // the versions that reproduce what CI did to every earlier recipe). One-line
-  // entries must stay short; a literal block is preserved as written, which is
-  // why the long commands are in one.
-  const wide = canonEntries.filter((e) => !e.literal)
+  // fdroiddata's `fdroid rewritemeta` job fails on ANY difference. fdroidserver
+  // reads each prebuild entry as a plain string and writes it back, so (a) an entry
+  // with a newline in it, which is what a `- |` literal block becomes, is rewritten
+  // as one double-quoted scalar with \n escapes (2026-11-22, pipeline 3100225958),
+  // and (b) ruamel.yaml folds a plain scalar at the first space past column 80.
+  // So: every entry is ONE short line, and anything long lives in a script.
+  // scripts/fdroid-rewritemeta.sh runs the real tool and is the actual proof; this
+  // is what can be checked without it.
+  ok('no prebuild entry is multi-line (rewritemeta turns a literal block into a folded quoted string)',
+    canonEntries.every((e) => !e.literal && !e.text.includes('\n')),
+    canonEntries.filter((e) => e.literal).map((e) => e.text.split('\n')[0]).join('\n'));
+  const wide = canonEntries
     .map((e) => '      - ' + e.text).filter((l) => l.lastIndexOf(' ') >= 80);
-  ok('no one-line prebuild entry has a space past column 80 (rewritemeta would fold it)',
+  ok('no prebuild entry has a space past column 80 (rewritemeta would fold it)',
     wide.length === 0, wide.map((l) => l.slice(0, 70) + '…').join('\n         '));
-  ok('and the long commands are in a literal block, which rewritemeta leaves alone',
-    canonEntries.some((e) => e.literal && /jvmToolchain/.test(e.text)));
+  ok('and the long commands are in scripts/fdroid-toolchain.sh, which is the last prebuild entry',
+    canonEntries.length > 0 && canonEntries[canonEntries.length - 1].text === TOOLCHAIN_ENTRY
+      && cdAt >= 0 && cdAt < canonEntries.length - 1 && toolchainCmds().length >= 4,
+    'the script runs from the repo root, so it must come after the cd');
 
   const NM = path.join(ROOT, 'node_modules');
   const CLI = path.join(NM, '@react-native-community/cli/build/bin.js');
@@ -590,7 +609,7 @@ console.log('\nthe recipe deals with the plugin\'s JDK, AGP and Kotlin assumptio
   const kts = read(`${RNGP}/build.gradle.kts`);
   const toml = read(`${RNGP}/gradle/libs.versions.toml`);
   const jdku = read(`${RNGP}/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt`);
-  const script = commandsOf(recipeList(canonR, 'prebuild'));
+  const script = expandEntries(recipeList(canonR, 'prebuild')).join('\n');
   const count = (text, re) => (text.match(re) || []).length;
 
   ok('the recipe deletes the plugin\'s own jvmToolchain(17) and stops warnings being errors',
@@ -607,14 +626,14 @@ console.log('\nthe recipe deals with the plugin\'s JDK, AGP and Kotlin assumptio
   ok('and does NOT take the template\'s 17-to-21 bump, which makes Java 21 bytecode Gradle 8.3 cannot read',
     !/s\/17\/21\//.test(script) && !/VERSION_21/.test(script));
   ok('and the annotated copy runs exactly the same commands',
-    commandsOf(recipeList(annotR, 'prebuild')) === script && script !== '');
+    expandEntries(recipeList(annotR, 'prebuild')).join('\n') === script && script !== '');
   {
     const sh = read('scripts/fdroid-toolchain.sh') || '';
-    const shCmds = sh.split('\n').filter((l) => /^(rm -rf node_modules|RNGP=|sed -i )/.test(l)).join('\n');
-    const block = recipeList(canonR, 'prebuild').filter((e) => e.literal).map((e) => commandsOf([e])).join('\n');
-    ok('CI\'s scripts/fdroid-toolchain.sh holds exactly the recipe\'s edit lines',
-      shCmds !== '' && shCmds === block,
-      'the F-Droid asset is only reproducible while CI applies the edits F-Droid applies\nscript:\n' + shCmds + '\nrecipe:\n' + block);
+    ok('CI and the recipe run the same file: scripts/fdroid-toolchain.sh is what the recipe calls',
+      recipeList(canonR, 'prebuild').some((e) => e.text === TOOLCHAIN_ENTRY)
+        && /fdroid-toolchain\.sh/.test(read('.github/workflows/build-android.yml') || '')
+        && sh.includes('set -euo pipefail'),
+      'the F-Droid asset is only reproducible while CI applies the edits F-Droid applies');
   }
   ok('and neither recipe tries to apt-install a JDK 17 that trixie does not have',
     !/apt-get install[^\n]*openjdk-17/.test(canonR) && !/apt-get install[^\n]*openjdk-17/.test(annotR));

@@ -3377,6 +3377,37 @@ at `gitlab.com/ponthief/fdroiddata/-/jobs/<id>/raw`.
   gradle asserts equal to the derived one, a third thing to bump per release.
   `check:fdroid` fails if the recipe goes back to `Tags` while `build.gradle`
   still has no literal `versionCode`.
+- **`fdroid build` again: "No matching toolchains found for requested
+  specification: {languageVersion=17}"** on `:gradle-plugin:compileKotlin`, the
+  next failure down once autolinking passed. The React Native Gradle plugin says
+  `kotlin { jvmToolchain(17) }`; F-Droid's server is Debian **trixie, which has no
+  `openjdk-17`** (21 and 25 only; checked against Debian's package data),
+  installs JDK 21 and does not let Gradle download one. Our CI uses
+  `setup-java` 17, so it cannot see this. The recipe deletes that line with
+  `sed` instead of installing a JDK it cannot get. Tested by building the real
+  plugin with Gradle 8.3 (F-Droid's version) on JDK 21 with no 17 and
+  auto-download off: it fails as F-Droid's did with the line, and compiles
+  without it to Java 11 bytecode (class major 55) - the plugin already sets
+  `jvmTarget` and `targetCompatibility` to 11, so the toolchain only picked the
+  compiler. Deleting rather than naming 21 keeps it independent of the next JDK
+  the server ships. `check:fdroid` also fails if a React Native upgrade changes
+  that line (the sed would silently become a no-op) or stops targeting Java 11.
+  **Verified only as far as the plugin**: nothing later in the Android build under
+  JDK 21 has run, so another failure there is expected until proven otherwise.
+- **`rewritemeta` is a byte-for-byte job, and it folds long entries.** A second
+  trip through it: the first fix chained the `rm` and the `sed` onto the `npm ci`
+  entry to keep them in one place, and ruamel.yaml folds a plain scalar at the
+  first space past column 80, so CI would have rewritten that onto two lines and
+  failed the job on formatting. The entries are separate now, and run in the
+  repository root because `prebuild` is one `bash -e` script and the `cd ../..`
+  carries over. **Only ruamel.yaml 0.18.6 and 0.18.10 reproduce what CI did to
+  every earlier recipe** (they wrap a one-line `Binaries:` and leave the accepted
+  files unchanged); 0.17.21 and 0.19.1 do not, and 0.18.14 folds something CI
+  accepted. The recipe is a fixed point of a round trip through both.
+  `check:fdroid` pins "no prebuild entry has a space past column 80" and that the
+  entries come after the `cd`; it cannot run ruamel (not a dependency here), so a
+  new kind of long value should be round-tripped by hand with
+  `ruamel.yaml.YAML(typ='rt')`, `indent(mapping=2, sequence=4, offset=2)`.
 
 ## The Bitcoin sign is drawn, and BitMail starts with it
 

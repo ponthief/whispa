@@ -26,7 +26,9 @@ Builds:
       - mainnet
     prebuild:
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
-      - cd ../.. && npm ci && rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+      - cd ../.. && npm ci
+      - rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+      - sed -i '/jvmToolchain(17)/d' node_modules/@react-native/gradle-plugin/build.gradle.kts
     scandelete:
       - node_modules
     ndk: r25b

@@ -129,11 +129,23 @@ Builds:
       # and prebuild's own environment does not reach the later gradle step, so
       # the flag cannot be passed — it has to be burned into the file.
       - sed -i "s/process.env.WHISPA_NO_PUSH === '1'/true/" ../../react-native.config.js
+      - cd ../.. && npm ci
       #
-      # THE LAST ENTRY DOES TWO THINGS ON ONE LINE, and the one line is the
-      # point: prebuild runs as a single `bash -e` script with `;` between the
-      # entries, so the `cd ../..` carries over, and a separate `rm` entry would
-      # run in whatever directory that left behind.
+      # THE TWO ENTRIES BELOW RUN IN THE REPOSITORY ROOT, and they are SEPARATE
+      # ENTRIES for a reason that cost two failed CI jobs to learn. prebuild is one
+      # `bash -e` script with `;` between the entries, so the `cd ../..` above
+      # carries over and these paths are relative to the root. They are not chained
+      # onto that line with && because fdroiddata's CI runs `fdroid rewritemeta`
+      # and fails the job on any difference: ruamel.yaml folds a plain scalar at
+      # the first space past column 80, so a long chained entry is rewritten onto
+      # two lines and the job fails on formatting alone. An entry whose last space
+      # falls before column 80 is left alone - the sed line above this block is 88
+      # characters and has always passed. Tested by round-tripping this file through
+      # ruamel.yaml 0.18.6 and 0.18.10, the two versions that reproduce what CI did
+      # to the earlier recipes (0.19.1 folds things CI accepted, so it is not the
+      # same dumper); both leave the canonical copy unchanged. The cost is that
+      # these entries depend on the one above having done the cd; check:fdroid pins
+      # the order.
       #
       # WHY THE ANDROID DIRECTORY OF @capacitor-mlkit/barcode-scanning GOES
       # (first real build, 2026-11-22, "No package name found"). F-Droid's
@@ -155,7 +167,32 @@ Builds:
       # imports it, and it is excluded from Android autolinking already. Tried
       # and not needed: the Firebase and camera-kit packages lose their
       # build.gradle the same way and do not throw.
-      - cd ../.. && npm ci && rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+      #
+      - rm -rf node_modules/@capacitor-mlkit/barcode-scanning/android
+      #
+      # AND THE RN GRADLE PLUGIN'S JDK 17 TOOLCHAIN IS DELETED (second real
+      # build, 2026-11-22: "No matching toolchains found for requested
+      # specification: {languageVersion=17 ...}", task
+      # :gradle-plugin:compileKotlin). node_modules/@react-native/gradle-plugin
+      # says `kotlin { jvmToolchain(17) }`, which asks Gradle for a JDK 17 to
+      # COMPILE the plugin with. The buildserver is Debian trixie, which has no
+      # openjdk-17 at all (only 21 and 25 - checked against Debian's own package
+      # data; bookworm is the last release with it), installs JDK 21, and does
+      # not let Gradle download one. Our CI never sees it: setup-java gives it 17.
+      # The recipe therefore cannot apt-install what the plugin asks for.
+      #
+      # Deleting the line makes Gradle compile the plugin with the JDK it is
+      # already running on. Tested by building the real plugin with Gradle 8.3
+      # (the version F-Droid used) on JDK 21 with no JDK 17 present and
+      # auto-download off: it fails exactly as F-Droid's did with the line, and
+      # without it compiles and packs a jar of Java 11 bytecode (class major 55) -
+      # the plugin already sets jvmTarget and targetCompatibility to 11, so the
+      # toolchain only chose the compiler, not the output. It is build tooling and
+      # is not in the APK. Why delete rather than say jvmToolchain(21): Kotlin 1.8.0
+      # sits under this plugin, and naming 21 makes every future JDK change a
+      # recipe change. Tested only as far as the plugin; the rest of the Android
+      # build under JDK 21 is not something this container can run.
+      - sed -i '/jvmToolchain(17)/d' node_modules/@react-native/gradle-plugin/build.gradle.kts
 
     # node_modules carries prebuilt binaries that the scanner rejects; they are
     # build-time only and nothing from them is packaged.

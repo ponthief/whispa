@@ -1,0 +1,3 @@
+No change to the app.
+
+The F-Droid build is now made with the same toolchain as f-droid.org's own, so that it can be reproduced and published there.

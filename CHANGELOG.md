@@ -13,6 +13,17 @@ first line of the body, where a reader looks anyway.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-22
+
+Released as **WhiSPa 0.3.3-beta**.
+
+### Changed
+
+- **No change to the app.** The F-Droid APK attached to this release is built
+  with the same Android NDK that f-droid.org uses, so that f-droid.org can
+  reproduce it byte for byte. Installing it over 0.6.2 changes nothing you can
+  see.
+
 ## [0.6.2] - 2026-11-22
 
 Released as **WhiSPa 0.3.2-beta**.

@@ -3494,9 +3494,13 @@ strip. CI's copy is the AAR's file untouched (`cmp` against `conceal-1.1.3.aar` 
 the F-Droid-shaped one is that file passed through strip. The F-Droid step now installs the
 NDK `android/build.gradle` pins before building, and `check:fdroid` holds that version to
 the recipe's `ndk:` (r25b is 25.1.8937393; the table is in the check). **The asset that
-carries the fix has not been built yet**: 0.6.2's cannot be redone without moving the tag,
-so the next release is the one to compare, and until then `Binaries:` will name those two
-files.
+carries the fix is 0.6.3, and it matches: **590 of 590 entries identical** between the
+published `whispa-mainnet-fdroid.apk` and a build from the recipe's own `commit:`
+(2026-11-22). 0.6.2's asset cannot be redone without moving the tag, so only 0.6.3
+onward can pass `Binaries:`. That is a local rehearsal on Debian's JDK 21 and Gradle 8.3,
+not F-Droid's server: what it proves is that CI's runner and a F-Droid-shaped machine
+produce the same bytes, and a remaining difference on F-Droid's side would be its own
+node, JDK or NDK build.
 
 **Do not drop `ndk: r25b` from the recipe to make 0.6.2 match instead.** It would, if
 F-Droid's server has no NDK of that version, which is not known and not something this

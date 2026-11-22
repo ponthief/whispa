@@ -1,0 +1,7 @@
+A memo on Send, for your own records.
+
+BitMail is verified through DNSSEC to the root, and works on Signet in other wallets.
+
+The server no longer accepts spend keys or seed phrases from any client: update the app to keep sending.
+
+Restore from a backup file with no wallet yet.

@@ -13,6 +13,67 @@ first line of the body, where a reader looks anyway.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-22
+
+Released as **WhiSPa 0.3.1-beta**.
+
+### Added
+
+- **A memo on Send** (200 characters), for your own records. It is not sent to
+  the recipient and not in the transaction; it shows on the Activity row and in
+  the transaction detail of a send, never on the receiving side, and rides in
+  the backup file.
+- **Restore from a backup file when the account has no wallet yet** - a new
+  browser or a freshly installed phone can now reach it.
+- **The B of BitMail is the Bitcoin sign**, on the web and the phone, and the
+  sign sits in the web nav and beside the balance.
+- **Two-factor has a way back to your existing authenticator app** after
+  choosing "Use a different app", and the switch is on the admin portal too.
+
+### Changed
+
+- **BitMail resolution verifies DNSSEC itself, up to the root**, as BIP-353
+  requires, instead of trusting a public resolver's say-so. A BitMail published
+  with a wildcard record cannot be paid yet.
+- **A BitMail record's key is its address's prefix** (`tsp=` on Signet), so
+  other wallets can pay a WhiSPa BitMail. Existing records still resolve.
+- **A BitMail contact on the wrong chain is refused when saved**, and a
+  resolved BitMail's chain is checked while you type on both Send screens.
+- Background scanning asks with two short sentences; the help line under its
+  switch is gone.
+- The Coins list is titled "Silent Payments coins".
+- The Backup & Restore passphrase field sits with Save.
+- The 2FA dialog closes once a change has worked.
+- Admin: System Settings is six pages (Infra, Configs, Tango, BitMail,
+  Notifications, Cloudflare), and the Infra page shows and switches the Rust
+  matcher.
+
+### Fixed
+
+- A transaction's **Recipients** list no longer appears on the receiving side
+  (it showed the sender's change), and a confirmed row no longer keeps showing
+  Pending.
+- The send watcher polls only the sends this account made.
+- The phone's **Save contact** saves, instead of opening a second Save.
+
+### Security
+
+- **The server no longer accepts a spend key, seed phrase or passphrase from
+  anyone.** Both apps already signed on the device; the three old endpoints that
+  took a key (`/tx/build`, `/plain/spend`, `/wallet/{id}/recover-keys`) are
+  removed, and creating a wallet now needs the address from the device and
+  refuses a body carrying a phrase or passphrase.
+
+### Notes
+
+- **Update the apps and the backend together.** An installed build that
+  predates on-device signing can no longer send and must be updated; wallet
+  create from such a build is refused with a message saying so.
+- This release needs the matching backend. After deploying it, check one
+  BitMail lookup on your own domain: DNSSEC verification was tested against the
+  BIP's own signed proofs and not against live DNS.
+- Push notifications are unchanged. The F-Droid build is the one without them.
+
 ## [0.6.0] - 2026-11-14
 
 Released as **WhiSPa 0.3.0-beta**.

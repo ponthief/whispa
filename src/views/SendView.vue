@@ -1498,7 +1498,6 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
                 </div>
               </div>
             </div>
-            <p class="text-dim text-xs" style="margin:4px 0 0">Select the coins to spend below — choose deliberately to avoid linking coins you'd rather keep separate.</p>
             <!-- A note to yourself. Kept on this device and in your backup; it is
                  not in the transaction and the recipient never sees it. Not
                  offered while a swap is funding, where the payment is Boltz's. -->

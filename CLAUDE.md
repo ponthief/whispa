@@ -4114,6 +4114,26 @@ Rules, each a bug if it goes:
   flipped without a restart. That is on purpose: it is what makes it practical
   to try, and to switch off in a hurry.
 
+**`Scan rust:` is the line that says where a matcher call's time goes** (2026-11-23, after a
+mainnet log showed the call at 71% of a 1,436-block catch-up and the ordinary scan
+phases could not tell curve work from wire). One log line beside `Scan timing` and
+`Scan phases`, written only when a request was made: `build` (Python assembling each
+block's wire dicts) | `encode` (the JSON body) | `round-trip` (upload, service, download;
+with what the service says it spent, from the `elapsed_ms` in its response, **"n/a" when
+it sends none - never 0.0s**, and the MB each way) | `parse` | `convert`. Build and
+convert are sequential wall time; encode, round trip and parse are **summed across the
+chunks in flight**, so they can exceed the call's wall clock. **Read it as a ratio:** if
+the service's own figure is most of the round trip, the curve work is the cost and the lever
+is `MATCHER_WORKERS`; if build, encode, parse and the bytes are, the cost is Python handing
+the service a million outputs and the answer is to have the service fetch ranges from
+BlindBit itself. Whether `elapsed_ms` covers the whole request or only the matching is
+the other repo's to say and was not checked. Timing changes nothing sent or answered (a test
+holds the body byte-identical), and is kept when the call fails.
+
+**`0 MISMATCHED` means nothing in `active` mode.** Mismatches are counted only when Python
+also matches (shadow). A mainnet log of `0.0s matching` lines is active, so its zero is
+vacuous; correctness there rests on the shadow run on signet and `tests/fixtures/parity.json`.
+
 The Rust side is held to the Python by `tests/fixtures/parity.json`, generated
 from the real `helpers/scan.py`. **If matching in `scan.py` changes, regenerate
 it** (`scripts/gen_fixtures.py` in whispa-matcher) or the two will drift and the

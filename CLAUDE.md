@@ -4134,6 +4134,22 @@ holds the body byte-identical), and is kept when the call fails.
 also matches (shadow). A mainnet log of `0.0s matching` lines is active, so its zero is
 vacuous; correctness there rests on the shadow run on signet and `tests/fixtures/parity.json`.
 
+**`MATCHER_WORKERS` is what makes the service faster, and it was unset until 2026-11-23.**
+Measured on one range (1,401 mainnet blocks, 147,844 tweaks, 305,173 outputs, a 16-core
+box): **1 worker** 61.2s wall, match 58.6s, fetch-wait 0.5s (`Scan rust:` round-trip 54.5s
+of which the service said 53.9s, so the cost is curve work and not the wire; build, encode
+and parse were under 2s together). **8 workers** 36s wall, match 20s, fetch-wait 13s. That
+is 2.9x on matching, not 8x: the client sends **one 24-block request at a time**, so
+parallelism is only what the service finds inside one request, and a request waits for its
+largest block. Do not compare scans of different ranges - per-tweak cost moves with outputs
+per tweak (an earlier range read 0.108 ms/tweak, this one 0.39 ms at one worker).
+
+**Once matching got fast, the fetch became the wall**: ~0.58s a batch against ~0.35s to
+match, so one batch of lookahead hid only part of it. The scan now keeps
+`SILNT_SCAN_PREFETCH_DEPTH` batches (default 3, 1 to 8; 1 is the old behaviour) downloading
+ahead. It is N times the concurrent oracle requests, so lower it if BlindBit starts timing
+out. `tests/test_scan_prefetch_window.py` pins it source-side.
+
 The Rust side is held to the Python by `tests/fixtures/parity.json`, generated
 from the real `helpers/scan.py`. **If matching in `scan.py` changes, regenerate
 it** (`scripts/gen_fixtures.py` in whispa-matcher) or the two will drift and the

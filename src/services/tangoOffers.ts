@@ -28,6 +28,14 @@ export interface TangoOffer {
 }
 
 export interface TangoBoard {
+  /** The operator's switch for this network. Off lists nothing to take. */
+  enabled: boolean;
+  /** Seconds until this user may post again after unanswered proposals; 0 if they may. */
+  suspended_for: number;
+  /** False when the board is off, the user is off it, or they are paused. */
+  can_post: boolean;
+  /** How long a maker has to answer a proposal before it is cancelled. */
+  answer_seconds: number;
   offers: TangoOffer[];
   mine: TangoOffer[];
   denominations: number[];
@@ -74,6 +82,17 @@ export function formatCountdown(totalSeconds: number): string {
   if (h > 0) return `${h}h ${two(m)}m ${two(r)}s`;
   if (m > 0) return `${m}m ${two(r)}s`;
   return `${r}s`;
+}
+
+/** "2 hours", "1 hour", "45 minutes" — a span of time in words, for copy. */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  if (s >= 3600) {
+    const h = Math.round(s / 3600);
+    return h === 1 ? '1 hour' : `${h} hours`;
+  }
+  const m = Math.max(1, Math.round(s / 60));
+  return m === 1 ? '1 minute' : `${m} minutes`;
 }
 
 export function coinsLabel(pieces: number): string {

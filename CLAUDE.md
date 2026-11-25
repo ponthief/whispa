@@ -432,7 +432,9 @@ visibilities and the lifetime, so **nothing is copied into either app**
   could tell a stranger something about the maker reads the same — *"That offer
   is gone."* — so an offer that exists but is not for you cannot be told from one
   that does not exist.
-- **Denominations are multiples of 6** (12k, 30k, 60k, 120k, 300k, 600k, 1.2M).
+- **Denominations are multiples of 6**, 60k to 6M (60k, 120k, 300k, 600k, 1.2M, 3M,
+  6M; the first list started at 12k and 30k and the user judged those too small to
+  be worth a mix — the floor is one entry in `DENOMINATIONS`).
   Every output of a Tango is the same size, so an amount has to divide by the
   coin split, and the board offers 1, 2 and 3: the obvious 1-2-5 ladder never
   divides by 3. The planning test found it; `tests/test_tango_offers.py` plans
@@ -465,13 +467,49 @@ visibilities and the lifetime, so **nothing is copied into either app**
   `secondsLeft`, run by `check:offers` with a clock a year out). It ticks each
   second only while the Offers tab is open and refetches when a row runs out.
 
-**Deliberately not built:** strikes or a suspension for takers who go silent
-after the maker accepts, and blocking a taker; a shorter step timeout for board
-rounds (the round's 24 hours stands, so a taker who vanishes after accept holds
-the maker's coins until the maker cancels or the day ends — cancel is one tap and
-either side can do it before the broadcast); and an `offer_id` check at accept
-beyond closing (the maker accepts a concrete round they can read). Revisit the
-first two if the board is ever abused.
+### Abuse: what stops a board of fake offers (2026-11-25)
+
+Asked as *"how do we tackle spam: user creating hundreds of fake offers?"*. One
+account cannot — 3 open at once, 10 posts an hour, a duplicate refused, real
+coins needed at post and at proposal. The real threats were three, and the worst
+is the **taker's**: in this design the proposer's coins lock at propose and the
+maker's do not, so a maker who posts and goes quiet holds other people's coins.
+
+- **A board proposal has 2 hours to be answered** (`ANSWER_WINDOW_SECONDS`), not
+  the round's 24. Accepting restores the full day, so an answered round is
+  an ordinary one. Told to the taker on the form (*"They have 2 hours to answer."*).
+- **Strikes.** A board proposal that expires still `PROPOSED` is a strike against
+  the maker (read before the sweeper changes its status, or none would ever
+  count). 3 in 24 hours takes their offers down and pauses posting until the
+  oldest has aged out (`suspended_for`, counted down on the server's clock).
+  Declining is an answer and never a strike. Strikes older than the window are
+  deleted by the sweep.
+- **One wallet, one cap, across accounts.** The same seed imported into several
+  accounts passes the funding check in each, so offers are also counted on the
+  wallet's SP address (`tango_offers.sp_address`). Done at the board and not as a
+  uniqueness rule on wallet creation, which would be an oracle for which
+  addresses are registered.
+- **The operator:** a per-network switch (`tango_board_enabled`, saved with the
+  Tango settings; off lists nothing, refuses posting and answering, touches no
+  round already proposed), and on the admin Tango page every open offer with
+  *Take down* and *Ban from board*, and the banned with *Let back on*. Banning
+  also takes down what they have up; an accepted round is two people's and is left.
+  A ban and strikes are removed with the account.
+
+**Deliberately not built:** blocking one taker (a maker's only answer to a taker
+they dislike is to decline, which is free); gating "Anyone" offers on account age
+or a first completed Tango (held until there is evidence of abuse — it would make
+the feature worse for new users first); and per-IP limits (the limits are on the
+account and the wallet, and a header-forgeable IP is the wrong thing to lean on,
+as the signup limiter's note says). Revisit the last two if the board is abused.
+
+**Copy the user removed or set on the Offers screen:** *"Your coins are not held
+while an offer is up."* is gone from both clients (*"not needed"*) and
+`check:offers` asserts it absent; the **visibility choice is the same chip as the
+amounts**, the chosen one outlined and tinted (a solid orange button for one
+option and a grey one for the other read as "this is the action" rather than "this
+is selected"); **Post offer is centred**; and there is a **Refresh** button, which
+the Partners tab already had.
 
 **Not verified on a device:** the phone screen was type-checked, linted and
 pinned by `check:offers`, and the web page was driven in Chromium against a

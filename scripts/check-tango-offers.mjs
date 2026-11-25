@@ -60,6 +60,9 @@ ok('one second under reads 20h 59m 59s', board.formatCountdown(21 * 3600 - 1) ==
 ok('under an hour drops the hours', board.formatCountdown(59 * 60 + 12) === '59m 12s');
 ok('under a minute is seconds only', board.formatCountdown(12) === '12s');
 ok('zero says Expired', board.formatCountdown(0) === 'Expired' && board.formatCountdown(-5) === 'Expired');
+ok('a span of time reads in words',
+  board.formatDuration(7200) === '2 hours' && board.formatDuration(3600) === '1 hour' &&
+  board.formatDuration(45 * 60) === '45 minutes' && board.formatDuration(30) === '1 minute');
 ok('one coin is singular', board.coinsLabel(1) === '1 coin' && board.coinsLabel(3) === '3 coins');
 ok('visibility is worded',
   board.visibilityLabel('connections') === 'Connections only' &&
@@ -141,6 +144,56 @@ ok('loadBoard is declared BEFORE the proposal that lists it as a dependency',
 ok('an offer being answered is not saved as an ordinary draft',
   /if \(offer\) return;/.test(ph));
 
+console.log('what the user asked to change on the Offers screen (2026-11-25)');
+// "Text your coins are not held while... is not needed."
+ok('the web page does not say "your coins are not held"', !/coins are not held/i.test(web));
+ok('the phone screen does not say it either', !/coins are not held/i.test(ph));
+// "there is no refresh button"
+ok('the web Offers tab has a Refresh button that reloads the board',
+  /of-toolbar[\s\S]{0,260}@click="loadBoard"[\s\S]{0,120}Refresh/.test(web));
+ok('the phone Offers tab has a Refresh button that reloads the board',
+  /label="Refresh"[\s\S]{0,120}loadBoard\(\)/.test(ph));
+// "center Post offer button"
+ok('the web Post offer button sits in a centred container',
+  /class="of-actions"[\s\S]{0,400}Post offer/.test(web) &&
+  /\.of-actions \{[^}]*justify-content: center/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')));
+ok('the phone Post offer button is centred too',
+  /centeredActions[\s\S]{0,260}label="Post offer"/.test(ph) && /centeredActions: \{[^}]*justifyContent: 'center'/.test(ph));
+// "Connections only is orange, Anyone is not": one look for every choice
+ok('the web visibility choice uses the same chip as the amounts, not primary/ghost buttons',
+  /v-for="v in \(boardData\?\.visibilities[\s\S]{0,260}class="of-chip"/.test(web) &&
+  !/postVisibility === v \? 'btn-primary'/.test(web));
+// "text has no spacing and it's too crammed"
+ok('the web fields are spaced as fields',
+  /\.of-body \{[^}]*gap: 22px/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')) &&
+  /\.of-field \{[^}]*gap: 10px/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')) &&
+  /\.of-row \{[^}]*padding: 14px 0/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')));
+
+console.log('abuse: the board says why you cannot post, and how long they have to answer');
+for (const [name, src] of [['web', web], ['phone', ph]]) {
+  ok(`${name}: posting is closed while the server says so`, /postBlocked/.test(src) &&
+    /can_post/.test(src) && /suspended_for/.test(src) && /enabled/.test(src));
+  ok(`${name}: a pause counts down on the server's clock`,
+    /secondsLeft\(\s*b\.now \+ b\.suspended_for/.test(src));
+  ok(`${name}: answering says how long the maker has`,
+    /formatDuration\(boardData\??\.answer_seconds\)/.test(src));
+}
+ok('the board response type carries all four', /enabled: boolean;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&
+  /suspended_for: number;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&
+  /can_post: boolean;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&
+  /answer_seconds: number;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')));
+
+console.log('the operator, on the admin page');
+const adm = read('src/views/AdminView.vue');
+ok('the switch is a setting saved with the Tango settings, on by default',
+  /v-model="config\.tango_board_enabled"/.test(adm) && /tango_board_enabled: true/.test(adm));
+ok('every open offer is listed with Take down and Ban from board',
+  /v-for="o in boardOffers"/.test(adm) && /removeBoardOffer\(o\)/.test(adm) &&
+  /setBoardBan\(o\.username, true\)/.test(adm));
+ok('the banned are listed and can be let back on',
+  /v-for="b in boardBans"/.test(adm) && /setBoardBan\(b\.username, false\)/.test(adm));
+ok('the board is loaded with the rest of the Tango page', /loadBoardAdmin\(\)/.test(adm));
+
 console.log('the api modules');
 const webApi = read('src/api/index.js');
 const phApi = read('src/services/api.ts');
@@ -164,6 +217,18 @@ for (const [name, src, list, post, del] of [
     /\/api\/v1\/tango\/offers\/\$\{encodeURIComponent\(id\)\}/.test(body(del)) &&
     /method: 'DELETE'/.test(body(del)));
 }
+const adminBody = (fn) => {
+  const at = webApi.search(new RegExp(`function ${fn}\\(`));
+  if (at < 0) return '';
+  const next = webApi.indexOf('\nexport ', at + 10);
+  return webApi.slice(at, next < 0 ? undefined : next);
+};
+ok('web: the operator can list, take down and ban',
+  /\/api\/v1\/admin\/tango\/offers`/.test(adminBody('getAdminTangoOffers')) &&
+  /\/api\/v1\/admin\/tango\/offers\/\$\{encodeURIComponent\(id\)\}/.test(adminBody('removeAdminTangoOffer')) &&
+  /method: 'DELETE'/.test(adminBody('removeAdminTangoOffer')) &&
+  /\/api\/v1\/admin\/tango\/board\/ban`/.test(adminBody('banFromBoard')) &&
+  /method: 'POST'/.test(adminBody('banFromBoard')));
 ok('the phone proposal type carries offer_id', /offer_id\?: string;/.test(phApi));
 ok('an offer names no coins: posting sends a wallet, an amount, a split and visibility only',
   /wallet_id: string;\s*denom_sats: number;\s*pieces: number;\s*visibility: OfferVisibility;/.test(phApi));

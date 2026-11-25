@@ -543,6 +543,23 @@ export default function TangoScreen() {
   );
   const atOfferLimit =
     !!boardData && myOffers.length >= (boardData.max_open || 0);
+  // Why posting is closed to this person right now, or '' when it is not. The
+  // server says whether they may (`can_post`); this only words it, and a pause
+  // counts down on the same server-clock rule as an offer does.
+  const postBlocked = useMemo(() => {
+    const b = boardData;
+    if (!b) return '';
+    if (b.enabled === false) return 'The board is switched off right now.';
+    if (b.suspended_for > 0) {
+      const left = board.secondsLeft(b.now + b.suspended_for, b.now, boardFetchedAt, nowMs);
+      return left > 0
+        ? 'Posting is paused because proposals to your offers went unanswered. ' +
+            `You can post again in ${board.formatCountdown(left)}.`
+        : '';
+    }
+    if (b.can_post === false) return 'Posting offers is switched off for this account.';
+    return '';
+  }, [boardData, boardFetchedAt, nowMs]);
   // The one the CJ tab is answering, kept fresh by the same clock so its
   // countdown moves too.
   const anyExpired = useMemo(
@@ -1338,6 +1355,11 @@ export default function TangoScreen() {
                   {fmtSats(offer.denom_sats, hidden)} each \u00b7 {board.coinsLabel(offer.pieces)}
                   {' \u00b7 '}{countdown(offer)} left
                 </Text>
+                {boardData?.answer_seconds ? (
+                  <Text style={styles.rowMeta}>
+                    They have {board.formatDuration(boardData.answer_seconds)} to answer.
+                  </Text>
+                ) : null}
                 <View style={styles.rowActions}>
                   <Button
                     label="Send offer"
@@ -1442,7 +1464,16 @@ export default function TangoScreen() {
         <>
           {boardError ? <Block><Note kind="error">{boardError}</Note></Block> : null}
 
-          <Group title="Post an offer" footer="Your coins are not held while an offer is up.">
+          <View style={styles.refreshRow}>
+            <Button
+              label="Refresh"
+              kind="secondary"
+              small
+              onPress={() => void loadBoard()}
+            />
+          </View>
+
+          <Group title="Post an offer">
             <Block>
               <Text style={styles.rowMeta}>Amount each (sats)</Text>
               <Chips<number>
@@ -1485,12 +1516,13 @@ export default function TangoScreen() {
                   outputs are yours.
                 </Text>
               ) : null}
-              <View style={styles.rowActions}>
+              {postBlocked ? <Text style={styles.warn}>{postBlocked}</Text> : null}
+              <View style={styles.centeredActions}>
                 <Button
                   label="Post offer"
                   onPress={postOffer}
                   busy={busy === 'post-offer'}
-                  disabled={!postDenom || !walletId || atOfferLimit}
+                  disabled={!postDenom || !walletId || atOfferLimit || !!postBlocked}
                 />
               </View>
               {atOfferLimit ? (
@@ -1747,6 +1779,14 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.border,
   },
   rowActions: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+  // The Offers tab's one primary action, centred, and its refresh at the end of
+  // the row above the first card.
+  centeredActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: space.md,
+  },
+  refreshRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   noteInput: {
     borderWidth: 1,
     borderColor: colors.border,

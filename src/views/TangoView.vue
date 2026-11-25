@@ -504,6 +504,23 @@ const openOffers = computed(() => (boardData.value?.offers || []).filter((o) => 
 const myOffers = computed(() => (boardData.value?.mine || []).filter((o) => leftOf(o) > 0))
 const atOfferLimit = computed(() =>
   myOffers.value.length >= (boardData.value?.max_open || 0) && !!boardData.value)
+// Why posting is closed to this person right now, or '' when it is not. The
+// server says whether they may (`can_post`); this only words it. A pause counts
+// down on the same server-clock rule as an offer does.
+const postBlocked = computed(() => {
+  const b = boardData.value
+  if (!b) return ''
+  if (b.enabled === false) return 'The board is switched off right now.'
+  if (b.suspended_for > 0) {
+    const left = board.secondsLeft(b.now + b.suspended_for, b.now, boardFetchedAt.value, nowMs.value)
+    if (left > 0) {
+      return `Posting is paused because proposals to your offers went unanswered. You can post again in ${board.formatCountdown(left)}.`
+    }
+    return ''
+  }
+  if (b.can_post === false) return 'Posting offers is switched off for this account.'
+  return ''
+})
 
 let _boardTimer = null
 let _boardPoll = null
@@ -965,6 +982,9 @@ function expiresIn(r) {
               <span class="text-dim text-xs">· {{ countdown(offerTarget) }} left</span>
               <button class="btn btn-ghost btn-sm" type="button" @click="clearOffer">Not this one</button>
             </div>
+            <div v-if="boardData?.answer_seconds" class="text-dim text-xs">
+              They have {{ board.formatDuration(boardData.answer_seconds) }} to answer.
+            </div>
           </div>
           <div v-else class="field">
             <label class="text-dim text-xs">Partner</label>
@@ -1082,6 +1102,11 @@ function expiresIn(r) {
 
     <!-- OFFERS -->
     <template v-else-if="tab === 'offers'">
+      <div class="of-toolbar">
+        <button class="btn btn-ghost btn-sm" :disabled="boardLoading" @click="loadBoard">
+          {{ boardLoading ? 'Refreshing…' : '↻ Refresh' }}
+        </button>
+      </div>
       <div v-if="boardError" class="alert alert-warn">{{ boardError }}</div>
       <div v-if="selectedWallet && !hasKeys" class="alert alert-warn tg-note">
         ⚠ This browser does not hold this wallet’s keys, so it cannot accept a
@@ -1090,19 +1115,16 @@ function expiresIn(r) {
 
       <div class="card">
         <div class="card-header">Post an offer</div>
-        <div class="card-body">
-          <p class="text-dim text-sm tg-intro">
-            Your coins are not held while an offer is up.
-          </p>
-          <div class="field">
+        <div class="card-body of-body">
+          <div class="of-field">
             <label class="text-dim text-xs">Amount each (sats)</label>
-            <div class="of-amounts">
+            <div class="of-chips">
               <button v-for="d in (boardData?.denominations || [])" :key="d" type="button"
-                      class="of-amount" :class="{ active: postDenom === d }"
+                      class="of-chip of-mono" :class="{ active: postDenom === d }"
                       @click="postDenom = d">{{ d.toLocaleString() }}</button>
             </div>
           </div>
-          <div class="field">
+          <div class="of-field">
             <label class="text-dim text-xs">Number of coins to come out</label>
             <div class="piece-tiers">
               <button v-for="n in (boardData?.pieces || [1, 2, 3])" :key="n" type="button"
@@ -1112,24 +1134,27 @@ function expiresIn(r) {
               </button>
             </div>
           </div>
-          <div class="field">
+          <div class="of-field">
             <label class="text-dim text-xs">Who can see it</label>
-            <div class="of-vis">
+            <div class="of-chips">
               <button v-for="v in (boardData?.visibilities || ['connections', 'anyone'])" :key="v" type="button"
-                      class="btn btn-sm" :class="postVisibility === v ? 'btn-primary' : 'btn-ghost'"
+                      class="of-chip" :class="{ active: postVisibility === v }"
                       @click="postVisibility = v">{{ board.visibilityLabel(v) }}</button>
             </div>
-            <p v-if="postVisibility === 'anyone'" class="text-xs text-amber" style="margin-top:0.4rem;">
+            <p v-if="postVisibility === 'anyone'" class="text-xs text-amber of-hint">
               Anyone here can propose to you. Whoever you mix with sees which
               outputs are yours.
             </p>
           </div>
-          <button class="btn btn-primary" style="margin-top:0.5rem;"
-                  :disabled="postingOffer || !hasKeys || !postDenom || atOfferLimit"
-                  @click="postOffer">
-            {{ postingOffer ? 'Posting…' : 'Post offer' }}
-          </button>
-          <p v-if="atOfferLimit" class="text-dim text-xs" style="margin-top:0.4rem;">
+          <p v-if="postBlocked" class="text-xs text-amber of-hint">{{ postBlocked }}</p>
+          <div class="of-actions">
+            <button class="btn btn-primary"
+                    :disabled="postingOffer || !hasKeys || !postDenom || atOfferLimit || !!postBlocked"
+                    @click="postOffer">
+              {{ postingOffer ? 'Posting…' : 'Post offer' }}
+            </button>
+          </div>
+          <p v-if="atOfferLimit" class="text-dim text-xs of-hint" style="text-align:center">
             {{ boardData.max_open }} offers are up. Withdraw one to post another.
           </p>
         </div>
@@ -1137,37 +1162,34 @@ function expiresIn(r) {
 
       <div v-if="myOffers.length" class="card">
         <div class="card-header">Your offers</div>
-        <div class="card-body">
-          <div v-for="o in myOffers" :key="o.id" class="tg-req">
-            <div class="tg-req-row">
-              <div>
-                <div><b class="mono">{{ fmtSats(o.denom_sats) }}</b>
-                  <span class="text-dim text-xs"> · {{ board.coinsLabel(o.pieces) }}
-                    · {{ board.visibilityLabel(o.visibility) }}</span></div>
-                <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
+        <div class="card-body of-body">
+          <div v-for="o in myOffers" :key="o.id" class="of-row">
+            <div class="of-main">
+              <div class="of-title"><b class="mono">{{ fmtSats(o.denom_sats) }}</b></div>
+              <div class="text-dim text-xs">
+                {{ board.coinsLabel(o.pieces) }} · {{ board.visibilityLabel(o.visibility) }}
               </div>
-              <button class="btn btn-ghost btn-sm" @click="withdrawOffer(o)">Withdraw</button>
+              <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
             </div>
+            <button class="btn btn-ghost btn-sm" @click="withdrawOffer(o)">Withdraw</button>
           </div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">Open offers</div>
-        <div class="card-body">
+        <div class="card-body of-body">
           <div v-if="!openOffers.length" class="text-dim text-sm">No open offers.</div>
-          <div v-for="o in openOffers" :key="o.id" class="tg-req">
-            <div class="tg-req-row">
-              <div>
-                <div><b>{{ o.username }}</b></div>
-                <div class="text-xs">
-                  <span class="mono">{{ fmtSats(o.denom_sats) }}</span>
-                  <span class="text-dim"> · {{ board.coinsLabel(o.pieces) }}</span>
-                </div>
-                <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
+          <div v-for="o in openOffers" :key="o.id" class="of-row">
+            <div class="of-main">
+              <div class="of-title"><b>{{ o.username }}</b></div>
+              <div class="text-xs">
+                <span class="mono">{{ fmtSats(o.denom_sats) }}</span>
+                <span class="text-dim"> · {{ board.coinsLabel(o.pieces) }}</span>
               </div>
-              <button class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
+              <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
             </div>
+            <button class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
           </div>
         </div>
       </div>
@@ -1666,18 +1688,35 @@ function expiresIn(r) {
 .fee-tier .ft-hint { font-size: 10px; color: var(--text-dim); }
 
 .tg-offer-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.of-amounts { display: flex; flex-wrap: wrap; gap: 8px; }
-.of-amount {
-  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg); cursor: pointer; font-family: var(--font-mono);
-  font-size: 13px; color: var(--text-dim);
+/* The Offers tab. Fields are spaced as fields, not stacked as lines: the first
+   version put label, chips and hint 4px apart and read as one block of text. */
+.of-toolbar { display: flex; justify-content: flex-end; }
+.of-body { display: flex; flex-direction: column; gap: 22px; }
+.of-field { display: flex; flex-direction: column; gap: 10px; }
+.of-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+/* One look for every choice on this tab: the chosen one is outlined and tinted,
+   the others are not. A solid orange button for one option and a grey one for
+   the other read as "this is the action" rather than "this is selected". */
+.of-chip {
+  padding: 9px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; font-size: 13px; color: var(--text-dim);
 }
-.of-amount:hover { border-color: var(--orange-dim); }
-.of-amount.active {
+.of-mono { font-family: var(--font-mono); }
+.of-chip:hover { border-color: var(--orange-dim); }
+.of-chip.active {
   border-color: var(--orange); color: var(--orange); background: rgba(249,115,22,.12);
   box-shadow: inset 0 0 0 1px var(--orange);
 }
-.of-vis { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.of-hint { margin: 0; line-height: 1.5; }
+.of-actions { display: flex; justify-content: center; margin-top: 4px; }
+.of-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.of-row:first-child { padding-top: 0; }
+.of-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.of-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.of-title { font-size: 15px; }
 .of-timer { margin-top: 2px; }
 
 /* How many coins to take the mix back as. Three equal, centred targets that

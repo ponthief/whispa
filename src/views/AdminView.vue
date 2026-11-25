@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
 import BrandText from '@/components/BrandText.vue'
+import * as board from '@/services/tangoOffers'
 
 const BITMAIL_ENABLED = import.meta.env.VITE_DISABLE_BIP353 !== 'true'
 
@@ -41,7 +42,9 @@ const config  = ref({ blindbit_url: '', mempool_url: 'https://mempool.space', ex
   tango_change_scan_secret: '', tango_change_payout_wallet_id: '',
   tango_change_fee_pct: 0.005, tango_change_fee_floor_sats: 100,
   tango_change_min_confirmations: 3,
-  tango_change_min_wallet_balance_sats: 10000 })
+  tango_change_min_wallet_balance_sats: 10000,
+  // The Tango board's off switch for this network (siLNt helpers/tangooffers.py).
+  tango_board_enabled: true })
 
 // The LNbits wallets this admin can pay out from. The change payout needs a
 // wallet with real outbound Lightning liquidity; only its ID is stored, and
@@ -73,6 +76,52 @@ async function generateChangeAddress() {
   } finally {
     genBusy.value = false
   }
+}
+
+// ── The Tango board, from the operator's side ──────────────────────────────
+// Every open offer on every network, who is off the board, and the two things
+// an operator does about it: take an offer down, and keep somebody off. The
+// switch itself is `config.tango_board_enabled`, saved with the other Tango
+// settings.
+const boardOffers  = ref([])
+const boardBans    = ref([])
+const boardLoading = ref(false)
+const boardError   = ref('')
+const boardBanName = ref('')
+const boardBusy    = ref('')
+
+async function loadBoardAdmin() {
+  boardLoading.value = true; boardError.value = ''
+  try {
+    const res = await api.getAdminTangoOffers(auth.adminkey)
+    boardOffers.value = res.offers || []
+    boardBans.value = res.bans || []
+  } catch (e) {
+    boardError.value = e.detail || e.message || 'Could not load the board.'
+  } finally { boardLoading.value = false }
+}
+
+async function removeBoardOffer(o) {
+  boardBusy.value = o.id; boardError.value = ''
+  try {
+    await api.removeAdminTangoOffer(auth.adminkey, o.id)
+    await loadBoardAdmin()
+  } catch (e) {
+    boardError.value = e.detail || e.message || 'Could not take that offer down.'
+  } finally { boardBusy.value = '' }
+}
+
+async function setBoardBan(username, banned) {
+  const name = (username || '').trim()
+  if (!name) return
+  boardBusy.value = 'ban:' + name; boardError.value = ''
+  try {
+    await api.banFromBoard(auth.adminkey, name, banned)
+    if (banned) boardBanName.value = ''
+    await loadBoardAdmin()
+  } catch (e) {
+    boardError.value = e.detail || e.message || 'Could not change that.'
+  } finally { boardBusy.value = '' }
 }
 
 // ── Tango change payouts ───────────────────────────────────────────────────
@@ -389,6 +438,7 @@ async function loadConfig() {
     // Best-effort, and not awaited into the config load's failure path: a
     // payout list that cannot load must not stop the settings being edited.
     loadPayouts()
+    loadBoardAdmin()
     ntfyTopicsText.value = (ntfy.value.topics || []).join('\n')
   } catch (e) { error.value = e.message }
   finally { loading.value = false }
@@ -963,6 +1013,17 @@ onBeforeUnmount(() => {
         <div class="card">
           <div class="card-header"><h2>Tango settings</h2></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" v-model="config.tango_board_enabled" />
+                Offers board on
+              </label>
+              <span class="text-dim text-xs">
+                Off, no offer is listed or can be answered and none can be
+                posted. Rounds already proposed or running are not touched.
+                This is for this network only.
+              </span>
+            </div>
             <!-- ── Tango change → Lightning ──────────────────────────── -->
             <!-- A round's change output is the strongest remaining
                  linkability problem in Tango: its value is fixed by the
@@ -1122,6 +1183,57 @@ onBeforeUnmount(() => {
                 <span v-if="saving" class="spinner" style="border-top-color:#000"></span>
                 {{ saving ? 'Saving…' : 'Save Tango Settings' }}
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Offers on the board ─────────────────────────────────────────
+             Everything open on every network, with the two things an
+             operator does about it. A proposal still waiting on an offer is
+             cancelled when the offer comes down, so nobody's coins stay held
+             against an advert that is gone. -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <h2>Tango offers</h2>
+            <button class="btn btn-ghost btn-sm" :disabled="boardLoading" @click="loadBoardAdmin">
+              {{ boardLoading ? 'Loading…' : '↻ Refresh' }}
+            </button>
+          </div>
+          <div class="card-body">
+            <div v-if="boardError" class="alert alert-warn" style="margin-bottom:12px">{{ boardError }}</div>
+            <div v-if="!boardOffers.length" class="text-dim text-sm">No open offers.</div>
+            <div v-for="o in boardOffers" :key="o.id" class="tg-offer-admin">
+              <div>
+                <b>{{ o.username }}</b>
+                <span class="text-dim text-xs">
+                  · {{ o.network }} · {{ Number(o.denom_sats).toLocaleString() }} sats
+                  · {{ board.coinsLabel(o.pieces) }} · {{ board.visibilityLabel(o.visibility) }}
+                </span>
+                <div class="text-dim text-xs">
+                  {{ board.formatCountdown(o.seconds_left) }} left
+                  <template v-if="o.waiting"> · {{ o.waiting }} waiting</template>
+                </div>
+              </div>
+              <div class="tg-offer-admin-actions">
+                <button class="btn btn-ghost btn-sm" :disabled="boardBusy === o.id"
+                        @click="removeBoardOffer(o)">Take down</button>
+                <button class="btn btn-ghost btn-sm" :disabled="boardBusy === 'ban:' + o.username"
+                        @click="setBoardBan(o.username, true)">Ban from board</button>
+              </div>
+            </div>
+
+            <h3 style="margin:22px 0 8px">Off the board</h3>
+            <div v-if="!boardBans.length" class="text-dim text-sm">Nobody.</div>
+            <div v-for="b in boardBans" :key="b.username" class="tg-offer-admin">
+              <b>{{ b.username }}</b>
+              <button class="btn btn-ghost btn-sm" :disabled="boardBusy === 'ban:' + b.username"
+                      @click="setBoardBan(b.username, false)">Let back on</button>
+            </div>
+            <div class="field" style="margin-top:12px;display:flex;flex-direction:row;gap:8px;align-items:center">
+              <input class="input" v-model="boardBanName" placeholder="username"
+                     style="max-width:240px" @keyup.enter="setBoardBan(boardBanName, true)" />
+              <button class="btn btn-ghost btn-sm" :disabled="!boardBanName.trim()"
+                      @click="setBoardBan(boardBanName, true)">Ban from board</button>
             </div>
           </div>
         </div>
@@ -1643,4 +1755,10 @@ onBeforeUnmount(() => {
   background: rgba(249, 115, 22, .08);
 }
 .admin-section { display: flex; flex-direction: column; gap: 20px; }
+.tg-offer-admin {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.tg-offer-admin:last-of-type { border-bottom: 0; }
+.tg-offer-admin-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 </style>

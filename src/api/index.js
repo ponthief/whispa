@@ -1339,6 +1339,27 @@ export async function tangoWithdrawOffer(adminkey, id) {
   })
 }
 
+// The operator's side of the board: every open offer on every network, who is
+// off the board, and the two things an operator does about it. Admin only.
+export async function getAdminTangoOffers(adminkey) {
+  return req(`${SILNT}/api/v1/admin/tango/offers`, { headers: keyHeaders(adminkey) })
+}
+
+export async function removeAdminTangoOffer(adminkey, id) {
+  return req(`${SILNT}/api/v1/admin/tango/offers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: keyHeaders(adminkey),
+  })
+}
+
+export async function banFromBoard(adminkey, username, banned = true) {
+  return req(`${SILNT}/api/v1/admin/tango/board/ban`, {
+    method: 'POST',
+    headers: keyHeaders(adminkey),
+    body: JSON.stringify({ username, banned }),
+  })
+}
+
 // ── Tango change: the Lightning address it is paid out to ─────────────────────
 // WhiSPa holds no Lightning balance (see CLAUDE.md). This is the one place
 // Lightning appears: a round's change output is the strongest remaining

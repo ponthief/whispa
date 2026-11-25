@@ -1311,6 +1311,34 @@ export async function tangoCancel(adminkey, rid, note) {
   })
 }
 
+// ── The Tango board ─────────────────────────────────────────────────────────
+// Adverts for a mix, holding no coins (services/tangoOffers.ts, and siLNt
+// helpers/tangooffers.py, which is the authority). The list comes back with the
+// amounts, coin splits and lifetime the page renders from, so none of them is
+// written into the client. Answering an offer is the ordinary tangoPropose
+// with an `offer_id` in its body.
+
+export async function tangoOffers(inkey, network = NETWORK_LOCK) {
+  return req(`${SILNT}/api/v1/tango/offers?network=${encodeURIComponent(network || '')}`, {
+    headers: keyHeaders(inkey),
+  })
+}
+
+export async function tangoPostOffer(adminkey, body) {
+  return req(`${SILNT}/api/v1/tango/offers`, {
+    method: 'POST',
+    headers: keyHeaders(adminkey),
+    body: JSON.stringify(body),
+  })
+}
+
+export async function tangoWithdrawOffer(adminkey, id) {
+  return req(`${SILNT}/api/v1/tango/offers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: keyHeaders(adminkey),
+  })
+}
+
 // ── Tango change: the Lightning address it is paid out to ─────────────────────
 // WhiSPa holds no Lightning balance (see CLAUDE.md). This is the one place
 // Lightning appears: a round's change output is the strongest remaining

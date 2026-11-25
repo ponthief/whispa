@@ -110,6 +110,7 @@ npm run check:device        # a server that cannot answer is not a device that w
 npm run check:twofa         # a code once per sign-in, and the two refusals told apart
 npm run check:seed          # the web keeps the words beside the keys, and shows them only to the account
 npm run check:backup        # the backup carries no keys, and refuses what it cannot open
+npm run check:offers        # the Tango board: server clock for the countdown, nothing copied from the server, timers cleared
 cd ../siLNt && python3 -m pytest tests/ -q
 ```
 
@@ -404,6 +405,80 @@ The app lock is the ONLY thing in the wallet written with an `accessControl`,
 so all of this reaches nothing else — `check:lock` asserts that too, because a
 second one would start demanding a prompt per use, which for a wallet key
 would mean one per signature.
+
+## The Tango board is adverts, not locks
+
+Asked for 2026-11-25 (*"a Tango feature where users will be able to post their
+Tango offers. Separate tab on Tango page where there will be username, amount
+and coinsplit"*), after the three costs were set out first — security, loss of
+anonymity, and locking the maker's coins. Decided: **option 2** (the offer holds
+no coins), **fixed denominations**, **connections only by default**, **offers
+expire after 21 hours** with a **live countdown on the page**.
+
+**An offer is an advert, not a round.** It names a denomination and a coin split
+and holds NO coins. A taker answers it with the ordinary `POST /tango/rounds`
+carrying an `offer_id`, so the maker's coins lock only when the maker **accepts**
+— not by being on the board, and not by a stranger proposing. The other shape
+(the maker posts with coins, so they are locked for the offer's whole life) was
+set aside for exactly that. siLNt `helpers/tangooffers.py` is the authority and
+is pure; `GET /tango/offers` hands the clients the amounts, the coin splits, the
+visibilities and the lifetime, so **nothing is copied into either app**
+(`check:offers` fails on a lifetime or an array of amounts in a client).
+
+- **The one hole in the connection rule.** Propose still requires an accepted
+  connection for every round without an `offer_id`. With one, the server checks
+  the proposal against the live offer instead: open, same network, the maker
+  named, not your own, visible to you, same amount and split. Every refusal that
+  could tell a stranger something about the maker reads the same — *"That offer
+  is gone."* — so an offer that exists but is not for you cannot be told from one
+  that does not exist.
+- **Denominations are multiples of 6** (12k, 30k, 60k, 120k, 300k, 600k, 1.2M).
+  Every output of a Tango is the same size, so an amount has to divide by the
+  coin split, and the board offers 1, 2 and 3: the obvious 1-2-5 ladder never
+  divides by 3. The planning test found it; `tests/test_tango_offers.py` plans
+  every amount at every split.
+- **Visibility is per offer and defaults to connections.** "Anyone" shows one
+  line of warning: whoever you mix with sees which outputs are yours. That is the
+  honest cost of matching strangers — a Tango hides the mapping from chain
+  observers and **never from the counterparty**, so one attacker with several
+  accounts taking every open offer learns the mapping for all of them. Nothing in
+  the protocol can fix that; the board only makes it a choice.
+- **Offers are deleted, not marked**, when they are taken, withdrawn or expire,
+  and with the last wallet on that network or the account. Who wanted to mix
+  what, and when, is metadata this wallet does not keep. The sweeper deletes
+  expired ones; the list filters on the clock too, so a late sweep shows nothing.
+- **The bounds** that stand in for locking worries: 3 open offers per user, 3
+  waiting proposals per offer, 3 waiting board proposals per taker, a rate limit
+  on posting and on the list, and a **fee-rate cap on board proposals** (twice the
+  fastest recommended tier, floor 5 sat/vB) because the proposer sets the rate and
+  the maker pays half. The maker's coins are checked at post and at proposal, so
+  the board does not fill with offers nobody could honour — a sanity check, not a
+  guarantee.
+- **Accepting closes the offer** and cancels the other proposals against it
+  (`offer taken`); **withdrawing** cancels the waiting ones (`offer withdrawn`),
+  because each holds its proposer's coins. **Expiry does not cancel** what was
+  already proposed: those keep the round's own 24 hours, so a proposal made in an
+  offer's last minute can still be answered. `tangoTurns.cancelledLine` words both.
+- **The countdown is measured on the server's clock.** The list carries `now`; a
+  client keeps `server_now + time since the fetch on its own clock`, so a device
+  with a wrong clock still shows the right time (`services/tangoOffers.ts`,
+  `secondsLeft`, run by `check:offers` with a clock a year out). It ticks each
+  second only while the Offers tab is open and refetches when a row runs out.
+
+**Deliberately not built:** strikes or a suspension for takers who go silent
+after the maker accepts, and blocking a taker; a shorter step timeout for board
+rounds (the round's 24 hours stands, so a taker who vanishes after accept holds
+the maker's coins until the maker cancels or the day ends — cancel is one tap and
+either side can do it before the broadcast); and an `offer_id` check at accept
+beyond closing (the maker accepts a concrete round they can read). Revisit the
+first two if the board is ever abused.
+
+**Not verified on a device:** the phone screen was type-checked, linted and
+pinned by `check:offers`, and the web page was driven in Chromium against a
+stubbed backend (post, withdraw, take, the locked form, the proposal body, the
+timers ticking) — but there is no React Native renderer here, so the phone's
+layout has not been seen. **Deploy siLNt first**: a client against a server that
+predates the board says offers are not available, which is true.
 
 ## The matcher is switched and watched from the admin page
 

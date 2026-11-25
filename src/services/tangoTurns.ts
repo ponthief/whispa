@@ -73,6 +73,10 @@ export function stepNumber(status: string): number | null {
 const CANCELLED_BY = 'cancelled by ';
 const EXPIRED = 'expired';
 const CONNECTION_REMOVED = 'connection removed';
+// The two ways a board offer ends a proposal made against it. Mirrors
+// helpers/tangooffers.py.
+const OFFER_TAKEN = 'offer taken';
+const OFFER_WITHDRAWN = 'offer withdrawn';
 
 /** 'a', 'b', or null when this reason is not a cancellation by a person. */
 export function whoCancelled(reason?: string | null): Side | null {
@@ -107,6 +111,12 @@ export function cancelledLine(
   }
   if (text.toLowerCase() === CONNECTION_REMOVED) {
     return 'Cancelled — the connection was removed';
+  }
+  if (text.toLowerCase() === OFFER_TAKEN) {
+    return 'Cancelled — they matched somebody else\u2019s proposal';
+  }
+  if (text.toLowerCase() === OFFER_WITHDRAWN) {
+    return 'Cancelled — the offer was withdrawn';
   }
   const side = whoCancelled(text);
   if (!side) return `Cancelled — ${text}`;

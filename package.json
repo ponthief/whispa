@@ -65,7 +65,8 @@
     "check:stealth": "node scripts/check-stealth.cjs",
     "check:device": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-device.mjs",
     "check:seed": "node scripts/check-seed.mjs",
-    "check:backup": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-backup.mjs"
+    "check:backup": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-backup.mjs",
+    "check:offers": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/check-tango-offers.mjs"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^6.0.0",

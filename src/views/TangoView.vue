@@ -23,12 +23,13 @@
 // reaches the server is a scriptPubKey and a signature, both of which are on
 // chain moments later.
 
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import * as api from '@/api'
 import { pushToast } from '@/stores/toasts'
 import * as tango from '@/services/tango'
+import * as board from '@/services/tangoOffers'
 import { parseSpAddress, fromHex, toHex } from '@/services/spSign'
 // The change-payout setting, shared with Settings so the two are one control
 // rather than two copies — and with the phone's card through the wording in
@@ -45,7 +46,7 @@ import {
 
 const auth = useAuthStore()
 const route = useRoute()
-const tab = ref('mix')   // 'mix' | 'connections' | 'rounds' | 'history'
+const tab = ref('mix')   // 'mix' | 'offers' | 'connections' | 'rounds' | 'history'
 const error = ref('')
 const loading = ref(true)
 const refreshing = ref(false)
@@ -431,12 +432,15 @@ async function propose() {
       pieces: pieces.value,
       inputs: mixChosen.value.map(wireOf),
       network: wallet.value?.network || 'signet',
+      // Answering a board offer: the server checks this proposal against it.
+      ...(offerId.value ? { offer_id: offerId.value } : {}),
     })
     // Remembered before anything else can change: this is the only copy of the
     // selection that the server did not write. See stores/tangocommit.js.
     recordTangoCommit(row.id, selectedWallet.value, mixChosen.value, intend)
     denom.value = ''
     mixPicked.value = new Set()
+    if (offerId.value) clearOffer()
     pushToast(
       'Offer sent. You can cancel it under Rounds until they match it.',
       { type: 'success' },
@@ -445,7 +449,134 @@ async function propose() {
     await load()
   } catch (e) {
     pushToast(e.detail || e.message || 'Could not start that Tango.', { type: 'error' })
+    // The offer ended while this was being filled in. Leaving the form locked
+    // to an offer that is gone would leave nothing to press.
+    if (offerId.value && /is gone/i.test(e.detail || '')) {
+      clearOffer()
+      loadBoard()
+    }
   } finally { busy.value = '' }
+}
+
+// ── the board ───────────────────────────────────────────────────────────────
+// Offers are adverts and hold no coins (services/tangoOffers.ts). Posting one
+// locks nothing; answering one is the ordinary proposal on the CJ tab with the
+// amount, coin split and partner filled in and fixed, carrying the offer's id.
+//
+// The amounts, coin splits and lifetime all come from the server with the list.
+const boardData = ref(null)          // what GET /tango/offers last said
+const boardFetchedAt = ref(0)        // Date.now() when it did
+const boardLoading = ref(false)
+const boardError = ref('')
+const nowMs = ref(Date.now())        // advances each second while Offers is open
+const postDenom = ref(0)
+const postPieces = ref(2)
+const postVisibility = ref('connections')
+const postingOffer = ref(false)
+const offerId = ref('')              // set while the CJ form answers an offer
+const offerTarget = ref(null)
+
+async function loadBoard() {
+  if (boardLoading.value || !wallet.value?.network) return
+  boardLoading.value = true
+  try {
+    const res = await api.tangoOffers(auth.inkey, wallet.value.network)
+    boardData.value = res
+    boardFetchedAt.value = Date.now()
+    boardError.value = ''
+    // Start on what the server names, and keep a choice already made.
+    if (!postDenom.value) postDenom.value = res.denominations?.[0] || 0
+    if (!res.pieces?.includes(postPieces.value)) postPieces.value = res.pieces?.[0] || 1
+  } catch (e) {
+    boardError.value = e.status === 404
+      ? 'Offers are not available on this server yet.'
+      : (e.detail || e.message || 'Could not load offers.')
+  } finally { boardLoading.value = false }
+}
+
+const leftOf = (o) => board.secondsLeft(
+  o.expires_at, boardData.value?.now || 0, boardFetchedAt.value, nowMs.value,
+)
+const countdown = (o) => board.formatCountdown(leftOf(o))
+// A row whose time has run out disappears on this device's reading of the
+// server's clock, without waiting for the next fetch to say so.
+const openOffers = computed(() => (boardData.value?.offers || []).filter((o) => leftOf(o) > 0))
+const myOffers = computed(() => (boardData.value?.mine || []).filter((o) => leftOf(o) > 0))
+const atOfferLimit = computed(() =>
+  myOffers.value.length >= (boardData.value?.max_open || 0) && !!boardData.value)
+
+let _boardTimer = null
+let _boardPoll = null
+function startBoardTimers() {
+  if (!_boardTimer) {
+    _boardTimer = setInterval(() => {
+      nowMs.value = Date.now()
+      // One that just ran out: fetch, so the server's own list replaces ours.
+      const all = [...(boardData.value?.offers || []), ...(boardData.value?.mine || [])]
+      if (all.some((o) => leftOf(o) <= 0)) loadBoard()
+    }, 1000)
+  }
+  if (!_boardPoll) _boardPoll = setInterval(loadBoard, 30000)
+}
+function stopBoardTimers() {
+  if (_boardTimer) { clearInterval(_boardTimer); _boardTimer = null }
+  if (_boardPoll) { clearInterval(_boardPoll); _boardPoll = null }
+}
+// Timers run only while the Offers tab is showing, and never outlive the page.
+watch(tab, (t) => { if (t === 'offers') { nowMs.value = Date.now(); startBoardTimers() } else stopBoardTimers() })
+onUnmounted(stopBoardTimers)
+
+function openOffersTab() {
+  tab.value = 'offers'
+  loadBoard()
+}
+
+async function postOffer() {
+  if (!selectedWallet.value || !postDenom.value) return
+  postingOffer.value = true
+  try {
+    await api.tangoPostOffer(auth.adminkey, {
+      wallet_id: selectedWallet.value,
+      denom_sats: postDenom.value,
+      pieces: postPieces.value,
+      visibility: postVisibility.value,
+    })
+    pushToast('Offer posted.', { type: 'success' })
+    await loadBoard()
+  } catch (e) {
+    pushToast(e.detail || e.message || 'Could not post that offer.', { type: 'error' })
+  } finally { postingOffer.value = false }
+}
+
+async function withdrawOffer(o) {
+  try {
+    await api.tangoWithdrawOffer(auth.adminkey, o.id)
+    pushToast('Offer withdrawn.', { type: 'success' })
+    // Proposals still waiting on it were cancelled with it, so the rounds list
+    // this page holds is stale too.
+    await Promise.all([loadBoard(), load()])
+  } catch (e) {
+    pushToast(e.detail || e.message || 'Could not withdraw that offer.', { type: 'error' })
+  }
+}
+
+// Answer somebody's offer: the CJ form with what the offer fixes filled in and
+// locked. Which coins go in, and the fee, are still this person's to choose.
+function takeOffer(o) {
+  offerId.value = o.id
+  offerTarget.value = o
+  partnerName.value = o.username
+  denom.value = String(o.denom_sats)
+  pieces.value = o.pieces
+  mixPicked.value = new Set()
+  tab.value = 'mix'
+  loadFeeRates()
+}
+function clearOffer() {
+  offerId.value = ''
+  offerTarget.value = null
+  partnerName.value = ''
+  denom.value = ''
 }
 
 // ── B: match it, which means deriving both of this side's outputs ───────────
@@ -773,6 +904,8 @@ function expiresIn(r) {
       <button class="btn btn-sm" :class="tab === 'mix' ? 'btn-primary' : 'btn-ghost'"
               title="Mini-coinjoin"
               @click="tab = 'mix'; loadPartners(); loadFeeRates()">CJ</button>
+      <button class="btn btn-sm" :class="tab === 'offers' ? 'btn-primary' : 'btn-ghost'"
+              @click="openOffersTab">Offers</button>
       <button class="btn btn-sm" :class="tab === 'connections' ? 'btn-primary' : 'btn-ghost'"
               @click="tab = 'connections'; loadContacts(); _scheduleContactPoll()">
         Partners<span v-if="contactsIncoming.length" class="tg-badge">{{ contactsIncoming.length }}</span>
@@ -825,7 +958,15 @@ function expiresIn(r) {
       <div class="card">
         <div class="card-header">Choose your partner</div>
         <div class="card-body">
-          <div class="field">
+          <div v-if="offerTarget" class="field">
+            <label class="text-dim text-xs">Answering the offer of</label>
+            <div class="tg-offer-line">
+              <b>{{ offerTarget.username }}</b>
+              <span class="text-dim text-xs">· {{ countdown(offerTarget) }} left</span>
+              <button class="btn btn-ghost btn-sm" type="button" @click="clearOffer">Not this one</button>
+            </div>
+          </div>
+          <div v-else class="field">
             <label class="text-dim text-xs">Partner</label>
             <select class="input" v-model="partnerName">
               <option value="">Select from your connections…</option>
@@ -841,7 +982,8 @@ function expiresIn(r) {
 
           <div class="field">
             <label class="text-dim text-xs">Amount each (sats)</label>
-            <input class="input mono tg-amt" v-model="denom" inputmode="numeric" placeholder="25000" />
+            <input class="input mono tg-amt" v-model="denom" inputmode="numeric" placeholder="25000"
+                   :readonly="!!offerTarget" />
           </div>
 
           <div class="field">
@@ -853,6 +995,7 @@ function expiresIn(r) {
             <div class="piece-tiers">
               <button v-for="n in [1, 2, 3]" :key="n" type="button"
                       class="piece-tier" :class="{ active: pieces === n }"
+                      :disabled="!!offerTarget && pieces !== n"
                       @click="pieces = n">
                 {{ n }}<span class="pt-unit">{{ n === 1 ? 'coin' : 'coins' }}</span>
               </button>
@@ -935,6 +1078,99 @@ function expiresIn(r) {
            change is worthless, so the server reports offered:false rather
            than a field that cannot work. Also in Settings, same component. -->
       <TangoPayoutPanel :network="wallet?.network || ''" />
+    </template>
+
+    <!-- OFFERS -->
+    <template v-else-if="tab === 'offers'">
+      <div v-if="boardError" class="alert alert-warn">{{ boardError }}</div>
+      <div v-if="selectedWallet && !hasKeys" class="alert alert-warn tg-note">
+        ⚠ This browser does not hold this wallet’s keys, so it cannot accept a
+        proposal or sign a round. Unlock the wallet on the Send page first.
+      </div>
+
+      <div class="card">
+        <div class="card-header">Post an offer</div>
+        <div class="card-body">
+          <p class="text-dim text-sm tg-intro">
+            Your coins are not held while an offer is up.
+          </p>
+          <div class="field">
+            <label class="text-dim text-xs">Amount each (sats)</label>
+            <div class="of-amounts">
+              <button v-for="d in (boardData?.denominations || [])" :key="d" type="button"
+                      class="of-amount" :class="{ active: postDenom === d }"
+                      @click="postDenom = d">{{ d.toLocaleString() }}</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="text-dim text-xs">Number of coins to come out</label>
+            <div class="piece-tiers">
+              <button v-for="n in (boardData?.pieces || [1, 2, 3])" :key="n" type="button"
+                      class="piece-tier" :class="{ active: postPieces === n }"
+                      @click="postPieces = n">
+                {{ n }}<span class="pt-unit">{{ n === 1 ? 'coin' : 'coins' }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="text-dim text-xs">Who can see it</label>
+            <div class="of-vis">
+              <button v-for="v in (boardData?.visibilities || ['connections', 'anyone'])" :key="v" type="button"
+                      class="btn btn-sm" :class="postVisibility === v ? 'btn-primary' : 'btn-ghost'"
+                      @click="postVisibility = v">{{ board.visibilityLabel(v) }}</button>
+            </div>
+            <p v-if="postVisibility === 'anyone'" class="text-xs text-amber" style="margin-top:0.4rem;">
+              Anyone here can propose to you. Whoever you mix with sees which
+              outputs are yours.
+            </p>
+          </div>
+          <button class="btn btn-primary" style="margin-top:0.5rem;"
+                  :disabled="postingOffer || !hasKeys || !postDenom || atOfferLimit"
+                  @click="postOffer">
+            {{ postingOffer ? 'Posting…' : 'Post offer' }}
+          </button>
+          <p v-if="atOfferLimit" class="text-dim text-xs" style="margin-top:0.4rem;">
+            {{ boardData.max_open }} offers are up. Withdraw one to post another.
+          </p>
+        </div>
+      </div>
+
+      <div v-if="myOffers.length" class="card">
+        <div class="card-header">Your offers</div>
+        <div class="card-body">
+          <div v-for="o in myOffers" :key="o.id" class="tg-req">
+            <div class="tg-req-row">
+              <div>
+                <div><b class="mono">{{ fmtSats(o.denom_sats) }}</b>
+                  <span class="text-dim text-xs"> · {{ board.coinsLabel(o.pieces) }}
+                    · {{ board.visibilityLabel(o.visibility) }}</span></div>
+                <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="withdrawOffer(o)">Withdraw</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Open offers</div>
+        <div class="card-body">
+          <div v-if="!openOffers.length" class="text-dim text-sm">No open offers.</div>
+          <div v-for="o in openOffers" :key="o.id" class="tg-req">
+            <div class="tg-req-row">
+              <div>
+                <div><b>{{ o.username }}</b></div>
+                <div class="text-xs">
+                  <span class="mono">{{ fmtSats(o.denom_sats) }}</span>
+                  <span class="text-dim"> · {{ board.coinsLabel(o.pieces) }}</span>
+                </div>
+                <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
+              </div>
+              <button class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
 
     <!-- CONNECTIONS -->
@@ -1417,6 +1653,7 @@ function expiresIn(r) {
   .fee-tiers { grid-template-columns: repeat(2, 1fr); }
 }
 .fee-tier {
+  color: var(--text);
   display: flex; flex-direction: column; gap: 2px; padding: 8px;
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--bg); cursor: pointer; text-align: left;
@@ -1427,6 +1664,21 @@ function expiresIn(r) {
 .fee-tier .ft-label { font-size: 13px; font-weight: 600; }
 .fee-tier .ft-rate { font-size: 12px; font-family: var(--font-mono); color: var(--orange); }
 .fee-tier .ft-hint { font-size: 10px; color: var(--text-dim); }
+
+.tg-offer-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.of-amounts { display: flex; flex-wrap: wrap; gap: 8px; }
+.of-amount {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; font-family: var(--font-mono);
+  font-size: 13px; color: var(--text-dim);
+}
+.of-amount:hover { border-color: var(--orange-dim); }
+.of-amount.active {
+  border-color: var(--orange); color: var(--orange); background: rgba(249,115,22,.12);
+  box-shadow: inset 0 0 0 1px var(--orange);
+}
+.of-vis { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.of-timer { margin-top: 2px; }
 
 /* How many coins to take the mix back as. Three equal, centred targets that
    do not stretch across the card — a three-way choice that fills the width
@@ -1442,6 +1694,7 @@ function expiresIn(r) {
   font-size: 18px; font-weight: 700; line-height: 1.1; color: var(--text-dim);
 }
 .piece-tier:hover { border-color: var(--orange-dim); }
+.piece-tier:disabled { opacity: .35; cursor: not-allowed; }
 .piece-tier.active {
   border-color: var(--orange); color: var(--orange);
   background: rgba(249,115,22,.12);

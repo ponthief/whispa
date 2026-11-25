@@ -14,6 +14,7 @@ import { useNavStore } from '@stores/navStore';
 import { getWalletKeys } from '@services/secureKeys';
 import { useBalancesHidden, MASK } from '@stores/balancePrivacy';
 import * as tango from '@services/tango';
+import * as board from '@services/tangoOffers';
 import * as commits from '@services/tangoCommit';
 import { parseSpAddress, fromHex, toHex } from '@services/spSign';
 import { changeDestination, payoutIntended } from '@services/lnAddress';
@@ -40,7 +41,7 @@ import { Block, Button, Chips, Field, Group, Note, Page } from './settings/ui';
 // signature exists; this file is the wiring.
 
 type Row = api.TangoRoundRow;
-type Tab = 'mix' | 'people' | 'rounds' | 'past';
+type Tab = 'mix' | 'offers' | 'people' | 'rounds' | 'past';
 
 const TERMINAL = ['BROADCAST', 'CANCELLED'];
 
@@ -127,6 +128,21 @@ export default function TangoScreen() {
   // list the server did not supply.
   const [committed, setCommitted] = useState<commits.TangoCommitMap>({});
 
+  // ── The board ──
+  // Offers are adverts and hold no coins (services/tangoOffers.ts). Posting one
+  // locks nothing; answering one is the ordinary proposal on the CJ tab with the
+  // partner, amount and coin split filled in and fixed, carrying the offer's id.
+  // The amounts, coin splits and lifetime all come from the server.
+  const [boardData, setBoardData] = useState<board.TangoBoard | null>(null);
+  const [boardFetchedAt, setBoardFetchedAt] = useState(0);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [postDenom, setPostDenom] = useState(0);
+  const [postPieces, setPostPieces] = useState(2);
+  const [postVisibility, setPostVisibility] =
+    useState<board.OfferVisibility>('connections');
+  const [offer, setOffer] = useState<board.TangoOffer | null>(null);
+
   const key = (u: api.Utxo) => `${u.txid}:${u.vout}`;
   // What a NEW round may use. A coin another round is already holding is
   // refused by /rounds and /accept, and two rounds on one coin make a
@@ -167,13 +183,17 @@ export default function TangoScreen() {
 
   useEffect(() => {
     if (!walletId || restored.current !== walletId) return;
+    // Not while answering a board offer: the partner, amount and split are the
+    // offer's, and restoring them into an ordinary form after a lock would put
+    // a stranger's name in a form that can only propose to connections.
+    if (offer) return;
     useDrafts.getState().setTango(walletId, {
       selected: [...picked],
       denom,
       pieces,
       partner,
     });
-  }, [walletId, picked, denom, pieces, partner]);
+  }, [walletId, picked, denom, pieces, partner, offer]);
 
   // MATCHING HAS ITS OWN SELECTION, and it is not a nicety.
   //
@@ -480,6 +500,139 @@ export default function TangoScreen() {
     [inkey, labels, refreshPeople],
   );
 
+  // ── The board: loading, the countdown, posting, withdrawing, answering ──
+  // Defined BEFORE the proposal below, which lists loadBoard as a dependency: a
+  // useCallback's dependency array is read during render, so a const declared
+  // under it is still in its temporal dead zone there.
+  const loadBoard = useCallback(async () => {
+    if (!inkey || !network) return;
+    try {
+      const res = await api.listTangoOffers(inkey, network);
+      setBoardData(res);
+      setBoardFetchedAt(Date.now());
+      setBoardError(null);
+      // Start on what the server names, and keep a choice already made.
+      setPostDenom((cur) => cur || res.denominations?.[0] || 0);
+      setPostPieces((cur) =>
+        res.pieces?.includes(cur) ? cur : res.pieces?.[0] || 1,
+      );
+    } catch (e: any) {
+      setBoardError(
+        /not found/i.test(e?.message || '')
+          ? 'Offers are not available on this server yet.'
+          : e?.message || 'Could not load offers.',
+      );
+    }
+  }, [inkey, network]);
+
+  const leftOf = useCallback(
+    (o: board.TangoOffer) =>
+      board.secondsLeft(o.expires_at, boardData?.now || 0, boardFetchedAt, nowMs),
+    [boardData, boardFetchedAt, nowMs],
+  );
+  const countdown = (o: board.TangoOffer) => board.formatCountdown(leftOf(o));
+  // A row whose time has run out disappears on this device's reading of the
+  // server's clock, without waiting for the next fetch to say so.
+  const openOffers = useMemo(
+    () => (boardData?.offers || []).filter((o) => leftOf(o) > 0),
+    [boardData, leftOf],
+  );
+  const myOffers = useMemo(
+    () => (boardData?.mine || []).filter((o) => leftOf(o) > 0),
+    [boardData, leftOf],
+  );
+  const atOfferLimit =
+    !!boardData && myOffers.length >= (boardData.max_open || 0);
+  // The one the CJ tab is answering, kept fresh by the same clock so its
+  // countdown moves too.
+  const anyExpired = useMemo(
+    () =>
+      [...(boardData?.offers || []), ...(boardData?.mine || [])].some(
+        (o) => leftOf(o) <= 0,
+      ),
+    [boardData, leftOf],
+  );
+
+  // The timers run only while the Offers tab (or an offer being answered) is
+  // on screen, and never outlive it.
+  const timersOn = tab === 'offers' || !!offer;
+  useEffect(() => {
+    if (!timersOn) return;
+    setNowMs(Date.now());
+    const tick = setInterval(() => setNowMs(Date.now()), 1000);
+    const poll = setInterval(() => void loadBoard(), 30000);
+    return () => {
+      clearInterval(tick);
+      clearInterval(poll);
+    };
+  }, [timersOn, loadBoard]);
+  useEffect(() => {
+    if (tab === 'offers') void loadBoard();
+  }, [tab, loadBoard]);
+  // One that just ran out: fetch, so the server's own list replaces ours.
+  useEffect(() => {
+    if (timersOn && anyExpired) void loadBoard();
+  }, [timersOn, anyExpired, loadBoard]);
+
+  const postOffer = useCallback(async () => {
+    if (!adminkey || !walletId || !postDenom) return;
+    setBusy('post-offer');
+    setError(null);
+    try {
+      await api.postTangoOffer(adminkey, {
+        wallet_id: walletId,
+        denom_sats: postDenom,
+        pieces: postPieces,
+        visibility: postVisibility,
+      });
+      setMsg('Offer posted.');
+      await loadBoard();
+    } catch (e: any) {
+      setMsg(null);
+      setError(e?.message || 'Could not post that offer.');
+    } finally {
+      setBusy(null);
+    }
+  }, [adminkey, walletId, postDenom, postPieces, postVisibility, loadBoard]);
+
+  const withdrawOffer = useCallback(
+    async (o: board.TangoOffer) => {
+      if (!adminkey) return;
+      setBusy(o.id);
+      setError(null);
+      try {
+        await api.withdrawTangoOffer(adminkey, o.id);
+        setMsg('Offer withdrawn.');
+        // Proposals still waiting on it were cancelled with it.
+        await Promise.all([loadBoard(), load()]);
+      } catch (e: any) {
+        setMsg(null);
+        setError(e?.message || 'Could not withdraw that offer.');
+      } finally {
+        setBusy(null);
+      }
+    },
+    [adminkey, loadBoard, load],
+  );
+
+  // Answer somebody's offer: the CJ tab with what the offer fixes filled in and
+  // locked. Which coins go in is still this person's to choose.
+  const takeOffer = (o: board.TangoOffer) => {
+    clearNotice();
+    setOffer(o);
+    setPartner(o.username);
+    setDenom(String(o.denom_sats));
+    setPieces(o.pieces);
+    setPicked(new Set());
+    setTab('mix');
+  };
+  const clearOffer = () => {
+    clearNotice();
+    setOffer(null);
+    setPartner('');
+    setDenom('');
+  };
+
   // Does THIS DEVICE mean to route its change on the round it is about to
   // join? Read here, at the moment of joining, and written into the local
   // record — never consulted again at signing time, because the setting is a
@@ -520,6 +673,8 @@ export default function TangoScreen() {
         fee_rate: 2,
         inputs: chosen.map(wire),
         network,
+        // Answering a board offer: the server checks this against it.
+        ...(offer ? { offer_id: offer.id } : {}),
       });
       // Remembered before anything else can change: this is the only copy of
       // the selection that the server did not write.
@@ -531,17 +686,26 @@ export default function TangoScreen() {
       setPartner('');
       setDenom('');
       setPicked(new Set());
+      setOffer(null);
       if (walletId) useDrafts.getState().clearTango(walletId);
       setMsg('Offer sent. You can cancel it under Rounds until they match it.');
       await load();
-    } catch (e) {
+    } catch (e: any) {
       fail(e);
+      // The offer ended while this was being filled in. A form locked to an
+      // offer that is gone would leave nothing to press.
+      if (offer && /is gone/i.test(e?.message || '')) {
+        setOffer(null);
+        setPartner('');
+        setDenom('');
+        void loadBoard();
+      }
     } finally {
       setBusy(null);
     }
   }, [
     adminkey, walletId, denom, partner, chosen, pieces, network, committed,
-    load, readPayoutIntent,
+    load, readPayoutIntent, offer, loadBoard,
   ]);
 
   const propose = useCallback(() => {
@@ -1097,6 +1261,7 @@ export default function TangoScreen() {
         <Chips<Tab>
           options={[
             { key: 'mix', label: 'CJ' },
+            { key: 'offers', label: 'Offers' },
             { key: 'people', label: 'Partners' },
             {
               key: 'rounds',
@@ -1165,6 +1330,32 @@ export default function TangoScreen() {
             ) : null}
           </Group>
 
+          {offer ? (
+            <Group title="Answering an offer">
+              <Block>
+                <Text style={styles.coinAmount}>{offer.username}</Text>
+                <Text style={styles.rowMeta}>
+                  {fmtSats(offer.denom_sats, hidden)} each \u00b7 {board.coinsLabel(offer.pieces)}
+                  {' \u00b7 '}{countdown(offer)} left
+                </Text>
+                <View style={styles.rowActions}>
+                  <Button
+                    label="Send offer"
+                    onPress={propose}
+                    busy={busy === 'propose'}
+                    disabled={!chosen.length || !walletId || !!preview?.error}
+                    style={styles.keepBtn}
+                  />
+                  <Button
+                    label="Not this one"
+                    kind="secondary"
+                    onPress={clearOffer}
+                    style={styles.cancelBtn}
+                  />
+                </View>
+              </Block>
+            </Group>
+          ) : (
           <Group title="Choose your partner">
             <Block>
               {reachable.length === 0 ? (
@@ -1239,10 +1430,126 @@ export default function TangoScreen() {
               />
             </Block>
           </Group>
+          )}
 
           {/* Where the change goes, offered beside the warning that a round
               leaves some. Renders nothing off mainnet. */}
           <TangoPayoutCard inkey={inkey} network={network} />
+        </>
+      ) : null}
+
+      {tab === 'offers' ? (
+        <>
+          {boardError ? <Block><Note kind="error">{boardError}</Note></Block> : null}
+
+          <Group title="Post an offer" footer="Your coins are not held while an offer is up.">
+            <Block>
+              <Text style={styles.rowMeta}>Amount each (sats)</Text>
+              <Chips<number>
+                options={(boardData?.denominations || []).map((d) => ({
+                  key: d,
+                  label: d.toLocaleString(),
+                }))}
+                selected={postDenom}
+                onSelect={(d) => {
+                  clearNotice();
+                  setPostDenom(d);
+                }}
+              />
+              <Text style={styles.rowMeta}>Number of coins to come out</Text>
+              <Chips<number>
+                options={(boardData?.pieces || [1, 2, 3]).map((n) => ({
+                  key: n,
+                  label: board.coinsLabel(n),
+                }))}
+                selected={postPieces}
+                onSelect={(n) => {
+                  clearNotice();
+                  setPostPieces(n);
+                }}
+              />
+              <Text style={styles.rowMeta}>Who can see it</Text>
+              <Chips<board.OfferVisibility>
+                options={(boardData?.visibilities || ['connections', 'anyone']).map(
+                  (v) => ({ key: v, label: board.visibilityLabel(v) }),
+                )}
+                selected={postVisibility}
+                onSelect={(v) => {
+                  clearNotice();
+                  setPostVisibility(v);
+                }}
+              />
+              {postVisibility === 'anyone' ? (
+                <Text style={styles.warn}>
+                  Anyone here can propose to you. Whoever you mix with sees which
+                  outputs are yours.
+                </Text>
+              ) : null}
+              <View style={styles.rowActions}>
+                <Button
+                  label="Post offer"
+                  onPress={postOffer}
+                  busy={busy === 'post-offer'}
+                  disabled={!postDenom || !walletId || atOfferLimit}
+                />
+              </View>
+              {atOfferLimit ? (
+                <Text style={styles.rowMeta}>
+                  {boardData?.max_open} offers are up. Withdraw one to post another.
+                </Text>
+              ) : null}
+            </Block>
+          </Group>
+
+          {myOffers.length ? (
+            <Group title="Your offers">
+              <Block>
+                {myOffers.map((o) => (
+                  <View key={o.id} style={styles.row}>
+                    <View style={styles.rowHead}>
+                      <Text style={styles.rowWho}>{fmtSats(o.denom_sats, hidden)}</Text>
+                      <Text style={styles.rowStatus}>{board.visibilityLabel(o.visibility)}</Text>
+                    </View>
+                    <Text style={styles.rowMeta}>
+                      {board.coinsLabel(o.pieces)} {'\u00b7'} Expires in {countdown(o)}
+                    </Text>
+                    <View style={styles.rowActions}>
+                      <Button
+                        label="Withdraw"
+                        kind="secondary"
+                        small
+                        busy={busy === o.id}
+                        onPress={() => void withdrawOffer(o)}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </Block>
+            </Group>
+          ) : null}
+
+          <Group title="Open offers">
+            <Block>
+              {openOffers.length === 0 ? (
+                <Text style={styles.rowMeta}>No open offers.</Text>
+              ) : (
+                openOffers.map((o) => (
+                  <View key={o.id} style={styles.row}>
+                    <View style={styles.rowHead}>
+                      <Text style={styles.rowWho}>{o.username}</Text>
+                    </View>
+                    <Text style={styles.rowAmount}>
+                      {fmtSats(o.denom_sats, hidden)} {'\u00b7'} {board.coinsLabel(o.pieces)}
+                    </Text>
+                    <Text style={styles.rowMeta}>Expires in {countdown(o)}</Text>
+                    <View style={styles.rowActions}>
+                      <Button label="Take" small onPress={() => takeOffer(o)} />
+                    </View>
+                  </View>
+                ))
+              )}
+            </Block>
+          </Group>
         </>
       ) : null}
 

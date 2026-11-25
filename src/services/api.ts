@@ -2,6 +2,7 @@ import Config from 'react-native-config';
 import { DEVICE_TRUST_ENABLED } from '@/theme';
 import { currentDeviceId } from './deviceTrust';
 import { spFromUri } from './spUri';
+import type { OfferVisibility, TangoBoard, TangoOffer } from './tangoOffers';
 
 // Backend base URL + Silent-Payments prefix are injected at build time by
 // react-native-config (see .env.mainnet). LNBITS_URL must be an absolute URL.
@@ -1448,12 +1449,53 @@ export async function proposeTango(
     pieces?: number;
     inputs: PayjoinSpWireInput[];
     network: string;
+    /** Set when this answers a board offer (services/tangoOffers.ts). */
+    offer_id?: string;
   },
 ): Promise<TangoRoundRow> {
   return req(`${SILNT}/api/v1/tango/rounds`, {
     method: 'POST',
     headers: apiKey(adminkey),
     body: JSON.stringify(body),
+  });
+}
+
+// ── The Tango board ──
+// Adverts for a mix, holding no coins. The list comes back with the amounts,
+// coin splits and lifetime the screen renders from, so none of them is written
+// into the app. Answering an offer is proposeTango with an `offer_id`.
+
+export async function listTangoOffers(
+  inkey: string,
+  network: string | undefined = Config.NETWORK_LOCK || undefined,
+): Promise<TangoBoard> {
+  const q = `?network=${encodeURIComponent(network || '')}`;
+  return req(`${SILNT}/api/v1/tango/offers${q}`, { headers: apiKey(inkey) });
+}
+
+export async function postTangoOffer(
+  adminkey: string,
+  body: {
+    wallet_id: string;
+    denom_sats: number;
+    pieces: number;
+    visibility: OfferVisibility;
+  },
+): Promise<TangoOffer> {
+  return req(`${SILNT}/api/v1/tango/offers`, {
+    method: 'POST',
+    headers: apiKey(adminkey),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function withdrawTangoOffer(
+  adminkey: string,
+  id: string,
+): Promise<{ withdrawn: boolean; proposals_cancelled: number }> {
+  return req(`${SILNT}/api/v1/tango/offers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: apiKey(adminkey),
   });
 }
 

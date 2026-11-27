@@ -169,6 +169,41 @@ ok('the web fields are spaced as fields',
   /\.of-field \{[^}]*gap: 10px/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')) &&
   /\.of-row \{[^}]*padding: 14px 0/.test(fs.readFileSync('src/views/TangoView.vue', 'utf8')));
 
+console.log('an offer is not just available or gone: its state is shown (2026-11-27)');
+// "when offer is taken, in the screen it still shows that offer is available
+// and that maker can withdraw it"
+ok('an offer somebody proposed to reads proposed, one with all its places taken reads busy',
+  board.offerState({ proposed_by_me: true, busy: true }) === 'proposed' &&
+  board.offerState({ busy: true }) === 'busy' && board.offerState({}) === 'open');
+ok('the maker is told how many are waiting',
+  board.waitingLine(0) === '' && board.waitingLine(undefined) === '' &&
+  board.waitingLine(1) === '1 proposal waiting' && board.waitingLine(2) === '2 proposals waiting');
+for (const [name, src] of [['web', web], ['phone', ph]]) {
+  ok(`${name}: a proposed or busy offer has no Take button`,
+    /offerState\(o\) === 'proposed'/.test(src) && /offerState\(o\) === 'busy'/.test(src));
+  ok(`${name}: the maker sees the waiting count and can go and answer it`,
+    /waitingLine\(o\.waiting\)/.test(src) && />Answer</.test(src.replace(/label="Answer"/, '>Answer<')));
+}
+ok('web: withdrawing something with a proposal on it asks first',
+  /if \(o\.waiting && !confirm\(\s*'Withdraw this offer\?/.test(web));
+ok('phone: withdrawing something with a proposal on it asks first',
+  /if \(!o\.waiting\) \{\s*void doWithdraw\(o\);\s*return;\s*\}\s*Alert\.alert\(\s*'Withdraw this offer\?'/.test(ph));
+ok('web: the board reloads when a round changes, not only on the poll',
+  /watch\(\s*\(\) => rounds\.value\.map\(\(r\) => `\$\{r\.id\}:\$\{r\.status\}`\)\.join\('\|'\),\s*\(\) => \{ if \(tab\.value === 'offers'\) loadBoard\(\) \}/.test(web));
+ok('phone: the board reloads when a round changes',
+  /roundsSig/.test(ph) && /\[tab, roundsSig, loadBoard\]/.test(ph));
+// A change made on ANOTHER device (the taker proposing, the maker accepting on a
+// phone) reaches this page only through a poll, so the poll's period is how long
+// an offer can be wrong on screen. It was 30 seconds, which is long enough to be
+// reported as "still shows it's available".
+ok('web: the board polls at least every 10 seconds while the tab is open',
+  /setInterval\(loadBoard, 10000\)/.test(web));
+ok('phone: the board polls at least every 10 seconds while the tab is open',
+  /setInterval\(\(\) => void loadBoard\(\), 10000\)/.test(ph));
+ok('the board response type carries the state fields',
+  /waiting\?: number;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&
+  /proposed_by_me\?: boolean;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')));
+
 console.log('abuse: the board says why you cannot post, and how long they have to answer');
 for (const [name, src] of [['web', web], ['phone', ph]]) {
   ok(`${name}: posting is closed while the server says so`, /postBlocked/.test(src) &&

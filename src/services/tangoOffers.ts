@@ -25,6 +25,32 @@ export interface TangoOffer {
   expires_at: number;
   seconds_left: number;
   mine: boolean;
+  /** On YOUR offers only: proposals waiting for you to answer. */
+  waiting?: number;
+  /** On OTHERS' offers only: it has all the proposals it can take. Never a count. */
+  busy?: boolean;
+  /** On OTHERS' offers only: one of the waiting proposals is yours. */
+  proposed_by_me?: boolean;
+}
+
+/**
+ * What to say about an offer that is not simply open. It stays up until its
+ * maker ACCEPTS a proposal, so for a while it can have somebody's proposal
+ * waiting on it, and "available" with a Take button is then wrong about it.
+ */
+export type OfferState = 'open' | 'proposed' | 'busy';
+
+export function offerState(o: Pick<TangoOffer, 'busy' | 'proposed_by_me'>): OfferState {
+  if (o.proposed_by_me) return 'proposed';
+  if (o.busy) return 'busy';
+  return 'open';
+}
+
+/** "1 proposal waiting", "2 proposals waiting", or '' when none. */
+export function waitingLine(n: number | undefined): string {
+  const k = Math.max(0, Math.floor(n || 0));
+  if (!k) return '';
+  return k === 1 ? '1 proposal waiting' : `${k} proposals waiting`;
 }
 
 export interface TangoBoard {

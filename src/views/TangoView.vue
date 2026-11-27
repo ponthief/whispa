@@ -533,7 +533,7 @@ function startBoardTimers() {
       if (all.some((o) => leftOf(o) <= 0)) loadBoard()
     }, 1000)
   }
-  if (!_boardPoll) _boardPoll = setInterval(loadBoard, 30000)
+  if (!_boardPoll) _boardPoll = setInterval(loadBoard, 10000)
 }
 function stopBoardTimers() {
   if (_boardTimer) { clearInterval(_boardTimer); _boardTimer = null }
@@ -542,6 +542,16 @@ function stopBoardTimers() {
 // Timers run only while the Offers tab is showing, and never outlive the page.
 watch(tab, (t) => { if (t === 'offers') { nowMs.value = Date.now(); startBoardTimers() } else stopBoardTimers() })
 onUnmounted(stopBoardTimers)
+
+// The board is the other half of every round that starts from an offer: a
+// proposal arriving, the maker accepting it, either side cancelling it all
+// change what the board should say. The rounds watcher already polls, so this
+// reloads the board when a round's id or status changes and the tab is showing,
+// instead of leaving an offer up as "available" until the next poll.
+watch(
+  () => rounds.value.map((r) => `${r.id}:${r.status}`).join('|'),
+  () => { if (tab.value === 'offers') loadBoard() },
+)
 
 function openOffersTab() {
   tab.value = 'offers'
@@ -566,6 +576,11 @@ async function postOffer() {
 }
 
 async function withdrawOffer(o) {
+  // Withdrawing is not free once somebody has proposed: it cancels what is
+  // waiting on it. Said before it happens rather than after.
+  if (o.waiting && !confirm(
+    'Withdraw this offer? The proposal waiting on it is cancelled and their coins are freed.',
+  )) return
   try {
     await api.tangoWithdrawOffer(auth.adminkey, o.id)
     pushToast('Offer withdrawn.', { type: 'success' })
@@ -1169,9 +1184,14 @@ function expiresIn(r) {
               <div class="text-dim text-xs">
                 {{ board.coinsLabel(o.pieces) }} · {{ board.visibilityLabel(o.visibility) }}
               </div>
+              <div v-if="o.waiting" class="text-xs text-amber">{{ board.waitingLine(o.waiting) }}</div>
               <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
             </div>
-            <button class="btn btn-ghost btn-sm" @click="withdrawOffer(o)">Withdraw</button>
+            <div class="of-side">
+              <button v-if="o.waiting" class="btn btn-primary btn-sm"
+                      @click="tab = 'rounds'; load()">Answer</button>
+              <button class="btn btn-ghost btn-sm" @click="withdrawOffer(o)">Withdraw</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1189,7 +1209,13 @@ function expiresIn(r) {
               </div>
               <div class="text-xs text-dim of-timer">Expires in <span class="mono">{{ countdown(o) }}</span></div>
             </div>
-            <button class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
+            <span v-if="board.offerState(o) === 'proposed'" class="text-xs text-dim of-state">
+              You proposed. Waiting for them.
+            </span>
+            <span v-else-if="board.offerState(o) === 'busy'" class="text-xs text-dim of-state">
+              Busy
+            </span>
+            <button v-else class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
           </div>
         </div>
       </div>
@@ -1718,6 +1744,8 @@ function expiresIn(r) {
 .of-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .of-title { font-size: 15px; }
 .of-timer { margin-top: 2px; }
+.of-side { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.of-state { text-align: right; max-width: 140px; line-height: 1.4; }
 
 /* How many coins to take the mix back as. Three equal, centred targets that
    do not stretch across the card — a three-way choice that fills the width

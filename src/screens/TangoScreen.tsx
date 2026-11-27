@@ -577,19 +577,29 @@ export default function TangoScreen() {
     if (!timersOn) return;
     setNowMs(Date.now());
     const tick = setInterval(() => setNowMs(Date.now()), 1000);
-    const poll = setInterval(() => void loadBoard(), 30000);
+    const poll = setInterval(() => void loadBoard(), 10000);
     return () => {
       clearInterval(tick);
       clearInterval(poll);
     };
   }, [timersOn, loadBoard]);
-  useEffect(() => {
-    if (tab === 'offers') void loadBoard();
-  }, [tab, loadBoard]);
   // One that just ran out: fetch, so the server's own list replaces ours.
   useEffect(() => {
     if (timersOn && anyExpired) void loadBoard();
   }, [timersOn, anyExpired, loadBoard]);
+
+  // The board is the other half of every round that starts from an offer: a
+  // proposal arriving, the maker accepting it, either side cancelling it all
+  // change what the board should say. The rounds list already reloads on its own
+  // triggers, so the board follows when a round's id or status changes and the
+  // tab is showing, instead of calling an offer "available" until the next poll.
+  const roundsSig = useMemo(
+    () => rounds.map((r) => `${r.id}:${r.status}`).join('|'),
+    [rounds],
+  );
+  useEffect(() => {
+    if (tab === 'offers') void loadBoard();
+  }, [tab, roundsSig, loadBoard]);
 
   const postOffer = useCallback(async () => {
     if (!adminkey || !walletId || !postDenom) return;
@@ -612,7 +622,7 @@ export default function TangoScreen() {
     }
   }, [adminkey, walletId, postDenom, postPieces, postVisibility, loadBoard]);
 
-  const withdrawOffer = useCallback(
+  const doWithdraw = useCallback(
     async (o: board.TangoOffer) => {
       if (!adminkey) return;
       setBusy(o.id);
@@ -631,6 +641,22 @@ export default function TangoScreen() {
     },
     [adminkey, loadBoard, load],
   );
+  // Withdrawing is not free once somebody has proposed: it cancels what is
+  // waiting on it. Said before it happens rather than after.
+  const withdrawOffer = (o: board.TangoOffer) => {
+    if (!o.waiting) {
+      void doWithdraw(o);
+      return;
+    }
+    Alert.alert(
+      'Withdraw this offer?',
+      'The proposal waiting on it is cancelled and their coins are freed.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Withdraw', style: 'destructive', onPress: () => void doWithdraw(o) },
+      ],
+    );
+  };
 
   // Answer somebody's offer: the CJ tab with what the offer fixes filled in and
   // locked. Which coins go in is still this person's to choose.
@@ -1545,13 +1571,26 @@ export default function TangoScreen() {
                     <Text style={styles.rowMeta}>
                       {board.coinsLabel(o.pieces)} {'\u00b7'} Expires in {countdown(o)}
                     </Text>
+                    {o.waiting ? (
+                      <Text style={styles.warn}>{board.waitingLine(o.waiting)}</Text>
+                    ) : null}
                     <View style={styles.rowActions}>
+                      {o.waiting ? (
+                        <Button
+                          label="Answer"
+                          small
+                          onPress={() => {
+                            clearNotice();
+                            setTab('rounds');
+                          }}
+                        />
+                      ) : null}
                       <Button
                         label="Withdraw"
                         kind="secondary"
                         small
                         busy={busy === o.id}
-                        onPress={() => void withdrawOffer(o)}
+                        onPress={() => withdrawOffer(o)}
                       />
                     </View>
                   </View>
@@ -1574,9 +1613,15 @@ export default function TangoScreen() {
                       {fmtSats(o.denom_sats, hidden)} {'\u00b7'} {board.coinsLabel(o.pieces)}
                     </Text>
                     <Text style={styles.rowMeta}>Expires in {countdown(o)}</Text>
-                    <View style={styles.rowActions}>
-                      <Button label="Take" small onPress={() => takeOffer(o)} />
-                    </View>
+                    {board.offerState(o) === 'proposed' ? (
+                      <Text style={styles.rowMeta}>You proposed. Waiting for them.</Text>
+                    ) : board.offerState(o) === 'busy' ? (
+                      <Text style={styles.rowMeta}>Busy</Text>
+                    ) : (
+                      <View style={styles.rowActions}>
+                        <Button label="Take" small onPress={() => takeOffer(o)} />
+                      </View>
+                    )}
                   </View>
                 ))
               )}

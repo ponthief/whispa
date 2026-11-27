@@ -511,6 +511,30 @@ option and a grey one for the other read as "this is the action" rather than "th
 is selected"); **Post offer is centred**; and there is a **Refresh** button, which
 the Partners tab already had.
 
+### An offer's state is shown, not just "available" (2026-11-27)
+
+Reported as *"when offer is taken, in the screen it still shows that offer is
+available and that maker can withdraw it, on web"*. An offer stays up until its
+maker **accepts** a proposal, so between a taker pressing Take and the maker
+answering it is neither plainly available nor gone — and the screen said only
+"available" and "Withdraw". The server now says more, and both clients show it:
+
+- **The maker's own offer carries `waiting`** (how many proposals are waiting) and
+  shows *"1 proposal waiting"* with an **Answer** button to Rounds. **Withdraw asks
+  first** when anything is waiting, because it cancels what is waiting and frees
+  that taker's coins.
+- **Everyone else's view carries only `busy` and `proposed_by_me`**, never a count:
+  who is asking a maker is not for strangers. A proposer sees *"You proposed.
+  Waiting for them."* in place of Take; an offer with all 3 places taken reads
+  *Busy*. One person cannot hold two places on one offer (the first is still
+  waiting, and a full offer would otherwise say it was full when one place is theirs).
+- **After the maker accepts, the offer is deleted** (it always was), and the board
+  now notices: it reloads when a round's id or status changes, and it **polls every
+  10 seconds** while the Offers tab is open — it was 30. A change made on another
+  device (the taker proposing, the maker accepting on a phone) reaches a page only
+  through a poll, so the period is how long an offer can be wrong on screen.
+  `check:offers` pins the poll period, the reload, the states and the confirm.
+
 **Not verified on a device:** the phone screen was type-checked, linted and
 pinned by `check:offers`, and the web page was driven in Chromium against a
 stubbed backend (post, withdraw, take, the locked form, the proposal body, the

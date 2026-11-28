@@ -586,11 +586,17 @@ what was reported as a bug. `check:signing:display` asserts each of these absent
 **Matching a round cancels the proposals its coins can no longer fund**
 (siLNt `_cancel_unfundable_proposals`, called at the end of `/accept`): another
 PROPOSED round waiting on the same user is cancelled with the reason
-`out of coins` when `can_fund` fails on what is left, and its proposer is
-notified. Left alone, a proposer's coins stay locked for the round's whole window
-while nobody can answer it. It uses the board's own funding test (a margin, not a
-guarantee) and never raises, since the accept has already succeeded. The wording
-is `cancelledLine`'s, from either side.
+`out of coins` when it can no longer be matched with what is left, and its
+proposer is notified. Left alone, a proposer's coins stay locked for the round's
+whole window while nobody can answer it. **The test is the round's own `plan()`,
+not the board's margin** (`_tango_can_still_match`: the user's free coins
+largest-first, a growing handful at a time, against the real first side). The
+first version used the board's `can_fund` (amount plus 2,000 sats) and did NOT
+cancel a second round the user could not match, reported 2026-11-28, because
+"amount plus a margin" is not "amount plus this side's half of the fee" at a real
+fee rate (`test_the_boards_margin_is_not_enough_to_match_a_round`). It cancels
+only when no handful of free coins works, and never raises, since the accept has
+already succeeded. The wording is `cancelledLine`'s, from either side.
 
 **Reported and not reproduced:** *"if 2 users have 2 offers going, the latest one
 had Match… Refresh didn't help but F5 did."* The server list, the role per round
@@ -2098,6 +2104,26 @@ assignment; a row under the generated file key still opens after the env key
 takes over; a row under neither still raises; the migration moves exactly the
 file-key row and a second pass finds nothing. Reverting any one of the three
 fixes fails its own tests.
+
+**THE SECOND EXTENSION KEY WAS DROPPED (2026-11-28, on the user's word that
+every record is now under the active one: *"drop the 2nd encryption key as all
+the records now encrypted with the latest one"*).** The block above describes
+what existed from 2026-11-14 to then and is kept as the record. Gone from
+siLNt `crud.py`: `_silnt_key_alternates` and `_silnt_file_key`, the fallback in
+`_pj_decrypt` that tried the other key on a `v2:` row, the second pass of
+`reencrypt_legacy_rows` (the re-key, `rekeyed`/`v2_left` and its two log lines).
+A `v2:` row is now read with the active key and nothing else; one that does not
+open is unreadable. **Know what that costs:** this was done on the operator's
+statement and not on a check of the database. The pass's last log line
+(*"all N v2 row(s) now open under the active extension key"*) was the evidence it
+asked for, and any row that line did not count is now lost. The key **file**
+itself is untouched (the code never deleted it), and `_silnt_enc_key` still
+falls back to generating one when no env key is set. Not touched: the LNbits
+secret candidates and `SILNT_LEGACY_AUTH_KEYS`, which serve the older rows
+without the `v2:` prefix. `tests/test_sp_contacts.py` lost the tests of the
+fallback and the re-key and gained ones that a row under the old file key is now
+refused, that the source has none of it, and that the migration leaves `v2:`
+rows alone.
 
 ### Send, BitMail and Tango requests: four web reports (2026-11-13)
 

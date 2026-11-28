@@ -563,9 +563,40 @@ your Lightning address"*) stays, so the one disagreement worth reporting (a
 setting switched on after joining) still shows; but a round whose change
 stayed on chain now says nothing, so the two cases are no longer symmetric. The
 irreversibility of Complete is carried by the button's name and its confirm
-modal only. The *Waiting for X to approve it* lines were kept: they say whose
-turn it is. The payout setting's own *"stays in your wallet"* copy
+modal only. The *Waiting for X to approve it* lines were kept that day and cut
+the next (see below). The payout setting's own *"stays in your wallet"* copy
 (`TangoPayoutPanel`/`Card`, pinned by `check:payout`) is untouched.
+
+**Second pass, the same day** (*"text in step 4 of 5 is too long!!!"*, and a list):
+`turnLine` is **empty when it is not your turn** — the status beside it
+("You approved it") already says whose move it is, so *Waiting for X to complete
+the Tango round.* is gone, and so are the other two waiting lines; a row prints
+the status and, only on your turn, one short instruction. Also gone: the *"You can
+cancel this round under Rounds…"* line in the propose confirm and in the toast
+(**"Offer sent."**), the **Sent** toast's txid (**"Sent. Check History for the
+status."**), the banner's change commentary (**"Offer matched."**), the *Not this
+one* button on an answered offer (leaving the CJ tab drops the offer instead, so
+the form is never stuck on one), and *Anyone here can propose to you…* on the
+Offers form (now **"Any WhiSPa wallet user."**, so the one line that told a poster
+whoever they mix with sees which outputs are theirs is gone from that screen).
+While a Match panel is open the other rounds' **Match** buttons are disabled;
+switching silently dropped the first selection and re-enabled its button, which is
+what was reported as a bug. `check:signing:display` asserts each of these absent.
+
+**Matching a round cancels the proposals its coins can no longer fund**
+(siLNt `_cancel_unfundable_proposals`, called at the end of `/accept`): another
+PROPOSED round waiting on the same user is cancelled with the reason
+`out of coins` when `can_fund` fails on what is left, and its proposer is
+notified. Left alone, a proposer's coins stay locked for the round's whole window
+while nobody can answer it. It uses the board's own funding test (a margin, not a
+guarantee) and never raises, since the accept has already succeeded. The wording
+is `cancelledLine`'s, from either side.
+
+**Reported and not reproduced:** *"if 2 users have 2 offers going, the latest one
+had Match… Refresh didn't help but F5 did."* The server list, the role per round
+and the watcher were read and nothing there explains a state only a reload
+clears; the page-level state a reload resets (`matchFor`, the offer form) was
+tightened above. If it recurs, note which round showed Match and for whom.
 
 The Send **Confirm Broadcast** modal's rows had no gap, so a long address ran
 into its *Recipient* label; `.tx-detail-row` in `SendView.vue` now has one, the

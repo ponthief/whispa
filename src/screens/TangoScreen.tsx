@@ -669,12 +669,15 @@ export default function TangoScreen() {
     setPicked(new Set());
     setTab('mix');
   };
-  const clearOffer = () => {
-    clearNotice();
-    setOffer(null);
-    setPartner('');
-    setDenom('');
-  };
+  // Leaving the CJ tab abandons the offer it was answering; there is no button
+  // for it, because the offer is the user's choice and the form cannot swap it.
+  useEffect(() => {
+    if (tab !== 'mix') {
+      setOffer(null);
+      setPartner('');
+      setDenom('');
+    }
+  }, [tab]);
 
   // Does THIS DEVICE mean to route its change on the round it is about to
   // join? Read here, at the moment of joining, and written into the local
@@ -731,7 +734,7 @@ export default function TangoScreen() {
       setPicked(new Set());
       setOffer(null);
       if (walletId) useDrafts.getState().clearTango(walletId);
-      setMsg('Offer sent. You can cancel it under Rounds until they match it.');
+      setMsg('Offer sent.');
       await load();
     } catch (e: any) {
       fail(e);
@@ -829,11 +832,7 @@ export default function TangoScreen() {
         );
         setMatchFor(null);
         setMatchPicked(new Set());
-        setMsg(
-          amounts.clean
-            ? 'Matched, and neither side needs change — a clean round.'
-            : 'Matched. One or both sides have change, which weakens it.',
-        );
+        setMsg('Offer matched.');
         await load();
       } catch (e) {
         fail(e);
@@ -954,7 +953,7 @@ export default function TangoScreen() {
             ' that part could not be checked.';
         setMsg(
           (done.status === 'BROADCAST'
-            ? 'Sent.'
+            ? 'Sent. Check History for the status.'
             : 'Approved. Waiting on the other side.') + unverified,
         );
         await load();
@@ -1084,8 +1083,10 @@ export default function TangoScreen() {
         <Text style={styles.rowAmount}>{sats(r.denom_sats)} each</Text>
         {!compact && tango.stepNumber(r.status) ? (
           <Text style={styles.rowMeta}>
-            Step {tango.stepNumber(r.status)} of {tango.STEPS.length} ·{' '}
-            {tango.turnLine(r.status, side, other)}
+            Step {tango.stepNumber(r.status)} of {tango.STEPS.length}
+            {tango.turnLine(r.status, side, other)
+              ? ` · ${tango.turnLine(r.status, side, other)}`
+              : ''}
           </Text>
         ) : null}
         {!compact && r.fee_sats != null ? (
@@ -1176,6 +1177,7 @@ export default function TangoScreen() {
         <View style={styles.rowActions}>
           {mine && r.status === 'PROPOSED' && matchFor !== r.id ? (
             <Button small label="Match it" busy={busy === r.id}
+              disabled={!!matchFor}
               onPress={() => startMatch(r)} />
           ) : null}
           {mine && r.status === 'PROPOSED' && matchFor === r.id ? (
@@ -1378,12 +1380,6 @@ export default function TangoScreen() {
                     disabled={!chosen.length || !walletId || !!preview?.error}
                     style={styles.keepBtn}
                   />
-                  <Button
-                    label="Not this one"
-                    kind="secondary"
-                    onPress={clearOffer}
-                    style={styles.cancelBtn}
-                  />
                 </View>
               </Block>
             </Group>
@@ -1522,8 +1518,7 @@ export default function TangoScreen() {
               />
               {postVisibility === 'anyone' ? (
                 <Text style={styles.warn}>
-                  Anyone here can propose to you. Whoever you mix with sees which
-                  outputs are yours.
+                  Any WhiSPa wallet user.
                 </Text>
               ) : null}
               {postBlocked ? <Text style={styles.warn}>{postBlocked}</Text> : null}

@@ -103,16 +103,15 @@ console.log('\nthe change notes are gone');
 
 console.log('\nwhat each side is waiting for');
 {
-  // Side A, after approving: the round is on B, and what B does next puts it
-  // on the network. "Waiting for bob to sign" said neither which wait it was
-  // nor that it was the last one.
-  eq('A after approving', turnLine('A_SIGNED', 'a', 'bob'),
-     'Waiting for bob to complete the Tango round.');
-  // Side B, having matched: waiting on an approval that broadcasts nothing.
-  eq('B after matching', turnLine('ACCEPTED', 'b', 'alice'),
-     'Waiting for alice to approve it.');
-  eq('A after proposing', turnLine('PROPOSED', 'a', 'bob'),
-     'Waiting for bob to match it.');
+  // A turn that is not yours says nothing: the status beside it already says
+  // whose move it is, and "Waiting for bob to complete the Tango round." on top
+  // of "You approved it" was cut on 2026-11-28 as too long.
+  eq('A after approving', turnLine('A_SIGNED', 'a', 'bob'), '');
+  eq('B after matching', turnLine('ACCEPTED', 'b', 'alice'), '');
+  eq('A after proposing', turnLine('PROPOSED', 'a', 'bob'), '');
+  for (const [st, role] of [['A_SIGNED', 'a'], ['ACCEPTED', 'b'], ['PROPOSED', 'a']]) {
+    ok(`nothing says "waiting" at ${st}`, !/waiting/i.test(turnLine(st, role, 'bob')));
+  }
   // The turns that ARE yours name the act and stop. The sentences about what
   // happens next were cut on 2026-11-28 (the Complete button and its confirm
   // already say it).
@@ -140,6 +139,12 @@ console.log('\nthe wording that was asked for, and stays gone');
     'Other outputs',            // read as "yours", and it cannot know whose
     'Tango steps',              // the five lines, removed from both screens
     'Connections are per network',  // three sentences where one does
+    'You can cancel it under Rounds',   // the toast after an offer: "Offer sent." says it
+    'You can cancel this round under Rounds',  // the same line in the confirm
+    'Not this one',                     // the offer is the user's choice, not swappable
+    'which weakens it',                 // "Offer matched." is all the banner says
+    'Anyone here can propose to you',   // "Any WhiSPa wallet user."
+    'to complete the Tango round',      // see turnLine
   ];
   for (const file of [
     'src/screens/TangoScreen.tsx', 'src/views/TangoView.vue',

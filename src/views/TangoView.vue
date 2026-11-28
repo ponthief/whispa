@@ -441,10 +441,7 @@ async function propose() {
     denom.value = ''
     mixPicked.value = new Set()
     if (offerId.value) clearOffer()
-    pushToast(
-      'Offer sent. You can cancel it under Rounds until they match it.',
-      { type: 'success' },
-    )
+    pushToast('Offer sent.', { type: 'success' })
     tab.value = 'rounds'
     await load()
   } catch (e) {
@@ -540,6 +537,10 @@ function stopBoardTimers() {
   if (_boardPoll) { clearInterval(_boardPoll); _boardPoll = null }
 }
 // Timers run only while the Offers tab is showing, and never outlive the page.
+// Leaving the form abandons the offer it was answering. There is no button for
+// it: the offer is the user's choice, and what they cannot do is swap it for a
+// different partner from inside the form.
+watch(tab, (t) => { if (t !== 'mix' && offerId.value) clearOffer() })
 watch(tab, (t) => { if (t === 'offers') { nowMs.value = Date.now(); startBoardTimers() } else stopBoardTimers() })
 onUnmounted(stopBoardTimers)
 
@@ -659,12 +660,7 @@ async function submitMatch(r) {
     recordTangoCommit(r.id, selectedWallet.value, chosen, intend)
     matchFor.value = null
     matchPicked.value = new Set()
-    pushToast(
-      amounts.clean
-        ? 'Matched, and neither side needs change — a clean round.'
-        : 'Matched. One or both sides have change, which weakens it.',
-      { type: 'success' },
-    )
+    pushToast('Offer matched.', { type: 'success' })
     await load()
   } catch (e) {
     pushToast(e.detail || e.message || 'Could not match that Tango.', { type: 'error' })
@@ -777,7 +773,7 @@ async function sign(r) {
         ' part could not be checked.'
     pushToast(
       (done.status === 'BROADCAST'
-        ? `Sent. txid ${String(done.txid || '').slice(0, 12)}…`
+        ? 'Sent. Check History for the status.'
         : 'Approved. Waiting on the other side.') + unverified,
       { type: 'success', timeout: 12000 },
     )
@@ -990,7 +986,6 @@ function expiresIn(r) {
             <div class="tg-offer-line">
               <b>{{ offerTarget.username }}</b>
               <span class="text-dim text-xs">· {{ countdown(offerTarget) }} left</span>
-              <button class="btn btn-ghost btn-sm" type="button" @click="clearOffer">Not this one</button>
             </div>
             <div v-if="boardData?.answer_seconds" class="text-dim text-xs">
               They have {{ board.formatDuration(boardData.answer_seconds) }} to answer.
@@ -1152,8 +1147,7 @@ function expiresIn(r) {
                       @click="postVisibility = v">{{ board.visibilityLabel(v) }}</button>
             </div>
             <p v-if="postVisibility === 'anyone'" class="text-xs text-amber of-hint">
-              Anyone here can propose to you. Whoever you mix with sees which
-              outputs are yours.
+              Any WhiSPa wallet user.
             </p>
           </div>
           <p v-if="postBlocked" class="text-xs text-amber of-hint">{{ postBlocked }}</p>
@@ -1349,7 +1343,7 @@ function expiresIn(r) {
                   <template v-if="stepOf(r)">
                     Step {{ stepOf(r) }} of {{ TOTAL_STEPS }} ·
                   </template>
-                  {{ statusLabel(r) }} · {{ whatNow(r) }}
+                  {{ statusLabel(r) }}<template v-if="whatNow(r)"> · {{ whatNow(r) }}</template>
                   <span v-if="expiresIn(r)"> · {{ expiresIn(r) }}</span>
                 </div>
                 <div v-if="r.fee_sats != null" class="text-xs text-dim">
@@ -1368,7 +1362,7 @@ function expiresIn(r) {
               </div>
               <div style="display:flex; gap:0.5rem;">
                 <button v-if="r.status === 'PROPOSED' && matchFor !== r.id"
-                        class="btn btn-sm btn-primary" :disabled="!hasKeys"
+                        class="btn btn-sm btn-primary" :disabled="!hasKeys || !!matchFor"
                         @click="startMatch(r)">Match</button>
                 <button v-else-if="r.status !== 'PROPOSED'"
                         class="btn btn-sm btn-primary"
@@ -1448,7 +1442,7 @@ function expiresIn(r) {
                   <template v-if="stepOf(r)">
                     Step {{ stepOf(r) }} of {{ TOTAL_STEPS }} ·
                   </template>
-                  {{ statusLabel(r) }} · {{ whatNow(r) }}
+                  {{ statusLabel(r) }}<template v-if="whatNow(r)"> · {{ whatNow(r) }}</template>
                   <span v-if="expiresIn(r)"> · {{ expiresIn(r) }}</span>
                 </div>
                 <div v-if="r.fee_sats != null" class="text-xs text-dim">
@@ -1560,9 +1554,6 @@ function expiresIn(r) {
               <span class="mono">{{ mixPreview.change ? fmtSats(mixPreview.change) : 'none' }}</span>
             </div>
           </template>
-          <p class="text-xs text-dim" style="margin:0">
-            You can cancel this round under Rounds until your partner matches it.
-          </p>
           <div class="flex gap-2 justify-between" style="margin-top:8px">
             <button class="btn btn-ghost" @click="showProposeConfirm = false">Cancel</button>
             <button class="btn btn-primary" :disabled="busy === 'propose'" @click="propose">

@@ -77,6 +77,7 @@ const CONNECTION_REMOVED = 'connection removed';
 // helpers/tangooffers.py.
 const OFFER_TAKEN = 'offer taken';
 const OFFER_WITHDRAWN = 'offer withdrawn';
+const OUT_OF_COINS = 'out of coins';
 
 /** 'a', 'b', or null when this reason is not a cancellation by a person. */
 export function whoCancelled(reason?: string | null): Side | null {
@@ -117,6 +118,12 @@ export function cancelledLine(
   }
   if (text.toLowerCase() === OFFER_WITHDRAWN) {
     return 'Cancelled — the offer was withdrawn';
+  }
+  if (text.toLowerCase() === OUT_OF_COINS) {
+    // The side that matched another round first is the acceptor, `b`.
+    return you === 'b'
+      ? 'Cancelled — not enough coins left'
+      : 'Cancelled — they did not have enough coins left';
   }
   const side = whoCancelled(text);
   if (!side) return `Cancelled — ${text}`;
@@ -221,22 +228,12 @@ export function turnLine(
   role: Side | null | undefined,
   partner: string | null | undefined,
 ): string {
-  const them = partner || 'them';
   if (status === 'BROADCAST') return 'Done — both shares are on chain.';
   if (status === 'CANCELLED') return '';
-  if (!isMyTurn(status, role)) {
-    // Per status, not "to sign" for both. The two are different waits: one
-    // ends with an approval that puts nothing on chain, the other ends with
-    // the round on the network.
-    switch (status) {
-      case 'PROPOSED':
-        return `Waiting for ${them} to match it.`;
-      case 'ACCEPTED':
-        return `Waiting for ${them} to approve it.`;
-      default:
-        return `Waiting for ${them} to complete the Tango round.`;
-    }
-  }
+  // Not your turn: nothing. The status beside it already says whose move it is
+  // ("You approved it"), and "Waiting for X to ..." on top was cut on
+  // 2026-11-28 as a second way of saying the same thing.
+  if (!isMyTurn(status, role)) return '';
   switch (status) {
     case 'PROPOSED':
       return 'Choose your coins to match the offer.';

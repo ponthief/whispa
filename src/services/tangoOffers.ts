@@ -168,3 +168,20 @@ export function canPost(
   const list = b?.affordable_denominations;
   return !Array.isArray(list) || list.includes(denom);
 }
+
+/** What to say when Take is pressed on an offer that has gone since the list was read. */
+export const OFFER_UNAVAILABLE = 'That offer is no longer available.';
+
+/**
+ * The offer with this id as the server's fresh list has it, if it can still be
+ * taken: listed, not full, not already proposed to by this user, and affordable.
+ * Null otherwise. The list itself is the authority, so there is no clock here.
+ */
+export function stillTakeable(
+  fresh: Pick<TangoBoard, 'offers'> | null | undefined,
+  id: string,
+): TangoOffer | null {
+  const o = (fresh?.offers || []).find((x) => x.id === id);
+  if (!o) return null;
+  return offerState(o) === 'open' && canTake(o) ? o : null;
+}

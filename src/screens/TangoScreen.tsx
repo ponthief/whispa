@@ -664,8 +664,35 @@ export default function TangoScreen() {
 
   // Answer somebody's offer: the CJ tab with what the offer fixes filled in and
   // locked. Which coins go in is still this person's to choose.
-  const takeOffer = (o: board.TangoOffer) => {
+  // An offer on screen may have been withdrawn, taken or filled since the list
+  // was read. Take asks the server again first, and only a still-open offer
+  // opens the form; the list is replaced with what the server just said.
+  const [taking, setTaking] = useState(false);
+  const takeOffer = async (listed: board.TangoOffer) => {
+    if (taking || !inkey || !network) return;
     clearNotice();
+    setTaking(true);
+    try {
+      let fresh: board.TangoBoard;
+      try {
+        fresh = await api.listTangoOffers(inkey, network);
+      } catch (e: any) {
+        fail(e);
+        return;
+      }
+      setBoardData(fresh);
+      setBoardFetchedAt(Date.now());
+      const o = board.stillTakeable(fresh, listed.id);
+      if (!o) {
+        setError(board.OFFER_UNAVAILABLE);
+        return;
+      }
+      openOfferForm(o);
+    } finally {
+      setTaking(false);
+    }
+  };
+  const openOfferForm = (o: board.TangoOffer) => {
     setOffer(o);
     setPartner(o.username);
     setDenom(String(o.denom_sats));
@@ -1603,7 +1630,7 @@ export default function TangoScreen() {
                         <Button
                           label="Take"
                           small
-                          disabled={!board.canTake(o)}
+                          disabled={!board.canTake(o) || taking}
                           onPress={() => takeOffer(o)}
                         />
                       </View>

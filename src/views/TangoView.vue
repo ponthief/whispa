@@ -598,7 +598,33 @@ async function withdrawOffer(o) {
 
 // Answer somebody's offer: the CJ form with what the offer fixes filled in and
 // locked. Which coins go in, and the fee, are still this person's to choose.
-function takeOffer(o) {
+// An offer on screen may have been withdrawn, taken or filled since the list was
+// read, and the page only learns that on its next poll. So Take asks the server
+// again first, and only a still-open offer opens the form; the list on screen is
+// replaced with what the server just said either way.
+const takingOffer = ref('')
+async function takeOffer(listed) {
+  if (takingOffer.value || !wallet.value?.network) return
+  takingOffer.value = listed.id
+  try {
+    let fresh
+    try {
+      fresh = await api.tangoOffers(auth.inkey, wallet.value.network)
+    } catch (e) {
+      pushToast(e.detail || e.message || 'Could not check that offer.', { type: 'error' })
+      return
+    }
+    boardData.value = fresh
+    boardFetchedAt.value = Date.now()
+    const o = board.stillTakeable(fresh, listed.id)
+    if (!o) {
+      pushToast(board.OFFER_UNAVAILABLE, { type: 'warn' })
+      return
+    }
+    openOfferForm(o)
+  } finally { takingOffer.value = '' }
+}
+function openOfferForm(o) {
   offerId.value = o.id
   offerTarget.value = o
   partnerName.value = o.username
@@ -1204,7 +1230,8 @@ function expiresIn(r) {
             <span v-else-if="board.offerState(o) === 'busy'" class="text-xs text-dim of-state">
               Busy
             </span>
-            <button v-else class="btn btn-primary btn-sm" :disabled="!hasKeys || !board.canTake(o)"
+            <button v-else class="btn btn-primary btn-sm"
+                    :disabled="!hasKeys || !board.canTake(o) || !!takingOffer"
                     @click="takeOffer(o)">Take</button>
           </div>
         </div>

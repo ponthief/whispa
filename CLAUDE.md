@@ -622,6 +622,20 @@ offer's own countdown beside it. **Know what that costs:** the 2-hour answer
 window is now told to nobody who takes an offer. `check:offers` asserts each cut
 absent.
 
+**Take re-checks the offer with the server before it opens the form**
+(2026-11-28: *"when offer is withdrawn, but other user hasn't refreshed and clicks
+Take, it takes him to select coins.. it should check that offer is still valid"*).
+The board is polled every 10 seconds, so a withdrawn, taken or filled offer stays
+on screen for up to that long and Take opened the form on it; the user found out
+only at Send offer, after choosing coins. `takeOffer` now fetches the board first
+and `stillTakeable` (shared) opens the form only for an offer that is in the fresh
+list, not busy, not already proposed to, and still affordable; otherwise it says
+**"That offer is no longer available."** and the list is replaced with what the
+server just said. A board that cannot be fetched fails closed with its own error.
+It is a check, not a lock: the offer can still go between this and Send offer, and
+the server's refusal there (*"That offer is gone."*) stays the authority. It costs
+one board read per Take against a limit of 60 a minute.
+
 The Send **Confirm Broadcast** modal's rows had no gap, so a long address ran
 into its *Recipient* label; `.tx-detail-row` in `SendView.vue` now has one, the
 label cannot shrink and the value is right-aligned.

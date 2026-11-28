@@ -218,6 +218,24 @@ for (const [name, src] of [['web', web], ['phone', ph]]) {
   ok(`${name}: no "Not this one" button`, !/Not this one/.test(src));
 }
 
+console.log('Take re-checks the offer with the server first');
+{
+  const live = (o) => ({ offers: [o] });
+  ok('a listed open offer can still be taken', board.stillTakeable(live({ id: 'a' }), 'a')?.id === 'a');
+  ok('a withdrawn one (not in the fresh list) cannot', board.stillTakeable({ offers: [] }, 'a') === null);
+  ok('nor one that went busy', board.stillTakeable(live({ id: 'a', busy: true }), 'a') === null);
+  ok('nor one already proposed to', board.stillTakeable(live({ id: 'a', proposed_by_me: true }), 'a') === null);
+  ok('nor one no longer affordable', board.stillTakeable(live({ id: 'a', affordable: false }), 'a') === null);
+  ok('and a missing list is not an offer', board.stillTakeable(null, 'a') === null);
+  ok('web: Take fetches the board before opening the form',
+    /async function takeOffer\(listed\)[\s\S]*?api\.tangoOffers\([\s\S]*?board\.stillTakeable\(fresh, listed\.id\)[\s\S]*?openOfferForm\(o\)/.test(web));
+  ok('web: nothing else opens the form', (web.match(/openOfferForm\(/g) || []).length === 2);
+  ok('phone: Take fetches the board before opening the form',
+    /const takeOffer = async[\s\S]*?api\.listTangoOffers\([\s\S]*?board\.stillTakeable\(fresh, listed\.id\)[\s\S]*?openOfferForm\(o\)/.test(ph));
+  ok('phone: nothing else opens the form', (ph.match(/openOfferForm\(/g) || []).length === 1);
+  ok('both say the same sentence', /OFFER_UNAVAILABLE/.test(web) && /OFFER_UNAVAILABLE/.test(ph));
+}
+
 console.log('affordability: the server decides, the clients only draw it');
 {
   const svc = fs.readFileSync('src/services/tangoOffers.ts', 'utf8');
@@ -234,7 +252,7 @@ console.log('affordability: the server decides, the clients only draw it');
   ok('web: Take is disabled when it cannot be afforded', /!board\.canTake\(o\)/.test(web));
   ok('web: Post is disabled when the amount cannot be afforded',
     /!postAffordable/.test(web) && /board\.canPost\(boardData\.value, postDenom\.value\)/.test(web));
-  ok('phone: Take is disabled when it cannot be afforded', /disabled=\{!board\.canTake\(o\)\}/.test(ph));
+  ok('phone: Take is disabled when it cannot be afforded', /disabled=\{!board\.canTake\(o\) \|\| taking\}/.test(ph));
   ok('phone: Post is disabled when the amount cannot be afforded',
     /\|\| !postAffordable/.test(ph) && /board\.canPost\(boardData, postDenom\)/.test(ph));
   ok('the type carries both', /affordable\?: boolean;/.test(svc) &&

@@ -808,7 +808,6 @@ export {
   isMyTurn,
   stepNumber,
   turnLine,
-  changeLine,
   cancelledLine,
   whoCancelled,
   cancelNote,

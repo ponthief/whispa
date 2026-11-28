@@ -24,7 +24,6 @@ import {
   CANCEL_NOTE_PROMPT,
   cancelNote,
   cancelledLine,
-  changeLine,
   turnLine,
 } from '../src/services/tangoTurns.ts';
 
@@ -63,27 +62,24 @@ console.log('a round does not report on the partner');
   }
 }
 
-console.log('\nthe change note is about THIS side only');
+console.log('\nthe change notes are gone');
 {
-  // The partner's change is a fact about their coins that this user cannot act
-  // on, and they were warned about their own when they joined. So the line
-  // names this side or says nothing — the same call that took "Their side
-  // needs change" off the match panel.
-  const WARNS = 'An observer can often work out which output is whose';
-  ok('this side had change', changeLine(716, 0).startsWith('Your side had change'));
-  ok('and says why it matters', changeLine(716, 0).includes(WARNS));
-  // Both sides had change: still this side's sentence, not "both sides".
-  eq('both sides reads as this side', changeLine(716, 412), changeLine(716, 0));
-  // Only theirs: nothing at all. The callers render no row for an empty line.
-  eq('only their side is silent', changeLine(0, 412), '');
-  eq('and a null is not change', changeLine(null, 412), '');
-  // Neither: the clean round still gets said.
-  ok('a clean round still says so',
-     changeLine(0, 0).startsWith('No change either side'));
-  // It cannot name the partner any more, in any case.
-  for (const [m, t] of [[716, 0], [716, 412], [0, 412], [0, 0]]) {
-    ok(`no partner named for (${m}, ${t})`,
-       !/alice|their side|Their side/.test(changeLine(m, t)), changeLine(m, t));
+  // 2026-11-28, on the user's instruction: "Your side had change. An observer
+  // can often work out which output is whose from the amounts." and the match
+  // panel's "...often enough for someone to tell the two outputs apart" were
+  // sentences the amounts beside them already say. The clean-round line stays.
+  const svc = readFileSync(new URL('../src/services/tangoTurns.ts', import.meta.url), 'utf8');
+  ok('changeLine is gone', !svc.includes('changeLine'));
+  for (const file of ['src/screens/TangoScreen.tsx', 'src/views/TangoView.vue', 'src/services/tangoTurns.ts']) {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+    for (const text of ['Your side had change', 'which output is whose',
+      'tell the two outputs apart', 'Your change would be', 'nothing on chain says which is yours',
+      'Both shares are the same size']) {
+      ok(`${file} has no "${text}"`, !src.includes(text));
+    }
+    if (file !== 'src/services/tangoTurns.ts') {
+      ok(`${file} says what change there is, briefly`, src.includes('Change to receive is'));
+    }
   }
   // The web's Activity detail no longer lists this wallet's own coins. A Tango
   // showed both sections on the side with change and inputs alone on the side
@@ -117,11 +113,18 @@ console.log('\nwhat each side is waiting for');
      'Waiting for alice to approve it.');
   eq('A after proposing', turnLine('PROPOSED', 'a', 'bob'),
      'Waiting for bob to match it.');
-  // And the turns that ARE yours still say what pressing does.
-  ok('B at the last step is told it broadcasts',
-    turnLine('A_SIGNED', 'b', 'alice').includes('broadcasts the transaction'));
-  ok('and that it cannot be undone',
-    turnLine('A_SIGNED', 'b', 'alice').includes('cannot be undone'));
+  // The turns that ARE yours name the act and stop. The sentences about what
+  // happens next were cut on 2026-11-28 (the Complete button and its confirm
+  // already say it).
+  eq('B matching', turnLine('PROPOSED', 'b', 'alice'),
+     'Choose your coins to match the offer.');
+  eq('A approving', turnLine('ACCEPTED', 'a', 'bob'), 'Approve it.');
+  eq('B completing', turnLine('A_SIGNED', 'b', 'alice'), 'Complete it.');
+  for (const [st, role] of [['PROPOSED', 'b'], ['ACCEPTED', 'a'], ['A_SIGNED', 'b']]) {
+    const line = turnLine(st, role, 'alice');
+    ok(`no next-step prose at ${st}`,
+      !/then|broadcasts|cannot be undone|last step|approves/.test(line), line);
+  }
   eq('a finished round', turnLine('BROADCAST', 'a', 'bob'),
      'Done \u2014 both shares are on chain.');
 }

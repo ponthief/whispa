@@ -777,7 +777,7 @@ async function sign(r) {
         ' part could not be checked.'
     pushToast(
       (done.status === 'BROADCAST'
-        ? `Sent. Both shares are the same size, so nothing on chain says which is yours. txid ${String(done.txid || '').slice(0, 12)}…`
+        ? `Sent. txid ${String(done.txid || '').slice(0, 12)}…`
         : 'Approved. Waiting on the other side.') + unverified,
       { type: 'success', timeout: 12000 },
     )
@@ -854,18 +854,13 @@ const shortTxid = (t) => (t ? `${t.slice(0, 10)}…${t.slice(-6)}` : '')
 const partnerOf = (r) => (r.role === 'a' ? r.b_username : r.a_username)
 const myFee = (r) => (r.role === 'a' ? r.a_fee_sats : r.b_fee_sats)
 const myChangeOf = (r) => (r.role === 'a' ? r.a_change_sats : r.b_change_sats)
-// Both are recorded, so "change on one or both sides" was never necessary —
-// and on a round with change on one side it reads as a claim about both.
-const theirChangeOf = (r) => (r.role === 'a' ? r.b_change_sats : r.a_change_sats)
 // WHERE this side's change goes, from the round's own flag and not from the
 // setting: a setting switched on after joining does not reach back into a
 // round already under way, and until this line existed nothing said which of
 // the two had applied. See lnAddress.changeDestination.
 const myChangeDest = (r) =>
   changeDestination(myChangeOf(r), r.role === 'a' ? r.a_payout : r.b_payout)
-const changeLine = tango.changeLine
-// Named in the template, so bound here like changeLine. `tango` itself is in
-// scope too, which is how CANCEL_NOTE_MAX is read for the input's maxlength.
+// Named in the template. `tango` itself is in scope too, which is how CANCEL_NOTE_MAX is read for the input's maxlength.
 const cancelNote = tango.cancelNote
 const CANCEL_NOTE_PROMPT = tango.CANCEL_NOTE_PROMPT
 
@@ -1367,13 +1362,7 @@ function expiresIn(r) {
                 <div v-if="myChangeDest(r)" class="text-xs text-dim">
                   {{ myChangeDest(r) }}
                 </div>
-                <!-- Empty when only the OTHER side had change, and then there
-                     is no row: see tangoTurns.changeLine. -->
-                <div v-if="r.clean === false && changeLine(myChangeOf(r), theirChangeOf(r))"
-                     class="text-xs text-amber">
-                  {{ changeLine(myChangeOf(r), theirChangeOf(r)) }}
-                </div>
-                <div v-else-if="r.clean === true" class="text-xs text-green">
+                <div v-if="r.clean === true" class="text-xs text-green">
                   No change either side — nothing to work out from the amounts.
                 </div>
               </div>
@@ -1427,9 +1416,7 @@ function expiresIn(r) {
                    when they proposed. Nothing is shown for that case now. -->
               <p v-else-if="matchPreview && !matchPreview.clean && matchPreview.change"
                  class="text-xs text-amber" style="margin-top:0.4rem;">
-                Your change would be {{ fmtSats(matchPreview.change) }}. Change
-                plus a share adds up to what that side put in, which is often
-                enough for someone to tell the two outputs apart.
+                Change to receive is {{ fmtSats(matchPreview.change) }}.
               </p>
               <p v-else-if="matchPreview && matchPreview.clean" class="text-xs text-green" style="margin-top:0.4rem;">
                 Neither side needs change — a clean round.

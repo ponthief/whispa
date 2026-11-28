@@ -542,6 +542,35 @@ timers ticking) — but there is no React Native renderer here, so the phone's
 layout has not been seen. **Deploy siLNt first**: a client against a server that
 predates the board says offers are not available, which is true.
 
+### Tango round copy, cut to the act (2026-11-28)
+
+Asked as *"these are all the texts from tango screens... too long!!!.. cut all
+of it"*. Gone from both clients: the match panel's *"Your change would be N.
+Change plus a share adds up to what that side put in, which is often enough for
+someone to tell the two outputs apart"* (now **"Change to receive is N sats."**);
+the round row's *"Your side had change. An observer can often work out which
+output is whose"* (`changeLine` is deleted; only the clean-round line remains,
+inline); the **next-step prose** in `turnLine` (*"…approves, then you complete
+it"*, *"Complete broadcasts the transaction. That is the last step, and it
+cannot be undone."* — now *Choose your coins to match the offer.* / *Approve
+it.* / *Complete it.*); *"Your change stays in your wallet."* on a round row
+(`changeDestination` returns null for an on-chain round); and *"Both shares are
+the same size, so nothing on chain says which is yours"* from the Sent toast.
+`check:signing:display` asserts each absent.
+
+**Know what that costs:** the Lightning-routed line (*"Your change is sent to
+your Lightning address"*) stays, so the one disagreement worth reporting (a
+setting switched on after joining) still shows; but a round whose change
+stayed on chain now says nothing, so the two cases are no longer symmetric. The
+irreversibility of Complete is carried by the button's name and its confirm
+modal only. The *Waiting for X to approve it* lines were kept: they say whose
+turn it is. The payout setting's own *"stays in your wallet"* copy
+(`TangoPayoutPanel`/`Card`, pinned by `check:payout`) is untouched.
+
+The Send **Confirm Broadcast** modal's rows had no gap, so a long address ran
+into its *Recipient* label; `.tx-detail-row` in `SendView.vue` now has one, the
+label cannot shrink and the value is right-aligned.
+
 ## The matcher is switched and watched from the admin page
 
 Added 2026-11-15, asked for as *"run whispa-matcher as the system service… and

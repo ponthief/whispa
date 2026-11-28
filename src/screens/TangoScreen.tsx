@@ -954,7 +954,7 @@ export default function TangoScreen() {
             ' that part could not be checked.';
         setMsg(
           (done.status === 'BROADCAST'
-            ? 'Sent. Both shares are the same size, so nothing on chain says which is yours.'
+            ? 'Sent.'
             : 'Approved. Waiting on the other side.') + unverified,
         );
         await load();
@@ -1066,15 +1066,6 @@ export default function TangoScreen() {
     const mine = tango.isMyTurn(r.status, side);
     const other = side === 'a' ? r.b_username : r.a_username;
     const myChange = side === 'a' ? r.a_change_sats : r.b_change_sats;
-    // Empty when only the OTHER side had change, and then there is no line:
-    // see tangoTurns.changeLine.
-    const changeNote =
-      r.clean === false
-        ? tango.changeLine(
-            myChange,
-            side === 'a' ? r.b_change_sats : r.a_change_sats,
-          )
-        : '';
     return (
       <View key={r.id} style={styles.row}>
         <View style={styles.rowHead}>
@@ -1113,12 +1104,7 @@ export default function TangoScreen() {
             {changeDestination(myChange, side === 'a' ? r.a_payout : r.b_payout)}
           </Text>
         ) : null}
-        {/* THIS side, not both: the partner's change is a fact about their
-            coins that this user cannot act on, and they were warned about
-            their own when they joined. */}
-        {compact ? null : changeNote ? (
-          <Text style={styles.warn}>{changeNote}</Text>
-        ) : r.clean === true ? (
+        {compact ? null : r.clean === true ? (
           <Text style={styles.good}>
             No change either side — nothing to work out from the amounts.
           </Text>
@@ -1178,9 +1164,7 @@ export default function TangoScreen() {
                  they already saw the same warning about their own side when
                  they proposed. Nothing is shown for that case now. */
               <Text style={styles.warn}>
-                {`Your change would be ${sats(matchPreview.change)}. `}
-                Change plus a share adds up to what that side put in, which is
-                often enough to tell the two outputs apart.
+                {`Change to receive is ${sats(matchPreview.change)}.`}
               </Text>
             ) : matchPreview?.clean ? (
               <Text style={styles.good}>

@@ -1842,9 +1842,10 @@ onBeforeUnmount(() => { if (scanWatchTimer) clearInterval(scanWatchTimer) })
 .fee-estimate .fe-detail { font-size: 11px; color: var(--dim, #8a9b94); margin-left: auto; }
 .toggle-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-dim); }
 .toggle-label input { accent-color: var(--orange); width: 14px; height: 14px; }
-.tx-detail-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.tx-detail-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .tx-detail-row:last-child { border-bottom: none; }
-.tx-detail-row span:first-child { color: var(--text-dim); }
+.tx-detail-row span:first-child { color: var(--text-dim); flex-shrink: 0; }
+.tx-detail-row span:last-child { text-align: right; min-width: 0; }
 .hex-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
 .utxo-list { max-height: 400px; overflow-y: auto; }
 .utxo-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }

@@ -239,36 +239,10 @@ export function turnLine(
   }
   switch (status) {
     case 'PROPOSED':
-      return `Choose your coins and match it. ${them} approves, then you complete it.`;
+      return 'Choose your coins to match the offer.';
     case 'ACCEPTED':
-      return `Approve it. ${them} then completes it.`;
+      return 'Approve it.';
     default:
-      return 'Complete broadcasts the transaction. That is the last step, and it cannot be undone.';
+      return 'Complete it.';
   }
-}
-
-/**
- * Whether THIS side had change, as a sentence. Empty when it did not and the
- * other side did, which the caller renders as nothing at all.
- *
- * It used to name the partner: "Change on both sides", "Change on alice's
- * side". Both amounts are recorded, so the old hedge "change on one or both
- * sides" was never necessary — but naming the other side is a fact about their
- * coins that this user cannot act on, and they already saw the same warning
- * about their own side when they joined. The same line came off the match
- * panel for the same reason.
- *
- * `theirs` still decides between saying nothing and saying the round was
- * clean, so a caller that has not already checked `clean` gets a true answer.
- */
-export function changeLine(
-  mine: number | null | undefined,
-  theirs: number | null | undefined,
-): string {
-  if ((mine || 0) > 0) {
-    return 'Your side had change. An observer can often work out which output '
-      + 'is whose from the amounts.';
-  }
-  if ((theirs || 0) > 0) return '';
-  return 'No change either side — nothing to work out from the amounts.';
 }

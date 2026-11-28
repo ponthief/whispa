@@ -145,9 +145,7 @@ export function changeDestination(
 ): string | null {
   if (!changeSats) return null;
   if (routed === null || routed === undefined) return null;
-  return routed
-    ? 'Your change is sent to your Lightning address.'
-    : 'Your change stays in your wallet.';
+  return routed ? 'Your change is sent to your Lightning address.' : null;
 }
 
 export function payoutIntended(setting: {

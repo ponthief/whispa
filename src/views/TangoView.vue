@@ -467,6 +467,7 @@ const boardLoading = ref(false)
 const boardError = ref('')
 const nowMs = ref(Date.now())        // advances each second while Offers is open
 const postDenom = ref(0)
+const postAffordable = computed(() => board.canPost(boardData.value, postDenom.value))
 const postPieces = ref(2)
 const postVisibility = ref('connections')
 const postingOffer = ref(false)
@@ -482,7 +483,9 @@ async function loadBoard() {
     boardFetchedAt.value = Date.now()
     boardError.value = ''
     // Start on what the server names, and keep a choice already made.
-    if (!postDenom.value) postDenom.value = res.denominations?.[0] || 0
+    if (!postDenom.value) {
+      postDenom.value = res.affordable_denominations?.[0] || res.denominations?.[0] || 0
+    }
     if (!res.pieces?.includes(postPieces.value)) postPieces.value = res.pieces?.[0] || 1
   } catch (e) {
     boardError.value = e.status === 404
@@ -982,13 +985,9 @@ function expiresIn(r) {
         <div class="card-header">Choose your partner</div>
         <div class="card-body">
           <div v-if="offerTarget" class="field">
-            <label class="text-dim text-xs">Answering the offer of</label>
+            <label class="text-dim text-xs">Partner</label>
             <div class="tg-offer-line">
               <b>{{ offerTarget.username }}</b>
-              <span class="text-dim text-xs">· {{ countdown(offerTarget) }} left</span>
-            </div>
-            <div v-if="boardData?.answer_seconds" class="text-dim text-xs">
-              They have {{ board.formatDuration(boardData.answer_seconds) }} to answer.
             </div>
           </div>
           <div v-else class="field">
@@ -1151,9 +1150,10 @@ function expiresIn(r) {
             </p>
           </div>
           <p v-if="postBlocked" class="text-xs text-amber of-hint">{{ postBlocked }}</p>
+          <p v-else-if="!postAffordable" class="text-xs text-amber of-hint">Not enough coins.</p>
           <div class="of-actions">
             <button class="btn btn-primary"
-                    :disabled="postingOffer || !hasKeys || !postDenom || atOfferLimit || !!postBlocked"
+                    :disabled="postingOffer || !hasKeys || !postDenom || atOfferLimit || !!postBlocked || !postAffordable"
                     @click="postOffer">
               {{ postingOffer ? 'Posting…' : 'Post offer' }}
             </button>
@@ -1204,7 +1204,8 @@ function expiresIn(r) {
             <span v-else-if="board.offerState(o) === 'busy'" class="text-xs text-dim of-state">
               Busy
             </span>
-            <button v-else class="btn btn-primary btn-sm" :disabled="!hasKeys" @click="takeOffer(o)">Take</button>
+            <button v-else class="btn btn-primary btn-sm" :disabled="!hasKeys || !board.canTake(o)"
+                    @click="takeOffer(o)">Take</button>
           </div>
         </div>
       </div>

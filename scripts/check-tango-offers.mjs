@@ -66,7 +66,7 @@ ok('a span of time reads in words',
 ok('one coin is singular', board.coinsLabel(1) === '1 coin' && board.coinsLabel(3) === '3 coins');
 ok('visibility is worded',
   board.visibilityLabel('connections') === 'Connections only' &&
-  board.visibilityLabel('anyone') === 'Anyone');
+  board.visibilityLabel('anyone') === 'Public');
 ok('a new offer starts narrow: unknown or missing means connections',
   board.startingVisibility(null) === 'connections' &&
   board.startingVisibility({ default_visibility: 'whatever' }) === 'connections' &&
@@ -129,7 +129,7 @@ ok('no copy of the lifetime or the amounts', !COPIED.test(ph));
 ok('a new offer starts on connections',
   /useState<board\.OfferVisibility>\('connections'\)/.test(ph));
 ok('answering an offer sends its id', /\.\.\.\(offer \? \{ offer_id: offer\.id \} : \{\}\)/.test(ph));
-ok('answering shows the offer instead of the partner list', /Answering an offer/.test(ph) &&
+ok('answering shows the offer instead of the partner list', /Group title="Partner"/.test(ph) &&
   /\{offer \? \(/.test(ph));
 ok('the countdown is the shared rule on the server clock',
   /board\.secondsLeft\(/.test(ph) && /board\.formatCountdown\(/.test(ph) &&
@@ -210,8 +210,35 @@ for (const [name, src] of [['web', web], ['phone', ph]]) {
     /can_post/.test(src) && /suspended_for/.test(src) && /enabled/.test(src));
   ok(`${name}: a pause counts down on the server's clock`,
     /secondsLeft\(\s*b\.now \+ b\.suspended_for/.test(src));
-  ok(`${name}: answering says how long the maker has`,
-    /formatDuration\(boardData\??\.answer_seconds\)/.test(src));
+  // Cut 2026-11-28: "They have 2 hours to answer." sat beside "19h left", two
+  // clocks for one offer, and the label "Answering the offer of" with it.
+  ok(`${name}: no second clock on an answered offer`,
+    !/to answer\./.test(src) && !/formatDuration\(boardData\??\.answer_seconds\)/.test(src));
+  ok(`${name}: no "Answering the offer" label`, !/Answering (the|an) offer/.test(src));
+  ok(`${name}: no "Not this one" button`, !/Not this one/.test(src));
+}
+
+console.log('affordability: the server decides, the clients only draw it');
+{
+  const svc = fs.readFileSync('src/services/tangoOffers.ts', 'utf8');
+  ok('canTake reads only the server\'s flag, and yes when it gave none',
+    board.canTake({ affordable: false }) === false && board.canTake({ affordable: true }) === true &&
+    board.canTake({}) === true);
+  ok('canPost reads only the server\'s list, and yes when it gave none',
+    board.canPost({ affordable_denominations: [60000] }, 60000) === true &&
+    board.canPost({ affordable_denominations: [60000] }, 120000) === false &&
+    board.canPost({ affordable_denominations: [] }, 60000) === false &&
+    board.canPost({}, 60000) === true && board.canPost(null, 60000) === true);
+  ok('no sum of coins in the offers service', !/amount|spendable|sats_/.test(
+    svc.slice(svc.indexOf('export function canTake')).replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('web: Take is disabled when it cannot be afforded', /!board\.canTake\(o\)/.test(web));
+  ok('web: Post is disabled when the amount cannot be afforded',
+    /!postAffordable/.test(web) && /board\.canPost\(boardData\.value, postDenom\.value\)/.test(web));
+  ok('phone: Take is disabled when it cannot be afforded', /disabled=\{!board\.canTake\(o\)\}/.test(ph));
+  ok('phone: Post is disabled when the amount cannot be afforded',
+    /\|\| !postAffordable/.test(ph) && /board\.canPost\(boardData, postDenom\)/.test(ph));
+  ok('the type carries both', /affordable\?: boolean;/.test(svc) &&
+    /affordable_denominations\?: number\[\];/.test(svc));
 }
 ok('the board response type carries all four', /enabled: boolean;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&
   /suspended_for: number;/.test(fs.readFileSync('src/services/tangoOffers.ts', 'utf8')) &&

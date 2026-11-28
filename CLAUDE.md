@@ -604,6 +604,24 @@ and the watcher were read and nothing there explains a state only a reload
 clears; the page-level state a reload resets (`matchFor`, the offer form) was
 tightened above. If it recurs, note which round showed Match and for whom.
 
+**Take and Post are disabled by what the user can afford, and "Anyone" reads
+"Public"** (2026-11-28: *"user who has only 12K sats is able to Take public offer for
+60K… should still see it, but Take button should be disabled… 12K sats user should
+have Post button disabled"*). `GET /tango/offers` carries `affordable` on every
+offer that is not yours and `affordable_denominations` for the board, from ONE sum
+of the user's free coins through the board's own `can_fund`; the clients draw them
+(`board.canTake`, `board.canPost`) and add nothing up, and an older server that
+sends neither reads as yes (it still refuses at propose and post). The offer stays
+listed. A Post that cannot be afforded says **"Not enough coins."**, because a
+disabled button with no word is a dead control; Take says nothing, as asked. The
+new-offer form starts on the first amount the user can afford. The wire value
+stays `anyone`; only the label changed (`visibilityLabel`). Also cut: *"They have 2
+hours to answer."* (it sat beside "19h left", two clocks for one offer), the
+*Answering the offer of* label (the field says **Partner** and the name) and the
+offer's own countdown beside it. **Know what that costs:** the 2-hour answer
+window is now told to nobody who takes an offer. `check:offers` asserts each cut
+absent.
+
 The Send **Confirm Broadcast** modal's rows had no gap, so a long address ran
 into its *Recipient* label; `.tx-detail-row` in `SendView.vue` now has one, the
 label cannot shrink and the value is right-aligned.

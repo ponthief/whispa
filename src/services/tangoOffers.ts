@@ -31,6 +31,12 @@ export interface TangoOffer {
   busy?: boolean;
   /** On OTHERS' offers only: one of the waiting proposals is yours. */
   proposed_by_me?: boolean;
+  /**
+   * On OTHERS' offers only: the server's answer to "could this user put in this
+   * much", from their free coins. False draws Take disabled. Absent on a server
+   * that predates it, which reads as yes: the server still refuses at propose.
+   */
+  affordable?: boolean;
 }
 
 /**
@@ -65,6 +71,8 @@ export interface TangoBoard {
   offers: TangoOffer[];
   mine: TangoOffer[];
   denominations: number[];
+  /** The denominations this user could post, by the server's own sum. */
+  affordable_denominations?: number[];
   pieces: number[];
   visibilities: OfferVisibility[];
   default_visibility: OfferVisibility;
@@ -126,7 +134,7 @@ export function coinsLabel(pieces: number): string {
 }
 
 export function visibilityLabel(v: OfferVisibility | string): string {
-  return v === 'anyone' ? 'Anyone' : 'Connections only';
+  return v === 'anyone' ? 'Public' : 'Connections only';
 }
 
 /**
@@ -145,4 +153,18 @@ export function isLive(
   nowMs: number,
 ): boolean {
   return secondsLeft(o.expires_at, board.now, fetchedAtMs, nowMs) > 0;
+}
+
+/** May this user press Take? Only the server's word, and yes when it gave none. */
+export function canTake(o: Pick<TangoOffer, 'affordable'>): boolean {
+  return o.affordable !== false;
+}
+
+/** May this user post this amount? Only the server's list, and yes when it gave none. */
+export function canPost(
+  b: Pick<TangoBoard, 'affordable_denominations'> | null,
+  denom: number,
+): boolean {
+  const list = b?.affordable_denominations;
+  return !Array.isArray(list) || list.includes(denom);
 }

@@ -512,7 +512,10 @@ export default function TangoScreen() {
       setBoardFetchedAt(Date.now());
       setBoardError(null);
       // Start on what the server names, and keep a choice already made.
-      setPostDenom((cur) => cur || res.denominations?.[0] || 0);
+      setPostDenom(
+        (cur) =>
+          cur || res.affordable_denominations?.[0] || res.denominations?.[0] || 0,
+      );
       setPostPieces((cur) =>
         res.pieces?.includes(cur) ? cur : res.pieces?.[0] || 1,
       );
@@ -546,6 +549,7 @@ export default function TangoScreen() {
   // Why posting is closed to this person right now, or '' when it is not. The
   // server says whether they may (`can_post`); this only words it, and a pause
   // counts down on the same server-clock rule as an offer does.
+  const postAffordable = board.canPost(boardData, postDenom);
   const postBlocked = useMemo(() => {
     const b = boardData;
     if (!b) return '';
@@ -1360,18 +1364,9 @@ export default function TangoScreen() {
           </Group>
 
           {offer ? (
-            <Group title="Answering an offer">
+            <Group title="Partner">
               <Block>
                 <Text style={styles.coinAmount}>{offer.username}</Text>
-                <Text style={styles.rowMeta}>
-                  {fmtSats(offer.denom_sats, hidden)} each \u00b7 {board.coinsLabel(offer.pieces)}
-                  {' \u00b7 '}{countdown(offer)} left
-                </Text>
-                {boardData?.answer_seconds ? (
-                  <Text style={styles.rowMeta}>
-                    They have {board.formatDuration(boardData.answer_seconds)} to answer.
-                  </Text>
-                ) : null}
                 <View style={styles.rowActions}>
                   <Button
                     label="Send offer"
@@ -1521,13 +1516,20 @@ export default function TangoScreen() {
                   Any WhiSPa wallet user.
                 </Text>
               ) : null}
-              {postBlocked ? <Text style={styles.warn}>{postBlocked}</Text> : null}
+              {postBlocked ? (
+                <Text style={styles.warn}>{postBlocked}</Text>
+              ) : !postAffordable ? (
+                <Text style={styles.warn}>Not enough coins.</Text>
+              ) : null}
               <View style={styles.centeredActions}>
                 <Button
                   label="Post offer"
                   onPress={postOffer}
                   busy={busy === 'post-offer'}
-                  disabled={!postDenom || !walletId || atOfferLimit || !!postBlocked}
+                  disabled={
+                    !postDenom || !walletId || atOfferLimit || !!postBlocked
+                    || !postAffordable
+                  }
                 />
               </View>
               {atOfferLimit ? (
@@ -1598,7 +1600,12 @@ export default function TangoScreen() {
                       <Text style={styles.rowMeta}>Busy</Text>
                     ) : (
                       <View style={styles.rowActions}>
-                        <Button label="Take" small onPress={() => takeOffer(o)} />
+                        <Button
+                          label="Take"
+                          small
+                          disabled={!board.canTake(o)}
+                          onPress={() => takeOffer(o)}
+                        />
                       </View>
                     )}
                   </View>
